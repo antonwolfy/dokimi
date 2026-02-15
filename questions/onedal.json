@@ -1,0 +1,232 @@
+{
+  "library": "oneDAL",
+  "library_id": "oneapi-src/onedal",
+  "description": "oneAPI Data Analytics Library — High-performance ML algorithms optimized for Intel hardware",
+  "questions": [
+    {
+      "id": "dal-gs-01",
+      "text": "How do I install oneDAL on Ubuntu and verify the installation works?",
+      "persona": "Data scientist new to oneDAL",
+      "category": "getting_started",
+      "difficulty": 1,
+      "expected_topics": ["conda install", "pip install daal4py", "verification", "environment setup"]
+    },
+    {
+      "id": "dal-gs-02",
+      "text": "Show me a hello-world example: how do I train a simple linear regression model using oneDAL?",
+      "persona": "ML engineer trying oneDAL for the first time",
+      "category": "getting_started",
+      "difficulty": 1,
+      "expected_topics": ["linear regression", "training API", "data input", "model output"]
+    },
+    {
+      "id": "dal-gs-03",
+      "text": "What are the main interfaces available in oneDAL? When should I use DAAL vs oneDAL C++ vs daal4py vs sklearnex?",
+      "persona": "Software architect evaluating oneDAL",
+      "category": "getting_started",
+      "difficulty": 2,
+      "expected_topics": ["DAAL legacy", "oneDAL C++", "daal4py Python", "sklearnex", "migration path"],
+      "known_doc_issues": "Documentation doesn't clearly explain the relationship between daal4py, sklearnex, and oneDAL C++ interfaces"
+    },
+    {
+      "id": "dal-int-01",
+      "text": "How do I patch scikit-learn with sklearnex to accelerate my existing code? Show a complete example.",
+      "persona": "Data scientist with existing sklearn pipeline",
+      "category": "integration",
+      "difficulty": 2,
+      "expected_topics": ["sklearnex.patch_sklearn", "unpatch", "import order", "compatibility"]
+    },
+    {
+      "id": "dal-int-02",
+      "text": "Which scikit-learn algorithms are supported by sklearnex acceleration? Are there any limitations?",
+      "persona": "ML engineer auditing compatibility",
+      "category": "integration",
+      "difficulty": 2,
+      "expected_topics": ["supported estimators", "parameter compatibility", "known limitations", "fallback behavior"],
+      "known_doc_issues": "GPU support matrix for sklearnex is not clearly documented"
+    },
+    {
+      "id": "dal-int-03",
+      "text": "How do I use oneDAL with Apache Spark for distributed machine learning?",
+      "persona": "Big data engineer building distributed ML pipeline",
+      "category": "integration",
+      "difficulty": 3,
+      "expected_topics": ["spark integration", "distributed training", "data distribution", "configuration"]
+    },
+    {
+      "id": "dal-int-04",
+      "text": "How do I convert pandas DataFrames and numpy arrays to oneDAL tables? Show both homogen and SOA table examples.",
+      "persona": "Python data scientist",
+      "category": "integration",
+      "difficulty": 2,
+      "expected_topics": ["from_pandas", "from_numpy", "homogen_table", "SOA table", "data accessors"]
+    },
+    {
+      "id": "dal-int-05",
+      "text": "What's the difference between daal4py and sklearnex? When should I use each?",
+      "persona": "ML engineer choosing Python interface",
+      "category": "integration",
+      "difficulty": 2,
+      "expected_topics": ["daal4py native API", "sklearnex patching", "API compatibility", "use cases"],
+      "known_doc_issues": "Migration path from daal4py to sklearnex is unclear"
+    },
+    {
+      "id": "dal-int-06",
+      "text": "How do I use oneDAL algorithms from C++ with DPC++/SYCL for GPU acceleration?",
+      "persona": "HPC developer",
+      "category": "integration",
+      "difficulty": 3,
+      "expected_topics": ["DPC++ queue", "SYCL device selection", "USM allocation", "oneDAL C++ API"]
+    },
+    {
+      "id": "dal-perf-01",
+      "text": "How do I enable GPU offload for oneDAL algorithms? Show configuration for both sklearnex and daal4py.",
+      "persona": "Performance engineer optimizing ML workloads",
+      "category": "performance_tuning",
+      "difficulty": 3,
+      "expected_topics": ["GPU device selection", "target offload", "sklearnex config", "daal4py queue"],
+      "known_doc_issues": "GPU support varies by algorithm but documentation doesn't provide a clear matrix"
+    },
+    {
+      "id": "dal-perf-02",
+      "text": "What's the optimal batch size for oneDAL algorithms? How does batch vs online vs distributed mode affect performance?",
+      "persona": "Data scientist tuning training performance",
+      "category": "performance_tuning",
+      "difficulty": 2,
+      "expected_topics": ["batch mode", "online mode", "distributed mode", "memory vs compute tradeoff"]
+    },
+    {
+      "id": "dal-perf-03",
+      "text": "How do I control threading and CPU affinity for oneDAL algorithms?",
+      "persona": "Performance engineer on multi-socket systems",
+      "category": "performance_tuning",
+      "difficulty": 3,
+      "expected_topics": ["thread count", "TBB threading", "NUMA awareness", "environment variables"]
+    },
+    {
+      "id": "dal-perf-04",
+      "text": "What's the difference between homogeneous and SOA (struct-of-arrays) table layout? Which is faster for what workloads?",
+      "persona": "Performance-conscious developer",
+      "category": "performance_tuning",
+      "difficulty": 2,
+      "expected_topics": ["homogen_table", "soa_table", "memory layout", "cache efficiency", "algorithm compatibility"]
+    },
+    {
+      "id": "dal-perf-05",
+      "text": "How do I benchmark and profile oneDAL algorithm performance? What metrics should I track?",
+      "persona": "Performance analyst",
+      "category": "performance_tuning",
+      "difficulty": 2,
+      "expected_topics": ["timing", "VTune profiling", "GPU profiling", "metrics", "bottleneck analysis"]
+    },
+    {
+      "id": "dal-trouble-01",
+      "text": "My sklearnex.patch_sklearn() call doesn't accelerate my code. How do I debug which algorithms are actually being patched?",
+      "persona": "Data scientist troubleshooting performance",
+      "category": "troubleshooting",
+      "difficulty": 2,
+      "expected_topics": ["patch verification", "verbose mode", "fallback detection", "compatibility checks"],
+      "known_doc_issues": "Patching documentation is scattered across multiple pages"
+    },
+    {
+      "id": "dal-trouble-02",
+      "text": "I'm getting different accuracy results between scikit-learn and sklearnex. Is this expected? How do I investigate?",
+      "persona": "ML engineer validating model quality",
+      "category": "troubleshooting",
+      "difficulty": 3,
+      "expected_topics": ["numerical precision", "algorithm differences", "tolerance settings", "validation"]
+    },
+    {
+      "id": "dal-trouble-03",
+      "text": "My oneDAL training is running out of memory. How do I use online learning mode to process data in chunks?",
+      "persona": "Data scientist with large datasets",
+      "category": "troubleshooting",
+      "difficulty": 3,
+      "expected_topics": ["online mode", "partial_fit", "streaming data", "memory management"],
+      "known_doc_issues": "Online learning API documentation is minimal and lacks examples"
+    },
+    {
+      "id": "dal-trouble-04",
+      "text": "GPU acceleration isn't working. How do I diagnose GPU device selection and offload issues?",
+      "persona": "DevOps engineer debugging deployment",
+      "category": "troubleshooting",
+      "difficulty": 3,
+      "expected_topics": ["device enumeration", "SYCL diagnostics", "driver issues", "fallback to CPU"],
+      "known_doc_issues": "GPU troubleshooting guide is missing"
+    },
+    {
+      "id": "dal-trouble-05",
+      "text": "I'm seeing crashes when using oneDAL with multiple threads. How do I debug race conditions and thread safety issues?",
+      "persona": "Software engineer investigating production crashes",
+      "category": "troubleshooting",
+      "difficulty": 3,
+      "expected_topics": ["thread safety", "data sharing", "queue safety", "debugging tools"]
+    },
+    {
+      "id": "dal-api-01",
+      "text": "What are the different table types in oneDAL? Explain homogen_table, soa_table, and how to use table accessors.",
+      "persona": "C++ developer using oneDAL API",
+      "category": "api_reference",
+      "difficulty": 2,
+      "expected_topics": ["table types", "data accessors", "row_accessor", "column_accessor", "memory ownership"]
+    },
+    {
+      "id": "dal-api-02",
+      "text": "How do I configure algorithm parameters for K-Means clustering? Show both training and inference configuration.",
+      "persona": "ML engineer implementing clustering",
+      "category": "api_reference",
+      "difficulty": 2,
+      "expected_topics": ["kmeans parameters", "cluster count", "max_iterations", "training descriptor", "inference descriptor"]
+    },
+    {
+      "id": "dal-api-03",
+      "text": "What's the difference between training and inference API in oneDAL? Show a complete workflow for decision forest.",
+      "persona": "ML engineer building prediction pipeline",
+      "category": "api_reference",
+      "difficulty": 2,
+      "expected_topics": ["train() vs infer()", "model serialization", "descriptor pattern", "result objects"]
+    },
+    {
+      "id": "dal-api-04",
+      "text": "How do I use PCA for dimensionality reduction? Show parameter configuration and accessing explained variance.",
+      "persona": "Data scientist doing feature engineering",
+      "category": "api_reference",
+      "difficulty": 2,
+      "expected_topics": ["PCA algorithm", "component count", "explained_variance", "transform API"]
+    },
+    {
+      "id": "dal-mig-01",
+      "text": "I'm migrating from Intel DAAL to oneDAL. What are the breaking API changes I need to handle?",
+      "persona": "Maintainer updating legacy codebase",
+      "category": "migration",
+      "difficulty": 3,
+      "expected_topics": ["namespace changes", "deprecated APIs", "table API changes", "algorithm descriptor pattern"],
+      "known_doc_issues": "DAAL to oneDAL migration guide is incomplete"
+    },
+    {
+      "id": "dal-mig-02",
+      "text": "How do I migrate from daal4py to sklearnex? Are there breaking changes in the Python API?",
+      "persona": "Python developer modernizing code",
+      "category": "migration",
+      "difficulty": 2,
+      "expected_topics": ["import changes", "API compatibility", "patch_sklearn pattern", "deprecation warnings"],
+      "known_doc_issues": "daal4py to sklearnex migration documentation is missing"
+    },
+    {
+      "id": "dal-mig-03",
+      "text": "Which oneDAL algorithms are deprecated? What are the recommended replacements?",
+      "persona": "Developer cleaning up deprecation warnings",
+      "category": "migration",
+      "difficulty": 2,
+      "expected_topics": ["deprecated list", "replacement APIs", "timeline", "compatibility mode"]
+    },
+    {
+      "id": "dal-mig-04",
+      "text": "How do I migrate from traditional scikit-learn to sklearnex? Do I need to change my code beyond patching?",
+      "persona": "Data scientist adopting oneDAL acceleration",
+      "category": "migration",
+      "difficulty": 1,
+      "expected_topics": ["patch_sklearn", "zero code change", "parameter compatibility", "unpatch workflow"]
+    }
+  ]
+}

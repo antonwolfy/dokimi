@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .venv/
 .env
+.cache/
+node_modules/
+context7_comparison_results.json

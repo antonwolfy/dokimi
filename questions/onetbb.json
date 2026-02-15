@@ -4,144 +4,223 @@
   "description": "oneAPI Threading Building Blocks — C++ parallel programming library",
   "questions": [
     {
-      "id": "tbb-01",
-      "text": "How do I parallelize a simple for-loop using oneTBB? Show a complete example.",
+      "id": "tbb-gs-01",
+      "text": "How do I install oneTBB on Ubuntu and verify the installation?",
+      "persona": "Junior developer new to parallel programming",
       "category": "getting_started",
-      "difficulty": "beginner",
+      "difficulty": 1,
+      "expected_topics": ["apt install", "pkg-config", "version check"]
+    },
+    {
+      "id": "tbb-gs-02",
+      "text": "How do I parallelize a simple for-loop using oneTBB? Show a complete hello-world example.",
+      "persona": "C++ developer learning parallel programming",
+      "category": "getting_started",
+      "difficulty": 1,
       "expected_topics": ["parallel_for", "blocked_range", "lambda", "grainsize"]
     },
     {
-      "id": "tbb-02",
-      "text": "How do I install oneTBB on Ubuntu and link it with CMake?",
-      "category": "installation",
-      "difficulty": "beginner",
-      "expected_topics": ["apt install", "find_package", "TBB::tbb", "CMakeLists.txt"]
+      "id": "tbb-gs-03",
+      "text": "What are the basic building blocks of oneTBB? Explain the core concepts.",
+      "persona": "Software architect evaluating parallel frameworks",
+      "category": "getting_started",
+      "difficulty": 1,
+      "expected_topics": ["tasks", "algorithms", "containers", "memory allocators"]
     },
     {
-      "id": "tbb-03",
-      "text": "How do I use tbb::concurrent_hash_map for thread-safe key-value storage? Show insert and find operations.",
-      "category": "api_usage",
-      "difficulty": "intermediate",
-      "expected_topics": ["concurrent_hash_map", "accessor", "const_accessor", "insert", "find"]
+      "id": "tbb-int-01",
+      "text": "How do I integrate oneTBB with CMake? Show a complete CMakeLists.txt example.",
+      "persona": "Build engineer setting up a C++ project",
+      "category": "integration",
+      "difficulty": 2,
+      "expected_topics": ["find_package", "TBB::tbb", "target_link_libraries", "CMake configuration"],
+      "known_doc_issues": "Documentation lacks clear examples for static vs shared library configuration"
     },
     {
-      "id": "tbb-04",
-      "text": "How do I build a data flow graph pipeline with oneTBB flow graph? Show a producer-consumer example.",
-      "category": "api_usage",
-      "difficulty": "intermediate",
-      "expected_topics": ["flow_graph", "function_node", "make_edge", "input_node", "graph.wait_for_all"]
+      "id": "tbb-int-02",
+      "text": "How do I use oneTBB with conan package manager? Show the conanfile and integration.",
+      "persona": "DevOps engineer managing C++ dependencies",
+      "category": "integration",
+      "difficulty": 2,
+      "expected_topics": ["conanfile.txt", "cmake_find_package", "requires", "imports"]
     },
     {
-      "id": "tbb-05",
-      "text": "How do I implement parallel reduction (sum) using oneTBB? Show parallel_reduce with a custom body.",
-      "category": "api_usage",
-      "difficulty": "intermediate",
+      "id": "tbb-int-03",
+      "text": "How do I use oneTBB together with OpenMP in the same application? Are there conflicts or oversubscription issues?",
+      "persona": "Performance engineer optimizing legacy code",
+      "category": "integration",
+      "difficulty": 3,
+      "expected_topics": ["thread oversubscription", "task_arena", "nested parallelism", "composability"]
+    },
+    {
+      "id": "tbb-int-04",
+      "text": "How do I integrate oneTBB with vcpkg? Show installation and CMake usage.",
+      "persona": "Windows C++ developer",
+      "category": "integration",
+      "difficulty": 2,
+      "expected_topics": ["vcpkg install", "toolchain file", "find_package"]
+    },
+    {
+      "id": "tbb-int-05",
+      "text": "Can I use oneTBB with std::execution parallel algorithms? How do they interoperate?",
+      "persona": "Modern C++ developer using C++17/20",
+      "category": "integration",
+      "difficulty": 3,
+      "expected_topics": ["std::execution::par", "PSTL backend", "algorithm compatibility"]
+    },
+    {
+      "id": "tbb-int-06",
+      "text": "How do I use oneTBB from a Python application? Show the Python bindings setup and usage.",
+      "persona": "Python developer needing C++ parallelism",
+      "category": "integration",
+      "difficulty": 2,
+      "expected_topics": ["pip install tbb", "tbb module", "task_arena", "Python threading"]
+    },
+    {
+      "id": "tbb-perf-01",
+      "text": "How do I optimize parallel_for grainsize for my workload? What's the impact on performance?",
+      "persona": "Performance engineer tuning parallel code",
+      "category": "performance_tuning",
+      "difficulty": 3,
+      "expected_topics": ["grainsize", "auto_partitioner", "affinity_partitioner", "cache effects", "benchmarking"]
+    },
+    {
+      "id": "tbb-perf-02",
+      "text": "How do I use task_arena to control thread counts and affinity for specific code sections?",
+      "persona": "HPC developer optimizing multi-threaded code",
+      "category": "performance_tuning",
+      "difficulty": 3,
+      "expected_topics": ["task_arena", "max_concurrency", "enqueue", "execute", "isolation"]
+    },
+    {
+      "id": "tbb-perf-03",
+      "text": "How do I implement NUMA-aware parallel algorithms with oneTBB for multi-socket systems?",
+      "persona": "Systems programmer optimizing for server hardware",
+      "category": "performance_tuning",
+      "difficulty": 3,
+      "expected_topics": ["NUMA", "task_arena", "affinity", "memory allocation", "bandwidth optimization"]
+    },
+    {
+      "id": "tbb-perf-04",
+      "text": "What's the difference between auto_partitioner, simple_partitioner, and affinity_partitioner? When should I use each?",
+      "persona": "Performance-focused developer",
+      "category": "performance_tuning",
+      "difficulty": 2,
+      "expected_topics": ["partitioner types", "work distribution", "cache locality", "use cases"]
+    },
+    {
+      "id": "tbb-perf-05",
+      "text": "How do I profile and measure the efficiency of my oneTBB parallel code? What metrics should I track?",
+      "persona": "Performance analyst",
+      "category": "performance_tuning",
+      "difficulty": 2,
+      "expected_topics": ["task_scheduler_observer", "profiling tools", "speedup", "efficiency", "scalability"]
+    },
+    {
+      "id": "tbb-trouble-01",
+      "text": "My oneTBB application hangs occasionally. How do I debug potential deadlocks?",
+      "persona": "Developer troubleshooting production issues",
+      "category": "troubleshooting",
+      "difficulty": 3,
+      "expected_topics": ["deadlock detection", "task_scheduler_observer", "debugging tools", "common patterns"],
+      "known_doc_issues": "Limited documentation on debugging hanging tasks and circular dependencies"
+    },
+    {
+      "id": "tbb-trouble-02",
+      "text": "I'm seeing worse performance with parallel_for than serial code. What are common causes?",
+      "persona": "Developer seeing unexpected slowdowns",
+      "category": "troubleshooting",
+      "difficulty": 2,
+      "expected_topics": ["overhead", "grainsize too small", "false sharing", "contention", "profiling"]
+    },
+    {
+      "id": "tbb-trouble-03",
+      "text": "How do I handle exceptions properly in oneTBB parallel algorithms? My program crashes on errors.",
+      "persona": "Developer implementing error handling",
+      "category": "troubleshooting",
+      "difficulty": 2,
+      "expected_topics": ["captured_exception", "task_group_context", "exception propagation", "cancel_group"]
+    },
+    {
+      "id": "tbb-trouble-04",
+      "text": "I get segfaults when using concurrent_vector. What are the common mistakes?",
+      "persona": "Developer debugging crashes",
+      "category": "troubleshooting",
+      "difficulty": 2,
+      "expected_topics": ["iterator invalidation", "concurrent growth", "thread-safety guarantees", "common pitfalls"]
+    },
+    {
+      "id": "tbb-trouble-05",
+      "text": "How do I debug race conditions and data races in oneTBB code?",
+      "persona": "QA engineer investigating flaky tests",
+      "category": "troubleshooting",
+      "difficulty": 3,
+      "expected_topics": ["thread sanitizer", "Intel Inspector", "data race patterns", "synchronization"]
+    },
+    {
+      "id": "tbb-api-01",
+      "text": "How do I build a flow graph pipeline using oneTBB? Show a multi-stage producer-consumer example.",
+      "persona": "Developer implementing data processing pipeline",
+      "category": "api_reference",
+      "difficulty": 2,
+      "expected_topics": ["flow::graph", "function_node", "make_edge", "input_node", "graph.wait_for_all"]
+    },
+    {
+      "id": "tbb-api-02",
+      "text": "What are the differences between concurrent_vector, concurrent_queue, and concurrent_hash_map? When to use each?",
+      "persona": "Developer choosing thread-safe data structure",
+      "category": "api_reference",
+      "difficulty": 2,
+      "expected_topics": ["container comparison", "thread-safety guarantees", "performance characteristics", "use cases"]
+    },
+    {
+      "id": "tbb-api-03",
+      "text": "How do I implement parallel reduction (sum, min, max) using parallel_reduce? Show custom reduction body.",
+      "persona": "Scientific computing developer",
+      "category": "api_reference",
+      "difficulty": 2,
       "expected_topics": ["parallel_reduce", "blocked_range", "split constructor", "join", "operator()"]
     },
     {
-      "id": "tbb-06",
-      "text": "How do I control the number of threads used by oneTBB? How does task_arena work?",
-      "category": "configuration",
-      "difficulty": "intermediate",
-      "expected_topics": ["task_arena", "global_control", "max_allowed_parallelism", "this_task_arena"]
+      "id": "tbb-api-04",
+      "text": "How do I use enumerable_thread_specific for efficient thread-local storage with reduction?",
+      "persona": "Developer implementing thread-local caching",
+      "category": "api_reference",
+      "difficulty": 3,
+      "expected_topics": ["enumerable_thread_specific", "local()", "combine()", "combine_each()"]
     },
     {
-      "id": "tbb-07",
-      "text": "How do I use oneTBB with OpenMP in the same application? Are there any conflicts?",
-      "category": "integration",
-      "difficulty": "intermediate",
-      "expected_topics": ["thread oversubscription", "composability", "task_arena", "nested parallelism"]
-    },
-    {
-      "id": "tbb-08",
-      "text": "How do I migrate from std::thread and std::mutex to oneTBB for better performance?",
+      "id": "tbb-mig-01",
+      "text": "I'm migrating from legacy TBB (2020) to oneTBB. What are the breaking changes?",
+      "persona": "Maintainer updating legacy codebase",
       "category": "migration",
-      "difficulty": "intermediate",
-      "expected_topics": ["task_group", "parallel_for", "concurrent containers", "work-stealing"]
+      "difficulty": 2,
+      "expected_topics": ["namespace changes", "deprecated APIs", "tbb_thread removal", "task_scheduler_init"],
+      "known_doc_issues": "Migration guide is scattered across multiple documents"
     },
     {
-      "id": "tbb-09",
-      "text": "How do I use oneTBB's parallel_pipeline for staged data processing? Show a 3-stage pipeline.",
-      "category": "api_usage",
-      "difficulty": "advanced",
-      "expected_topics": ["parallel_pipeline", "make_filter", "serial_in_order", "parallel", "flow_control"]
-    },
-    {
-      "id": "tbb-10",
-      "text": "How do I optimize oneTBB parallel_for grainsize for my workload? What's the performance impact?",
-      "category": "performance",
-      "difficulty": "advanced",
-      "expected_topics": ["grainsize", "auto_partitioner", "affinity_partitioner", "simple_partitioner", "cache effects"]
-    },
-    {
-      "id": "tbb-11",
-      "text": "How do I debug deadlocks and performance issues in oneTBB applications?",
-      "category": "troubleshooting",
-      "difficulty": "advanced",
-      "expected_topics": ["task_scheduler_observer", "task_arena", "debugging tools", "Intel Inspector", "thread sanitizer"]
-    },
-    {
-      "id": "tbb-12",
-      "text": "How do I use oneTBB's memory allocator (tbb::scalable_allocator) with STL containers?",
-      "category": "api_usage",
-      "difficulty": "intermediate",
-      "expected_topics": ["scalable_allocator", "cache_aligned_allocator", "tbbmalloc", "std::vector"]
-    },
-    {
-      "id": "tbb-13",
-      "text": "How do I handle exceptions in oneTBB parallel algorithms?",
-      "category": "error_handling",
-      "difficulty": "intermediate",
-      "expected_topics": ["captured_exception", "task_group_context", "cancel", "exception propagation"]
-    },
-    {
-      "id": "tbb-14",
-      "text": "What are the differences between oneTBB's concurrent_vector, concurrent_queue, and concurrent_hash_map? When should I use each?",
-      "category": "conceptual",
-      "difficulty": "intermediate",
-      "expected_topics": ["concurrent_vector", "concurrent_queue", "concurrent_hash_map", "thread-safety guarantees", "use cases"]
-    },
-    {
-      "id": "tbb-15",
-      "text": "How do I use oneTBB with NUMA-aware memory allocation for multi-socket systems?",
-      "category": "performance",
-      "difficulty": "advanced",
-      "expected_topics": ["NUMA", "task_arena", "pinning", "memory allocation", "bandwidth"]
-    },
-    {
-      "id": "tbb-16",
-      "text": "How do I use oneTBB in a Python application via the Python bindings?",
-      "category": "integration",
-      "difficulty": "beginner",
-      "expected_topics": ["pip install tbb", "tbb.task_arena", "tbb.task_group", "Python threading"]
-    },
-    {
-      "id": "tbb-17",
-      "text": "How do I implement a parallel sort using oneTBB?",
-      "category": "api_usage",
-      "difficulty": "beginner",
-      "expected_topics": ["parallel_sort", "comparison function", "performance vs std::sort"]
-    },
-    {
-      "id": "tbb-18",
-      "text": "How do I use tbb::enumerable_thread_specific for thread-local storage with reduction?",
-      "category": "api_usage",
-      "difficulty": "advanced",
-      "expected_topics": ["enumerable_thread_specific", "combine", "combine_each", "thread-local accumulation"]
-    },
-    {
-      "id": "tbb-19",
-      "text": "How do I build oneTBB from source with custom CMake options?",
-      "category": "installation",
-      "difficulty": "intermediate",
-      "expected_topics": ["cmake", "TBB_TEST", "BUILD_SHARED_LIBS", "CMAKE_INSTALL_PREFIX", "make install"]
-    },
-    {
-      "id": "tbb-20",
-      "text": "What version of oneTBB should I use? What changed between TBB 2020 (legacy) and oneAPI oneTBB?",
+      "id": "tbb-mig-02",
+      "text": "How do I replace std::thread and std::mutex with oneTBB equivalents? Why would I want to?",
+      "persona": "Developer modernizing threading code",
       "category": "migration",
-      "difficulty": "beginner",
-      "expected_topics": ["namespace tbb", "deprecated headers", "tbb_thread", "task_scheduler_init removal"]
+      "difficulty": 2,
+      "expected_topics": ["task_group", "parallel algorithms", "concurrent containers", "work-stealing benefits"]
+    },
+    {
+      "id": "tbb-mig-03",
+      "text": "What APIs were deprecated in oneTBB? What are the recommended replacements?",
+      "persona": "Developer cleaning up compiler warnings",
+      "category": "migration",
+      "difficulty": 2,
+      "expected_topics": ["deprecated list", "task_scheduler_init", "tbb_thread", "tick_count", "atomic"]
+    },
+    {
+      "id": "tbb-mig-04",
+      "text": "How do I migrate from OpenMP parallel sections to oneTBB task_group?",
+      "persona": "HPC developer switching frameworks",
+      "category": "migration",
+      "difficulty": 3,
+      "expected_topics": ["task_group", "run()", "wait()", "composability", "nested parallelism"]
     }
   ]
 }
