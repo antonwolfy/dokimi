@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/doc-benchmark/spec.schema.json",
+  "title": "Doc Benchmark Spec v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "schema",
+    "name",
+    "mode",
+    "weights",
+    "metrics",
+    "thresholds",
+    "critical_bands",
+    "ci",
+    "future",
+    "golden_manifest"
+  ],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "schema": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "mode": { "type": "string", "enum": ["non_blocking", "soft_gate", "hard_gate"] },
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage", "freshness_lite", "readability", "example_pass_rate", "llm_eval"],
+      "properties": {
+        "coverage": { "$ref": "#/$defs/weight" },
+        "freshness_lite": { "$ref": "#/$defs/weight" },
+        "readability": { "$ref": "#/$defs/weight" },
+        "example_pass_rate": { "$ref": "#/$defs/weight" },
+        "llm_eval": { "$ref": "#/$defs/weight" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coverage", "freshness_lite", "readability", "example_pass_rate", "llm_eval"],
+      "properties": {
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "weight", "target"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "weight": { "$ref": "#/$defs/weight" },
+            "target": { "$ref": "#/$defs/ratio" }
+          }
+        },
+        "freshness_lite": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "weight", "max_age_days"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "weight": { "$ref": "#/$defs/weight" },
+            "max_age_days": { "type": "integer", "minimum": 1, "maximum": 3650 }
+          }
+        },
+        "readability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "weight", "grade_max"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "weight": { "$ref": "#/$defs/weight" },
+            "grade_max": { "type": "number", "minimum": 1, "maximum": 20 }
+          }
+        },
+        "example_pass_rate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "weight"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "weight": { "$ref": "#/$defs/weight" }
+          }
+        },
+        "llm_eval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "weight"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "weight": { "$ref": "#/$defs/weight" }
+          }
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "regressions"],
+      "properties": {
+        "score": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["green", "yellow", "red"],
+          "properties": {
+            "green": { "$ref": "#/$defs/ratio" },
+            "yellow": { "$ref": "#/$defs/ratio" },
+            "red": { "$ref": "#/$defs/ratio" }
+          }
+        },
+        "regressions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["score_drop_warn", "score_drop_critical", "metric_drop_warn", "metric_drop_critical"],
+          "properties": {
+            "score_drop_warn": { "$ref": "#/$defs/ratio" },
+            "score_drop_critical": { "$ref": "#/$defs/ratio" },
+            "metric_drop_warn": { "$ref": "#/$defs/ratio" },
+            "metric_drop_critical": { "$ref": "#/$defs/ratio" }
+          }
+        }
+      }
+    },
+    "critical_bands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fail_on"],
+      "properties": {
+        "fail_on": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["condition", "value"],
+            "properties": {
+              "condition": { "type": "string", "enum": ["score_below", "coverage_below", "freshness_below", "readability_below"] },
+              "value": { "$ref": "#/$defs/ratio" }
+            }
+          }
+        }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy", "report_formats"],
+      "properties": {
+        "policy": { "type": "string", "enum": ["non_blocking", "soft_gate", "hard_gate"] },
+        "report_formats": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "enum": ["json", "markdown"] }
+        }
+      }
+    },
+    "future": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["soft_gate", "hard_gate"],
+      "properties": {
+        "soft_gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "min_score"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "min_score": { "$ref": "#/$defs/ratio" }
+          }
+        },
+        "hard_gate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "min_score"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "min_score": { "$ref": "#/$defs/ratio" }
+          }
+        }
+      }
+    },
+    "golden_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_docs", "max_docs", "include", "exclude"],
+      "properties": {
+        "min_docs": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "max_docs": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "include": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+    "weight": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

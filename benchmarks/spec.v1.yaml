@@ -1,0 +1,71 @@
+version: 1
+schema: ./spec.schema.json
+name: doc-benchmark-spec-v1
+mode: non_blocking
+
+weights:
+  coverage: 0.45
+  freshness_lite: 0.30
+  readability: 0.25
+  example_pass_rate: 0.0
+  llm_eval: 0.0
+
+metrics:
+  coverage:
+    enabled: true
+    weight: 0.45
+    target: 0.90
+  freshness_lite:
+    enabled: true
+    weight: 0.30
+    max_age_days: 365
+  readability:
+    enabled: true
+    weight: 0.25
+    grade_max: 12
+  example_pass_rate:
+    enabled: false
+    weight: 0.0
+  llm_eval:
+    enabled: false
+    weight: 0.0
+
+thresholds:
+  score:
+    green: 0.85
+    yellow: 0.70
+    red: 0.0
+  regressions:
+    score_drop_warn: 0.03
+    score_drop_critical: 0.08
+    metric_drop_warn: 0.05
+    metric_drop_critical: 0.12
+
+critical_bands:
+  fail_on:
+    - condition: score_below
+      value: 0.60
+    - condition: coverage_below
+      value: 0.70
+
+ci:
+  policy: non_blocking
+  report_formats:
+    - json
+    - markdown
+
+future:
+  soft_gate:
+    enabled: false
+    min_score: 0.80
+  hard_gate:
+    enabled: false
+    min_score: 0.85
+
+golden_manifest:
+  min_docs: 10
+  max_docs: 20
+  include:
+    - docs/**/*.md
+  exclude:
+    - docs/archive/**
