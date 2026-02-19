@@ -19,7 +19,21 @@ def _summary_lines(summary: dict) -> list[str]:
 def write_run_report(run_data: dict, path: Path) -> None:
     """Write markdown report for a benchmark run."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["# Doc Benchmark Run", "", "## Summary", *(_summary_lines(run_data["summary"])), "", "## Docs"]
+    lines = ["# Doc Benchmark Run", "", "## Summary", *(_summary_lines(run_data["summary"]))]
+    
+    # Add gate status if present
+    if "gate" in run_data and run_data["gate"].get("soft", {}).get("enabled"):
+        gate = run_data["gate"]["soft"]
+        status_emoji = "✅" if gate["passed"] else "❌"
+        lines.extend([
+            "",
+            "## Soft Gate",
+            f"{status_emoji} **Status:** {('PASS' if gate['passed'] else 'FAIL')}",
+            f"- Min score: {gate['min_score']:.4f}",
+            f"- Actual score: {run_data['summary']['score']:.4f}",
+        ])
+    
+    lines.extend(["", "## Docs"])
     for d in run_data["docs"]:
         lines.append(
             f"- {d['path']}: score={d['score']:.4f} cov={d['coverage']:.4f} "
@@ -42,4 +56,29 @@ def write_compare_report(compare_data: dict, path: Path) -> None:
         f"- freshness_lite: {d['freshness_lite']:+.4f}",
         f"- readability: {d['readability']:+.4f}",
     ]
+    
+    # Add regression analysis if present
+    if "regressions" in compare_data:
+        reg = compare_data["regressions"]
+        lines.extend(["", "## Regression Analysis"])
+        
+        # Overall status
+        if reg["has_critical"]:
+            lines.append("🔴 **CRITICAL regressions detected**")
+        elif reg["has_warnings"]:
+            lines.append("🟡 **Warnings detected**")
+        else:
+            lines.append("✅ **No regressions**")
+        
+        lines.append("")
+        
+        # Score regression
+        score_r = reg["score"]
+        severity_emoji = {"OK": "✅", "WARN": "🟡", "CRITICAL": "🔴"}
+        lines.append(f"{severity_emoji[score_r['severity']]} **Score:** {score_r['delta']:+.4f} ({score_r['severity']})")
+        
+        # Metric regressions
+        for m in reg["metrics"]:
+            lines.append(f"{severity_emoji[m['severity']]} **{m['metric']}:** {m['delta']:+.4f} ({m['severity']})")
+    
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from doc_benchmarks.gate.regression import detect_regressions
 
-def compare_snapshots(base_path: Path, cand_path: Path) -> dict:
+
+def compare_snapshots(base_path: Path, cand_path: Path, spec: dict | None = None) -> dict:
     """Compare two run snapshots and return summary and metric deltas."""
     try:
         base = json.loads(base_path.read_text(encoding="utf-8"))
@@ -35,11 +37,31 @@ def compare_snapshots(base_path: Path, cand_path: Path) -> dict:
         "freshness_lite": round(cand["summary"]["freshness_lite"] - base["summary"]["freshness_lite"], 4),
         "readability": round(cand["summary"]["readability"] - base["summary"]["readability"], 4),
     }
-    
+
     # Include example_pass_rate diff if both snapshots have it
     if "example_pass_rate" in base["summary"] and "example_pass_rate" in cand["summary"]:
         diff["example_pass_rate"] = round(
             cand["summary"]["example_pass_rate"] - base["summary"]["example_pass_rate"], 4
         )
-    
-    return {"base": base["summary"], "candidate": cand["summary"], "diff": diff}
+
+    result = {"base": base["summary"], "candidate": cand["summary"], "diff": diff}
+
+    # Add regression analysis if spec provided
+    if spec is not None:
+        if not isinstance(spec, dict):
+            raise ValueError("spec must be a dict (mapping)")
+        regressions = detect_regressions(diff, spec)
+        result["regressions"] = {
+            "score": {
+                "delta": regressions.score_regression.delta,
+                "severity": regressions.score_regression.severity,
+            },
+            "metrics": [
+                {"metric": r.metric, "delta": r.delta, "severity": r.severity}
+                for r in regressions.metric_regressions
+            ],
+            "has_warnings": regressions.has_warnings,
+            "has_critical": regressions.has_critical,
+        }
+
+    return result

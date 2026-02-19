@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""CLI for doc-benchmark: run, compare, report."""
+
 from __future__ import annotations
 
 import argparse
@@ -12,6 +14,7 @@ from doc_benchmarks.runner.run import run_benchmark, save_snapshot
 
 
 def cmd_run(args: argparse.Namespace) -> None:
+    """Run benchmark and save snapshot + report."""
     root = Path(args.root).resolve()
     spec = Path(args.spec).resolve()
     out_json = Path(args.out_json).resolve()
@@ -24,18 +27,26 @@ def cmd_run(args: argparse.Namespace) -> None:
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
+    """Compare two snapshots and show regression analysis."""
     base = Path(args.base).resolve()
     cand = Path(args.candidate).resolve()
+    spec_path = Path(args.spec).resolve() if args.spec else None
     out_json = Path(args.out_json).resolve()
     out_md = Path(args.out_md).resolve()
 
-    result = compare_snapshots(base, cand)
+    spec_data = None
+    if spec_path:
+        import yaml
+        spec_data = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+
+    result = compare_snapshots(base, cand, spec=spec_data)
     write_json(result, out_json)
     write_compare_report(result, out_md)
     print(json.dumps(result["diff"], indent=2))
 
 
 def cmd_report(args: argparse.Namespace) -> None:
+    """Generate markdown report from JSON snapshot."""
     data = json.loads(Path(args.input).read_text(encoding="utf-8"))
     out_md = Path(args.out_md).resolve()
 
@@ -46,6 +57,7 @@ def cmd_report(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build CLI argument parser."""
     p = argparse.ArgumentParser(prog="doc-benchmark-cli")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -59,6 +71,7 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p = sub.add_parser("compare")
     cmp_p.add_argument("--base", required=True)
     cmp_p.add_argument("--candidate", required=True)
+    cmp_p.add_argument("--spec", default=None, help="Spec file for regression thresholds")
     cmp_p.add_argument("--out-json", default="reports/compare.json")
     cmp_p.add_argument("--out-md", default="reports/compare.md")
     cmp_p.set_defaults(func=cmd_compare)
@@ -72,6 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Entry point."""
     parser = build_parser()
     args = parser.parse_args()
     args.func(args)
