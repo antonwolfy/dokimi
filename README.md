@@ -283,3 +283,24 @@ python report.py results/
 ## License
 
 Internal Intel use.
+
+## Docs benchmark MVP runner (Task 2)
+
+Run:
+```bash
+python cli.py run --root . --spec benchmarks/spec.v1.yaml \
+  --out-json baselines/current.json --out-md reports/current.md
+```
+
+Create baseline once:
+```bash
+cp baselines/current.json baselines/baseline.json
+```
+
+Compare:
+```bash
+python cli.py compare --base baselines/baseline.json --candidate baselines/current.json \
+  --out-json reports/compare.json --out-md reports/compare.md
+```
+
+MVP metrics: `coverage`, `freshness_lite`, `readability`.

@@ -1,0 +1,35 @@
+{
+  "summary": {
+    "docs": 3,
+    "score": 0.6462,
+    "coverage": 0.7694,
+    "freshness_lite": 1.0,
+    "readability": 0.0
+  },
+  "docs": [
+    {
+      "path": "docs/context7-comparison.md",
+      "chunks": 11,
+      "coverage": 1.0,
+      "freshness_lite": 1.0,
+      "readability": 0.0,
+      "score": 0.75
+    },
+    {
+      "path": "docs/review-da.md",
+      "chunks": 4,
+      "coverage": 0.6082,
+      "freshness_lite": 1.0,
+      "readability": 0.0,
+      "score": 0.5737
+    },
+    {
+      "path": "docs/review-intel.md",
+      "chunks": 5,
+      "coverage": 0.7,
+      "freshness_lite": 1.0,
+      "readability": 0.0,
+      "score": 0.615
+    }
+  ]
+}

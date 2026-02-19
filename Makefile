@@ -1,4 +1,10 @@
-.PHONY: validate-benchmark-spec
+.PHONY: validate-benchmark-spec benchmark-run benchmark-compare
+
+benchmark-run:
+	python cli.py run --root . --spec benchmarks/spec.v1.yaml --out-json baselines/current.json --out-md reports/current.md
+
+benchmark-compare:
+	python cli.py compare --base baselines/baseline.json --candidate baselines/current.json --out-json reports/compare.json --out-md reports/compare.md
 
 validate-benchmark-spec:
 	@command -v yq >/dev/null 2>&1 || { echo "ERROR: yq is not installed"; exit 1; }
