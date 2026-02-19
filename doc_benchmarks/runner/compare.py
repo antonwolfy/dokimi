@@ -24,6 +24,7 @@ def compare_snapshots(base_path: Path, cand_path: Path) -> dict:
         if not isinstance(summary, dict):
             raise ValueError(f"Snapshot missing summary object: {path}")
         missing = required - set(summary.keys())
+        # example_pass_rate is optional (may not be present in old snapshots)
         if missing:
             raise ValueError(f"Snapshot {path} missing summary keys: {sorted(missing)}")
 
@@ -34,4 +35,11 @@ def compare_snapshots(base_path: Path, cand_path: Path) -> dict:
         "freshness_lite": round(cand["summary"]["freshness_lite"] - base["summary"]["freshness_lite"], 4),
         "readability": round(cand["summary"]["readability"] - base["summary"]["readability"], 4),
     }
+    
+    # Include example_pass_rate diff if both snapshots have it
+    if "example_pass_rate" in base["summary"] and "example_pass_rate" in cand["summary"]:
+        diff["example_pass_rate"] = round(
+            cand["summary"]["example_pass_rate"] - base["summary"]["example_pass_rate"], 4
+        )
+    
     return {"base": base["summary"], "candidate": cand["summary"], "diff": diff}

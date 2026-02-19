@@ -4,28 +4,29 @@ name: doc-benchmark-spec-v1
 mode: non_blocking
 
 weights:
-  coverage: 0.45
-  freshness_lite: 0.30
-  readability: 0.25
-  example_pass_rate: 0.0
+  coverage: 0.35
+  freshness_lite: 0.25
+  readability: 0.20
+  example_pass_rate: 0.20
   llm_eval: 0.0
 
 metrics:
   coverage:
     enabled: true
-    weight: 0.45
+    weight: 0.35
     target: 0.90
   freshness_lite:
     enabled: true
-    weight: 0.30
+    weight: 0.25
     max_age_days: 365
   readability:
     enabled: true
-    weight: 0.25
+    weight: 0.20
     grade_max: 12
   example_pass_rate:
-    enabled: false
-    weight: 0.0
+    enabled: true
+    weight: 0.20
+    timeout: 5
   llm_eval:
     enabled: false
     weight: 0.0
