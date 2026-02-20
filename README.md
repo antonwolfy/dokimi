@@ -1,306 +1,529 @@
-# Intel Documentation Quality Benchmark
+# Doc-Benchmark: Automated Documentation Quality Metrics
 
-Automated evaluation of Intel oneAPI documentation quality for AI agents and MCP servers.
+Automated benchmarking tool for documentation quality with **4 metrics**, **gate enforcement**, and **regression detection**.
 
-## Problem
+---
 
-AI coding agents (Cursor, Claude, Copilot) are becoming primary consumers of technical documentation. Intel's docs were designed for humans → agents get generic/hallucinated code instead of Intel-optimized solutions.
+## Quick Start
 
-**We need:** a systematic way to evaluate documentation quality, identify specific gaps, and give product teams actionable fix lists.
-
-## Approach
-
-Two evaluation tracks running in parallel:
-
-### Track 1: Raw Documentation Scan
-Evaluate if documentation structure is AI-agent friendly:
-- Code blocks present and runnable
-- API references complete with parameters/return types
-- Version-specific tags (oneAPI 2024.2 vs 2025.0)
-- No visual-only content (images without text alternatives)
-- Modular chunks suitable for retrieval
-
-### Track 2: MCP Output Quality
-Evaluate what AI agents actually receive via MCP (Context7):
-- Generate 100+ realistic questions per product
-- Test LLM answers WITH docs vs WITHOUT docs
-- Score on multiple dimensions
-- Identify where docs fail to help
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Question Generation                       │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌───────────┐  │
-│  │ML Engineer│  │HPC Dev   │  │Student   │  │AI Agent   │  │
-│  │8 questions│  │8 questions│  │8 questions│  │8 questions│  │
-│  └─────┬────┘  └─────┬────┘  └─────┬────┘  └─────┬─────┘  │
-│        └──────────┬──┴───────────┬──┘             │         │
-│                   ▼              ▼                 ▼         │
-│            ┌──────────────────────────┐                     │
-│            │  ~48 questions/product   │                     │
-│            └────────────┬────────────┘                     │
-└─────────────────────────┼───────────────────────────────────┘
-                          │
-        ┌─────────────────┼─────────────────┐
-        ▼                 ▼                 ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ Context7 API │  │  Raw Docs    │  │  RAGAS        │
-│ fetch docs   │  │  Scanner     │  │  Eval Engine  │
-└──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-       │                 │                 │
-       ▼                 ▼                 ▼
-┌──────────────────────────────────────────────────┐
-│                 LLM Evaluation                    │
-│                                                  │
-│  ┌────────────┐          ┌────────────┐          │
-│  │Answer WITH │          │Answer W/O  │          │
-│  │docs context│          │docs (base) │          │
-│  └─────┬──────┘          └─────┬──────┘          │
-│        └───────────┬───────────┘                 │
-│                    ▼                             │
-│           ┌───────────────┐                      │
-│           │ Multi-dim     │                      │
-│           │ Scoring       │                      │
-│           │ • correctness │                      │
-│           │ • completeness│                      │
-│           │ • specificity │                      │
-│           │ • code quality│                      │
-│           │ • actionability│                     │
-│           └───────┬───────┘                      │
-└───────────────────┼──────────────────────────────┘
-                    ▼
-┌──────────────────────────────────────────────────┐
-│              Gap Reports                          │
-│                                                  │
-│  Per-product:                                    │
-│  • Score breakdown by dimension                  │
-│  • Doc gaps by category (API, install, perf...)  │
-│  • Hallucination risks                           │
-│  • Per-persona weak spots                        │
-│  • Actionable fix list for product team          │
-└──────────────────────────────────────────────────┘
-```
-
-## Tech Stack
-
-| Component | Tool | Why |
-|-----------|------|-----|
-| **Eval framework** | [RAGAS](https://github.com/explodinggradients/ragas) | Reference-free RAG metrics, synthetic Q generation, Python native |
-| **Doc retrieval** | [Context7](https://context7.com) API | MCP-standard doc serving, already indexes oneAPI repos |
-| **LLM for answering** | gpt-4o-mini or Claude | Generate answers with/without docs |
-| **LLM for scoring** | Claude (different from answering model) | Eliminates self-evaluation bias |
-| **Question generation** | Custom + RAGAS | Persona-based generation on top of RAGAS knowledge graphs |
-| **Reporting** | Custom | Jira-ready action items + markdown summary |
-
-### Why RAGAS?
-
-- **Generates synthetic questions** from doc corpus via knowledge graphs (diverse: simple, reasoning, multi-hop)
-- **Reference-free metrics** — no ground truth needed, evaluates from docs alone
-- **Context precision/recall** — directly measures if docs cover what's needed
-- **Faithfulness** — catches hallucinations when docs are missing
-- **Python native** (`pip install ragas`)
-
-### Why not just Context7's built-in benchmark?
-
-Context7 generates ~10-15 generic questions per library. We need:
-- 100+ questions with persona-specific angles
-- Multi-dimensional scoring (not just "can it answer?")
-- Gap categorization (API coverage, install, performance, migration...)
-- Comparative analysis (with docs vs without)
-- Actionable reports per product team
-
-## Products in Scope
-
-### Open Source (via Context7)
-| Product | Context7 ID | Status |
-|---------|-------------|--------|
-| oneTBB | uxlfoundation/onetbb | ✅ 290K tokens, 853 snippets |
-| oneDNN | uxlfoundation/onednn | ✅ 411K tokens, 941 snippets |
-| oneDAL | TBD | ❓ Check availability |
-| scikit-learn-intelex | TBD | ❓ Check availability |
-| Intel Distribution for Python | TBD | ❓ Check availability |
-| optimization-zone | intel/optimization-zone | ✅ 32K tokens, 295 snippets |
-
-### Proprietary (Custom MCP needed)
-| Product | Notes |
-|---------|-------|
-| Intel MKL (binary) | Not on Context7, needs custom ingestion |
-| VTune Profiler | Proprietary docs |
-| Intel Advisor | Proprietary docs |
-
-## Personas
-
-| Persona | Focus Areas | Difficulty Mix |
-|---------|-------------|----------------|
-| **ML Engineer** | PyTorch/TF integration, training optimization, batch processing | 2B + 3I + 3A |
-| **HPC Developer** | Parallel algorithms, NUMA, vectorization, memory mgmt | 2B + 3I + 3A |
-| **CS Student** | Getting started, basic examples, installation, concepts | 2B + 3I + 3A |
-| **DevOps/CI Engineer** | Install, config, env vars, Docker, CI/CD integration, monitoring | 2B + 3I + 3A |
-| **Migration Engineer** | CUDA→oneAPI, OpenMP→TBB, std::thread→TBB, API mapping, interop | 2B + 3I + 3A |
-| **AI Coding Agent** | API refs, code snippets, best practices, error handling | 2B + 3I + 3A |
-| **Troubleshooter** | Error messages, debugging, performance regression, common pitfalls | 2B + 3I + 3A |
-| **Framework Integrator** | Using Intel libs inside PyTorch/TF/JAX/ONNX, plugin architecture | 2B + 3I + 3A |
-
-*B=Beginner, I=Intermediate, A=Advanced. 8 questions per persona × 8 personas = 64 questions per product.*
-
-### Question Category Distribution
-
-Target distribution to avoid over-indexing on API reference:
-
-| Category | Target % | Rationale |
-|----------|----------|-----------|
-| Integration/interop | 22% | #1 adoption driver, AI agents struggle here |
-| Performance tuning | 20% | Core Intel value prop |
-| Error/troubleshooting | 18% | Most common real-world queries |
-| API reference | 15% | AI agents already handle well from training data |
-| Migration | 13% | Key for CUDA→oneAPI conversion |
-| Getting started | 12% | Important for students/new users |
-
-## Scoring Dimensions
-
-| Dimension | What it measures | Scale |
-|-----------|-----------------|-------|
-| **Correctness** | Are facts, APIs, code examples accurate? | 0-100 |
-| **Completeness** | Does answer cover expected topics? | 0-100 |
-| **Specificity** | Intel-specific APIs/functions vs generic advice? | 0-100 |
-| **Code Quality** | Working, idiomatic, copy-paste ready? | 0-100 |
-| **Actionability** | Can developer immediately use this? | 0-100 |
-
-Plus RAGAS metrics:
-- **Context Precision** — are relevant doc chunks retrieved?
-- **Context Recall** — do docs cover what's needed?
-- **Faithfulness** — does answer stick to doc facts?
-
-## Output: Gap Reports
-
-Each product team gets **Jira-ready action items**, not academic reports:
-
-1. **Score card** — overall and per-dimension scores
-2. **Gap list** — specific missing documentation with severity (% questions failing)
-3. **Hallucination risks** — where LLMs make up Intel APIs (high severity)
-4. **Persona pain points** — which user types are worst served
-5. **Priority fixes** — ranked by impact, with specific fix description (e.g., "Add parallel_for example to Getting Started section"), effort estimate, suggested owner
-
-### Report Example
-```
-## oneTBB: Score 67/100
-
-### Top Issue: Flow Graph Examples Missing (8 questions failed)
-- Severity: HIGH (affects 3 personas)
-- Example query: "How do I build a data flow pipeline with oneTBB?"
-- Retrieved context: [2 snippets, low relevance]
-- Fix: Add flow graph tutorial with producer-consumer example
-- Effort: 2-3 days
-- Owner: TBB doc team
-```
-
-### Known Documentation Problems (Pre-existing)
-
-| Product | Known Issues |
-|---------|-------------|
-| oneTBB | Flow graph docs sparse, CMake integration scattered |
-| oneDNN | Good API ref, poor tutorials, framework integration barely documented |
-| oneMKL | Interface vs binary confusion, unclear which to use when |
-| VTune/Advisor | CLI docs second-class, metrics glossary missing |
-| All products | "Quick Start → API Ref" cliff with no middle ground |
-
-## Architecture Decisions
-
-### Separate Generation and Evaluation Models
-Use different LLMs for answering questions vs scoring answers. Prevents self-evaluation bias where a model rates its own style favorably.
-
-### Retrieval Quality Validation
-Before scoring answers, validate that Context7 returned relevant context. Flag cases where retrieval failed — don't blame docs for retrieval problems. Store all retrieved context for audit trail.
-
-### RAGAS: Hybrid Approach
-- RAGAS for retrieval quality metrics (context precision, context recall)
-- Custom LLM-as-judge for answer quality (correctness, specificity, actionability)
-- RAGAS requires specific data formats; use selectively, not as monolith
-
-### Caching Layer
-Cache Context7 responses locally (keyed by product + query). Reduces API calls during iterative testing, enables offline development.
-
-### Full Artifact Storage
-Every run stores: raw LLM responses, retrieved context, prompt templates, model configs, token counts. Enables auditing and dispute resolution.
-
-## Development Plan
-
-- [ ] **Phase 1:** Setup & pilot (oneTBB)
-  - [ ] Context7 API connector with retry/cache
-  - [ ] Persona question generator (8 personas × 8 questions)
-  - [ ] Separate answering model from scoring model
-  - [ ] Retrieval relevance validation
-  - [ ] Full artifact storage (raw responses, context, prompts)
-  - [ ] RAGAS integration (context precision/recall)
-  - [ ] Scoring pipeline with cost tracking
-  - [ ] Run pilot on oneTBB, validate scores against known doc issues
-  - [ ] Create 5-10 gold standard Q&A for scorer calibration
-- [ ] **Phase 2:** Track 1 — Raw Doc Scanner
-  - [ ] Define structural metrics (code blocks, API completeness, version tags, link validity)
-  - [ ] Implement scanner (Vale/markdownlint + custom checks)
-  - [ ] Correlate structural issues with answer quality issues
-- [ ] **Phase 3:** Scale to all products
-  - [ ] Run benchmarks for oneDNN, oneDAL, scikit-learn-intelex
-  - [ ] Solve proprietary doc ingestion (MKL, VTune, Advisor) — legal approval needed
-  - [ ] Generate Jira-ready per-team reports
-  - [ ] Pilot report with oneTBB team, iterate format
-- [ ] **Phase 4:** Automation & CI
-  - [ ] Scheduled re-runs (track quality over time)
-  - [ ] Dashboard or summary notifications
-  - [ ] Integration with doc build pipelines
-
-## Organizational Prerequisites
-
-- [ ] **VP-level exec sponsor** — needed before scaling beyond pilot
-- [ ] **Legal approval** for proprietary doc scraping (VTune, Advisor, MKL binary)
-- [ ] **Cross-functional alignment** — DevRel, Eng, Tech Writers (frame as "helping prioritize" not "auditing")
-- [ ] **Pilot buy-in** from oneTBB team
-
-## Setup
-
+### Installation
 ```bash
-pip install ragas datasets openai anthropic
+pip install PyYAML
 # or
 pip install -r requirements.txt
 ```
 
-## Usage
-
+### Basic Run
 ```bash
-# Run benchmark for a single product
-python benchmark.py oneTBB
-
-# Run all products
-python benchmark.py
-
-# Generate report only (from existing results)
-python report.py results/
+python cli.py run --root . --spec benchmarks/spec.v1.yaml \
+  --out-json baselines/current.json \
+  --out-md reports/current.md
 ```
+
+### Compare Snapshots
+```bash
+python cli.py compare \
+  --base baselines/baseline.json \
+  --candidate baselines/current.json \
+  --spec benchmarks/spec.v1.yaml \
+  --out-json reports/compare.json \
+  --out-md reports/compare.md
+```
+
+### Strict Mode (CI Blocking)
+```bash
+python cli.py run --root . --spec benchmarks/spec.v1.yaml \
+  --out-json baselines/current.json \
+  --out-md reports/current.md \
+  --strict
+# Exits 1 if hard gate fails or critical band violated
+```
+
+---
+
+## Metrics (4 Active)
+
+### 1. Coverage (weight 0.35)
+**What:** Structure coverage — presence of headings, code blocks, body content  
+**Scorer:** Heuristic based on:
+- Headings (H1-H6): 40% weight
+- Code blocks (fenced): 30% weight
+- Body text (word count): 30% weight
+
+**Range:** 0.0 (empty) → 1.0 (well-structured)
+
+---
+
+### 2. Freshness (`freshness_lite`) (weight 0.25)
+**What:** File modification age-based scoring  
+**Scorer:** Linear decay from 1.0 (fresh) to 0.0 (stale)  
+**Config:** `max_age_days` (default 365) in spec
+
+**Formula:**
+```
+score = 1.0 - (age_days / max_age_days)
+```
+
+**Range:** 0.0 (>365 days old) → 1.0 (recently modified)
+
+---
+
+### 3. Readability (weight 0.20)
+**What:** Flesch-Kincaid grade level (inverse)  
+**Scorer:** FK formula on text (code blocks stripped)  
+**Config:** `grade_max` (default 12) in spec
+
+**Formula:**
+```
+FK = 0.39 * (words/sentences) + 11.8 * (syllables/words) - 15.59
+score = 1.0 - (FK / grade_max)
+```
+
+**Range:** 0.0 (complex/academic) → 1.0 (simple/clear)
+
+---
+
+### 4. Example Pass Rate (weight 0.20)
+**What:** Percentage of runnable code examples that execute successfully  
+**Executor:** Isolated subprocess (python, bash, sh)  
+**Config:** `timeout` (default 5s) in spec
+
+**Supported languages:**
+- `python` (python3 -c)
+- `bash` (bash -c)
+- `sh` (sh -c)
+
+**Range:** 0.0 (all examples fail) → 1.0 (all examples pass)
+
+**Features:**
+- Case-insensitive language tags (```Python → python)
+- Metadata support (```python title="x.py")
+- Per-example results in output (index, lang, passed, error)
+- Configurable timeout
+
+---
+
+## Gates & Enforcement
+
+### Soft Gate (Report-Only)
+**Purpose:** Visibility into score vs. target without blocking CI
+
+**Behavior:**
+- Always runs (if enabled in spec)
+- Adds `gate.soft` section to snapshot
+- Shows PASS/FAIL/DISABLED in markdown report
+- **Never fails CI** (exit 0)
+
+**Config:**
+```yaml
+future:
+  soft_gate:
+    enabled: true
+    min_score: 0.80
+```
+
+**Report example:**
+```
+## Soft Gate
+❌ **Status:** FAIL
+- Min score: 0.8000
+- Actual score: 0.7245
+```
+
+---
+
+### Hard Gate (Strict Mode)
+**Purpose:** Block CI/PR if docs quality below threshold
+
+**Behavior:**
+- Only enforced with `--strict` flag
+- Checks `future.hard_gate` in spec
+- **Exits 1** if score < min_score
+- Prints clear stderr message
+
+**Config:**
+```yaml
+future:
+  hard_gate:
+    enabled: true
+    min_score: 0.85
+```
+
+**Usage:**
+```bash
+python cli.py run --spec benchmarks/spec.v1.yaml --strict
+# Exit 1 if score < 0.85
+# Stderr: ❌ HARD GATE FAILED: score 0.7245 < 0.8500
+```
+
+---
+
+### Critical Bands
+**Purpose:** Fail on specific metric thresholds (score, coverage, etc.)
+
+**Behavior:**
+- Only enforced with `--strict` flag
+- Checks `critical_bands.fail_on` list in spec
+- **Exits 1** if any condition violated
+
+**Supported conditions:**
+- `score_below`
+- `coverage_below`
+- `freshness_below` (checks `freshness_lite` metric)
+- `readability_below`
+
+**Config:**
+```yaml
+critical_bands:
+  fail_on:
+    - condition: score_below
+      value: 0.60
+    - condition: coverage_below
+      value: 0.70
+```
+
+**Example stderr:**
+```
+❌ CRITICAL BAND VIOLATIONS:
+  - score_below: 0.5524 < 0.6000
+  - coverage_below: 0.6512 < 0.7000
+```
+
+---
+
+## Regression Detection
+
+### Purpose
+Identify quality drops between baseline and candidate snapshots
+
+### Severity Levels
+- **OK:** Improvement or drop within acceptable range
+- **WARN:** Drop exceeds warning threshold (e.g. score -3%)
+- **CRITICAL:** Drop exceeds critical threshold (e.g. score -8%)
+
+### Config
+```yaml
+thresholds:
+  regressions:
+    score_drop_warn: 0.03      # 3% drop → WARN
+    score_drop_critical: 0.08  # 8% drop → CRITICAL
+    metric_drop_warn: 0.05     # 5% metric drop → WARN
+    metric_drop_critical: 0.12 # 12% metric drop → CRITICAL
+```
+
+### Usage
+```bash
+python cli.py compare \
+  --base baselines/baseline.json \
+  --candidate baselines/current.json \
+  --spec benchmarks/spec.v1.yaml \
+  --out-json reports/compare.json \
+  --out-md reports/compare.md
+```
+
+### Report Example
+```markdown
+## Regression Analysis
+🔴 **CRITICAL regressions detected**
+
+🔴 **Score:** -0.1000 (CRITICAL)
+🟡 **coverage:** -0.0600 (WARN)
+✅ **freshness_lite:** +0.0100 (OK)
+✅ **readability:** +0.0050 (OK)
+```
+
+---
+
+## CLI Reference
+
+### `run` — Benchmark documentation
+```bash
+python cli.py run [OPTIONS]
+
+Options:
+  --root PATH         Root directory (default: .)
+  --spec PATH         Spec file (default: benchmarks/spec.v1.yaml)
+  --out-json PATH     Output snapshot JSON (default: baselines/current.json)
+  --out-md PATH       Output report MD (default: reports/current.md)
+  --strict            Enable hard gate + critical bands (exit 1 on fail)
+```
+
+**Outputs:**
+- JSON snapshot: `summary` (scores), `docs[]` (per-file), `gate` (status)
+- Markdown report: Summary, Gate Status (if enabled), Docs breakdown
+
+---
+
+### `compare` — Compare snapshots with regression analysis
+```bash
+python cli.py compare [OPTIONS]
+
+Options:
+  --base PATH         Baseline snapshot (required)
+  --candidate PATH    Candidate snapshot (required)
+  --spec PATH         Spec file for regression thresholds (optional)
+  --out-json PATH     Output comparison JSON (default: reports/compare.json)
+  --out-md PATH       Output report MD (default: reports/compare.md)
+```
+
+**Outputs:**
+- JSON: `base`, `candidate`, `diff`, `regressions` (if spec provided)
+- Markdown report: Diff, Regression Analysis (with severity)
+
+---
+
+### `report` — Render JSON to markdown
+```bash
+python cli.py report [OPTIONS]
+
+Options:
+  --input PATH        JSON snapshot or comparison (required)
+  --out-md PATH       Output report MD (default: reports/report.md)
+```
+
+---
+
+## Spec Configuration
+
+### Structure
+```yaml
+version: 1
+schema: ./spec.schema.json
+name: doc-benchmark-spec-v1
+mode: non_blocking
+
+weights:
+  coverage: 0.35
+  freshness_lite: 0.25
+  readability: 0.20
+  example_pass_rate: 0.20
+  llm_eval: 0.0  # Future metric
+
+metrics:
+  coverage:
+    enabled: true
+    weight: 0.35
+    target: 0.90
+  freshness_lite:
+    enabled: true
+    weight: 0.25
+    max_age_days: 365
+  readability:
+    enabled: true
+    weight: 0.20
+    grade_max: 12
+  example_pass_rate:
+    enabled: true
+    weight: 0.20
+    timeout: 5
+
+thresholds:
+  score:
+    green: 0.85
+    yellow: 0.70
+    red: 0.0
+  regressions:
+    score_drop_warn: 0.03
+    score_drop_critical: 0.08
+    metric_drop_warn: 0.05
+    metric_drop_critical: 0.12
+
+critical_bands:
+  fail_on:
+    - condition: score_below
+      value: 0.60
+    - condition: coverage_below
+      value: 0.70
+
+ci:
+  policy: non_blocking
+  report_formats:
+    - json
+    - markdown
+
+future:
+  soft_gate:
+    enabled: false
+    min_score: 0.80
+  hard_gate:
+    enabled: false
+    min_score: 0.85
+
+golden_manifest:
+  min_docs: 10
+  max_docs: 20
+  include:
+    - docs/**/*.md
+  exclude:
+    - docs/archive/**
+```
+
+### Weight Normalization
+Weights are **automatically normalized** across active metrics. If a metric is disabled, its weight is redistributed.
+
+Example:
+- `example_pass_rate` disabled → weights rebalanced so coverage/freshness/readability sum to 1.0
+- No manual adjustment needed
+
+---
+
+## CI Integration
+
+### Basic Workflow (Non-Blocking)
+```yaml
+name: docs-quality
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Non-blocking
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Run benchmark
+        run: |
+          python cli.py run --root . --spec benchmarks/spec.v1.yaml \
+            --out-json baselines/current.json --out-md reports/current.md
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-quality-report
+          path: |
+            baselines/current.json
+            reports/current.md
+```
+
+### Optional: Strict Mode on Demand
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: 'Enable strict mode (exit 1 on gate/band fail)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ github.event.inputs.strict != 'true' }}
+    steps:
+      # ... same setup ...
+      - name: Run benchmark
+        run: |
+          python cli.py run --root . --spec benchmarks/spec.v1.yaml \
+            --out-json baselines/current.json --out-md reports/current.md \
+            ${{ github.event.inputs.strict == 'true' && '--strict' || '' }}
+```
+
+---
+
+## Validation
+
+### Validate Spec
+```bash
+make validate-benchmark-spec
+```
+
+**Output:**
+```
+Checking YAML parse for benchmarks/spec.v1.yaml
+Converting YAML -> JSON and validating against benchmarks/spec.schema.json
+✅ Benchmark spec is valid
+```
+
+**Requirements:**
+- `yq` (YAML processor)
+- `npx` (or global `ajv-cli`)
+
+---
+
+## Project Structure
+
+```
+doc-benchmark/
+├── benchmarks/
+│   ├── spec.v1.yaml          # Configuration
+│   └── spec.schema.json      # JSON Schema validation
+├── doc_benchmarks/
+│   ├── ingest/
+│   │   ├── loader.py         # Markdown discovery
+│   │   └── chunker.py        # Text chunking
+│   ├── metrics/
+│   │   ├── coverage.py       # Structure scorer
+│   │   ├── freshness_lite.py # Age scorer
+│   │   ├── readability.py    # FK grade scorer
+│   │   └── example_runner.py # Code execution
+│   ├── runner/
+│   │   ├── run.py            # Orchestration
+│   │   └── compare.py        # Diff + regressions
+│   ├── report/
+│   │   ├── json_report.py    # JSON writer
+│   │   └── markdown_report.py# MD renderer
+│   └── gate/
+│       ├── soft_gate.py      # Report-only gate
+│       ├── hard_gate.py      # Enforced gate
+│       ├── regression.py     # Regression classifier
+│       └── critical_bands.py # Threshold enforcer
+├── cli.py                    # CLI entry point
+├── Makefile                  # Validation targets
+└── .github/workflows/
+    └── docs-quality.yml      # CI workflow
+```
+
+---
+
+## Troubleshooting
+
+### `ModuleNotFoundError: No module named 'yaml'`
+**Solution:** `pip install PyYAML`
+
+### Hard gate doesn't fail CI
+**Cause:** Missing `--strict` flag  
+**Solution:** Add `--strict` to `cli.py run` command
+
+### Unknown critical_bands condition
+**Cause:** Typo in `spec.v1.yaml`  
+**Known conditions:** `score_below`, `coverage_below`, `freshness_below`, `readability_below`  
+**Solution:** Fix typo in spec
+
+### Example execution fails with "Unsupported language"
+**Cause:** Language not in `EXECUTORS` dict  
+**Supported:** python, bash, sh  
+**Solution:** Extend `doc_benchmarks/metrics/example_runner.py` with new executor
+
+---
+
+## Roadmap
+
+- [x] Core metrics (coverage, freshness, readability, examples)
+- [x] Soft gate (report-only)
+- [x] Hard gate (strict mode)
+- [x] Critical bands enforcement
+- [x] Regression detection (WARN/CRITICAL)
+- [ ] Unit tests (pytest suite)
+- [ ] LLM eval metric (semantic quality)
+- [ ] Baseline versioning (auto-update on main)
+- [ ] Additional languages (java, rust, c++)
+
+---
 
 ## License
 
 Internal Intel use.
 
-## Docs benchmark MVP runner (Task 2)
+---
 
-Run:
-```bash
-python cli.py run --root . --spec benchmarks/spec.v1.yaml \
-  --out-json baselines/current.json --out-md reports/current.md
-```
+## Contributing
 
-Create baseline once:
-```bash
-cp baselines/current.json baselines/baseline.json
-```
-
-Compare:
-```bash
-python cli.py compare --base baselines/baseline.json --candidate baselines/current.json \
-  --out-json reports/compare.json --out-md reports/compare.md
-```
-
-MVP metrics: `coverage`, `freshness_lite`, `readability`.
+See [MANUAL_TEST_PLAN.md](MANUAL_TEST_PLAN.md) for testing guide.
