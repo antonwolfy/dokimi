@@ -4,11 +4,36 @@ on:
   push:
     branches: [ main ]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: 'Enable strict mode (exit 1 on gate/band fail)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r requirements-test.txt
+      - name: Run tests
+        run: pytest --cov=doc_benchmarks --cov-report=term --cov-report=xml
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        if: always()
+        with:
+          files: ./coverage.xml
+          flags: unittests
+
   benchmark:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    continue-on-error: ${{ github.event.inputs.strict != 'true' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -18,7 +43,9 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run benchmark
         run: |
-          python cli.py run --root . --spec benchmarks/spec.v1.yaml --out-json baselines/current.json --out-md reports/current.md
+          python cli.py run --root . --spec benchmarks/spec.v1.yaml \
+            --out-json baselines/current.json --out-md reports/current.md \
+            ${{ github.event.inputs.strict == 'true' && '--strict' || '' }}
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
