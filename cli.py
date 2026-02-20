@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from doc_benchmarks.report.json_report import write_json
@@ -16,14 +17,43 @@ from doc_benchmarks.runner.run import run_benchmark, save_snapshot
 def cmd_run(args: argparse.Namespace) -> None:
     """Run benchmark and save snapshot + report."""
     root = Path(args.root).resolve()
-    spec = Path(args.spec).resolve()
+    spec_path = Path(args.spec).resolve()
     out_json = Path(args.out_json).resolve()
     out_md = Path(args.out_md).resolve()
 
-    result = run_benchmark(root, spec)
+    result = run_benchmark(root, spec_path)
     save_snapshot(result, out_json)
     write_run_report(result, out_md)
     print(json.dumps(result["summary"], indent=2))
+
+    # Strict mode: check hard gate and critical bands
+    if args.strict:
+        # Re-load spec for gate checks (run_benchmark loads internally)
+        import yaml
+        spec = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+        if spec is None:
+            spec = {}
+        elif not isinstance(spec, dict):
+            raise ValueError("Spec must be a YAML mapping/dict")
+
+        from doc_benchmarks.gate.hard_gate import check_hard_gate
+        from doc_benchmarks.gate.critical_bands import check_critical_bands
+
+        hard_gate = check_hard_gate(result["summary"], spec)
+        bands = check_critical_bands(result["summary"], spec)
+
+        # Exit 1 if hard gate fails
+        if hard_gate.enabled and not hard_gate.passed:
+            print(f"\n❌ HARD GATE FAILED: score {hard_gate.actual_score:.4f} < {hard_gate.min_score:.4f}", file=sys.stderr)
+            sys.exit(1)
+
+        # Exit 1 if any critical band violated
+        if bands.has_violations:
+            print("\n❌ CRITICAL BAND VIOLATIONS:", file=sys.stderr)
+            for v in bands.violations:
+                if v.violated:
+                    print(f"  - {v.condition}: {v.actual:.4f} < {v.threshold:.4f}", file=sys.stderr)
+            sys.exit(1)
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
@@ -66,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--spec", default="benchmarks/spec.v1.yaml")
     run_p.add_argument("--out-json", default="baselines/current.json")
     run_p.add_argument("--out-md", default="reports/current.md")
+    run_p.add_argument("--strict", action="store_true", help="Enable hard gate and critical bands (exit 1 on failure)")
     run_p.set_defaults(func=cmd_run)
 
     cmp_p = sub.add_parser("compare")
