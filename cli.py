@@ -12,6 +12,8 @@ from doc_benchmarks.report.json_report import write_json
 from doc_benchmarks.report.markdown_report import write_compare_report, write_run_report
 from doc_benchmarks.runner.compare import compare_snapshots
 from doc_benchmarks.runner.run import run_benchmark, save_snapshot
+from doc_benchmarks.personas.analyzer import PersonaAnalyzer
+from doc_benchmarks.personas.generator import PersonaGenerator
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -86,6 +88,80 @@ def cmd_report(args: argparse.Namespace) -> None:
         write_run_report(data, out_md)
 
 
+def cmd_personas_discover(args: argparse.Namespace) -> None:
+    """Discover personas for a product by analyzing GitHub repo."""
+    import os
+    
+    # Initialize analyzer
+    github_token = args.github_token or os.getenv("GITHUB_TOKEN")
+    analyzer = PersonaAnalyzer(github_token=github_token)
+    
+    # Analyze repository
+    print(f"Analyzing repository: {args.repo}")
+    analysis = analyzer.analyze_repository(args.repo)
+    
+    # Save analysis if requested
+    if args.save_analysis:
+        analysis_path = Path(args.output).parent / f"{args.product}_analysis.json"
+        analyzer.save_analysis(analysis, analysis_path)
+        print(f"✓ Saved analysis to {analysis_path}")
+    
+    # Generate personas
+    print(f"Generating personas using {args.model}...")
+    generator = PersonaGenerator(model=args.model, provider=args.provider)
+    
+    personas = generator.generate_personas(
+        library_name=args.product,
+        analysis=analysis,
+        target_count=args.count
+    )
+    
+    # Save personas
+    output_path = Path(args.output)
+    generator.save_personas(personas, output_path)
+    
+    print(f"\n✓ Generated {len(personas['personas'])} personas for {args.product}")
+    print(f"✓ Saved to {output_path}")
+    print("\nNext steps:")
+    print(f"  1. Review: cat {output_path}")
+    print(f"  2. Edit if needed")
+    print(f"  3. Approve: python cli.py personas approve --file {output_path}")
+
+
+def cmd_personas_approve(args: argparse.Namespace) -> None:
+    """Mark persona file as approved (ready for question generation)."""
+    persona_file = Path(args.file)
+    
+    if not persona_file.exists():
+        print(f"✗ File not found: {persona_file}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Validate JSON structure
+    try:
+        personas = json.loads(persona_file.read_text())
+        required_keys = {"product", "personas"}
+        if not required_keys.issubset(personas.keys()):
+            print(f"✗ Invalid persona file. Missing keys: {required_keys - personas.keys()}", file=sys.stderr)
+            sys.exit(1)
+        
+        # Check each persona
+        for p in personas["personas"]:
+            required_fields = {"id", "name", "skill_level"}
+            missing = required_fields - set(p.keys())
+            if missing:
+                print(f"✗ Persona '{p.get('id', '?')}' missing fields: {missing}", file=sys.stderr)
+                sys.exit(1)
+        
+        print(f"✓ Validated {len(personas['personas'])} personas")
+        print(f"✓ File approved: {persona_file}")
+        print("\nReady for question generation:")
+        print(f"  python cli.py questions generate --product {personas['product']} --personas {persona_file}")
+        
+    except json.JSONDecodeError as e:
+        print(f"✗ Invalid JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build CLI argument parser."""
     p = argparse.ArgumentParser(prog="doc-benchmark-cli")
@@ -111,6 +187,35 @@ def build_parser() -> argparse.ArgumentParser:
     rep_p.add_argument("--input", required=True)
     rep_p.add_argument("--out-md", default="reports/report.md")
     rep_p.set_defaults(func=cmd_report)
+
+    # Personas subcommand group
+    personas_p = sub.add_parser("personas", help="Persona discovery and management")
+    personas_sub = personas_p.add_subparsers(dest="personas_cmd", required=True)
+    
+    # personas discover
+    discover_p = personas_sub.add_parser("discover", help="Auto-discover personas from GitHub repo")
+    discover_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    discover_p.add_argument("--repo", required=True, help="GitHub repo (e.g., uxlfoundation/oneTBB)")
+    discover_p.add_argument("--output", default=None, help="Output file (default: personas/{product}.json)")
+    discover_p.add_argument("--count", type=int, default=5, help="Target number of personas (5-8)")
+    discover_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
+    discover_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    discover_p.add_argument("--github-token", default=None, help="GitHub token (or set GITHUB_TOKEN env)")
+    discover_p.add_argument("--save-analysis", action="store_true", help="Save intermediate analysis JSON")
+    discover_p.set_defaults(func=cmd_personas_discover)
+    
+    # Set default output path if not provided
+    def set_default_output(args):
+        if args.output is None:
+            args.output = f"personas/{args.product}.json"
+        return args
+    
+    discover_p.set_defaults(func=lambda args: cmd_personas_discover(set_default_output(args)))
+    
+    # personas approve
+    approve_p = personas_sub.add_parser("approve", help="Validate and approve persona file")
+    approve_p.add_argument("--file", required=True, help="Persona JSON file to approve")
+    approve_p.set_defaults(func=cmd_personas_approve)
 
     return p
 

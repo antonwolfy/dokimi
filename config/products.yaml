@@ -1,0 +1,74 @@
+# Product configuration for LLM evaluation
+
+products:
+  oneTBB:
+    name: "Intel oneAPI Threading Building Blocks"
+    github_repo: "uxlfoundation/oneTBB"
+    context7_library: "oneTBB"  # Will resolve via Context7 API
+    description: "Cross-platform C++ template library for parallel programming"
+    default_personas: 5  # Auto-generate this many personas
+    
+  oneDAL:
+    name: "Intel oneAPI Data Analytics Library"
+    github_repo: "uxlfoundation/oneDAL"
+    context7_library: "oneDAL"
+    description: "High-performance library for data analytics and machine learning"
+    default_personas: 5
+    
+  oneDNN:
+    name: "Intel oneAPI Deep Neural Network Library"
+    github_repo: "uxlfoundation/oneDNN"
+    context7_library: "oneDNN"
+    description: "Performance library for deep learning frameworks"
+    default_personas: 5
+    
+  oneMKL:
+    name: "Intel oneAPI Math Kernel Library"
+    github_repo: "uxlfoundation/oneMKL"
+    context7_library: "oneMKL"
+    description: "High-performance math routines for science, engineering, and financial applications"
+    default_personas: 5
+
+# Context7 MCP configuration
+context7:
+  endpoint: "https://mcp.context7.com/mcp"
+  timeout: 30
+  max_retries: 3
+
+# LLM configuration
+llm:
+  # Model for answering questions
+  answerer:
+    default: "gpt-4o"
+    alternatives: ["claude-sonnet-4", "gpt-4o-mini"]
+  
+  # Model for judging answers (separate to avoid bias)
+  judge:
+    default: "claude-sonnet-4"
+    alternatives: ["gpt-4o", "claude-opus-4"]
+  
+  # Model for persona/question generation
+  generator:
+    default: "gpt-4o-mini"
+    alternatives: ["claude-haiku"]
+
+# Question generation settings
+questions:
+  target_per_persona: 8
+  difficulty_distribution:
+    beginner: 2
+    intermediate: 3
+    advanced: 3
+  validation_threshold: 60  # 0-100 score
+  dedupe_similarity_threshold: 0.85  # cosine similarity
+
+# Evaluation settings
+evaluation:
+  dimensions:
+    - correctness
+    - completeness
+    - specificity
+    - code_quality
+    - actionability
+  scale: 100  # 0-100 scoring
+  gap_threshold: 70  # Scores below this indicate doc gaps
