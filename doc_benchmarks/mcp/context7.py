@@ -157,6 +157,9 @@ class Context7Client(MCPClient):
                 "url": url
             }]
             
+        except (MCPLibraryNotFoundError, MCPConnectionError):
+            raise  # re-raise our own exceptions as-is
+        
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 raise MCPLibraryNotFoundError(
