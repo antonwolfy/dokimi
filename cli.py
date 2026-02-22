@@ -162,6 +162,85 @@ def cmd_personas_approve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_questions_generate(args: argparse.Namespace) -> None:
+    """Generate questions from personas and seed topics."""
+    import os
+    import yaml
+    from doc_benchmarks.questions import RagasSeedExtractor, QuestionGenerator, QuestionValidator
+    from doc_benchmarks.mcp.context7 import create_context7_client
+    
+    # Load config
+    config_path = Path("config/products.yaml")
+    if config_path.exists():
+        config = yaml.safe_load(config_path.read_text())
+    else:
+        config = {}
+    
+    product_config = config.get("products", {}).get(args.product, {})
+    
+    # Load personas
+    personas_data = json.loads(Path(args.personas).read_text())
+    personas = personas_data["personas"]
+    print(f"Loaded {len(personas)} personas from {args.personas}")
+    
+    # Get or extract topics
+    if args.topics:
+        topics = json.loads(Path(args.topics).read_text())
+    else:
+        print(f"Extracting seed topics for {args.product}...")
+        
+        # Setup Context7 MCP client
+        mcp_client = create_context7_client(cache_dir=Path(".cache/context7"))
+        library_id = mcp_client.resolve_library_id(args.product)
+        
+        # Extract topics
+        extractor = RagasSeedExtractor(mcp_client=mcp_client, cache_dir=Path(".cache/topics"))
+        topics = extractor.extract_topics(
+            library_id=library_id,
+            library_name=args.product,
+            max_topics=20
+        )
+        print(f"✓ Extracted {len(topics)} seed topics")
+    
+    # Generate questions
+    print(f"Generating questions using {args.provider}/{args.model}...")
+    generator = QuestionGenerator(model=args.model, provider=args.provider)
+    
+    questions = generator.generate_questions(
+        library_name=args.product,
+        personas=personas,
+        topics=topics,
+        questions_per_topic=args.count
+    )
+    
+    print(f"✓ Generated {len(questions)} questions")
+    
+    # Validate and dedupe (optional)
+    if args.validate:
+        print("Validating and deduplicating...")
+        validator = QuestionValidator(
+            llm_model=args.model,
+            llm_provider=args.provider,
+            threshold=60,
+            similarity_threshold=0.85
+        )
+        
+        questions, stats = validator.validate_and_dedupe(args.product, questions)
+        
+        print(f"✓ Validation complete:")
+        print(f"  Initial: {stats['initial_count']}")
+        print(f"  After validation: {stats['after_validation']}")
+        print(f"  After deduplication: {stats['after_deduplication']}")
+        print(f"  Removed (low score): {stats['removed_low_score']}")
+        print(f"  Removed (duplicates): {stats['removed_duplicates']}")
+    
+    # Save output
+    output_path = Path(args.output) if args.output else Path(f"questions/{args.product}.json")
+    generator.save_questions(questions, output_path)
+    
+    print(f"\n✅ Saved {len(questions)} questions to {output_path}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build CLI argument parser."""
     p = argparse.ArgumentParser(prog="doc-benchmark-cli")
@@ -216,6 +295,22 @@ def build_parser() -> argparse.ArgumentParser:
     approve_p = personas_sub.add_parser("approve", help="Validate and approve persona file")
     approve_p.add_argument("--file", required=True, help="Persona JSON file to approve")
     approve_p.set_defaults(func=cmd_personas_approve)
+    
+    # Questions subcommand group
+    questions_p = sub.add_parser("questions", help="Question generation")
+    questions_sub = questions_p.add_subparsers(dest="questions_cmd", required=True)
+    
+    # questions generate
+    gen_q_p = questions_sub.add_parser("generate", help="Generate questions from personas and topics")
+    gen_q_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    gen_q_p.add_argument("--personas", required=True, help="Path to personas JSON file")
+    gen_q_p.add_argument("--output", default=None, help="Output file (default: questions/{product}.json)")
+    gen_q_p.add_argument("--topics", default=None, help="Optional: path to topics JSON (auto-extracted if not provided)")
+    gen_q_p.add_argument("--count", type=int, default=2, help="Questions per topic per persona")
+    gen_q_p.add_argument("--validate", action="store_true", help="Enable validation and deduplication")
+    gen_q_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
+    gen_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    gen_q_p.set_defaults(func=cmd_questions_generate)
 
     return p
 
