@@ -200,15 +200,27 @@ class QuestionValidator:
         embeddings = self._get_embeddings(texts)
         
         # Build similarity matrix and find duplicates
-        import numpy as np
-        
-        embeddings_array = np.array(embeddings)
-        # Normalize
-        norms = np.linalg.norm(embeddings_array, axis=1, keepdims=True)
-        embeddings_norm = embeddings_array / norms
-        
-        # Cosine similarity matrix
-        similarity = embeddings_norm @ embeddings_norm.T
+        try:
+            import numpy as np
+            
+            embeddings_array = np.array(embeddings)
+            # Normalize
+            norms = np.linalg.norm(embeddings_array, axis=1, keepdims=True)
+            embeddings_norm = embeddings_array / norms
+            
+            # Cosine similarity matrix
+            similarity = embeddings_norm @ embeddings_norm.T
+        except ImportError:
+            logger.warning("numpy not available - using simple exact match deduplication")
+            # Fallback: simple exact text match
+            seen = {}
+            unique = []
+            for q in questions:
+                text = q["text"].lower().strip()
+                if text not in seen:
+                    seen[text] = True
+                    unique.append(q)
+            return unique, []
         
         # Find duplicate groups (similarity > threshold)
         unique_indices = []
