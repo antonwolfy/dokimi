@@ -241,6 +241,65 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
     print(f"\n✅ Saved {len(questions)} questions to {output_path}")
 
 
+def cmd_answers_generate(args: argparse.Namespace) -> None:
+    """Generate answers (WITH and WITHOUT docs) for questions."""
+    import yaml
+    from doc_benchmarks.eval import Answerer
+    from doc_benchmarks.mcp.context7 import create_context7_client
+    
+    # Load config
+    config_path = Path("config/products.yaml")
+    if config_path.exists():
+        config = yaml.safe_load(config_path.read_text())
+    else:
+        config = {}
+    
+    product_config = config.get("products", {}).get(args.product, {})
+    
+    # Load questions
+    questions_data = json.loads(Path(args.questions).read_text())
+    questions = questions_data.get("questions", questions_data)  # Handle both formats
+    print(f"Loaded {len(questions)} questions from {args.questions}")
+    
+    # Setup Context7 MCP client
+    mcp_client = create_context7_client(cache_dir=Path(".cache/context7"))
+    library_id = mcp_client.resolve_library_id(args.product)
+    
+    print(f"Generating answers for {args.product} (library_id={library_id})")
+    print(f"Using model: {args.provider}/{args.model}")
+    
+    # Generate answers
+    answerer = Answerer(
+        mcp_client=mcp_client,
+        model=args.model,
+        provider=args.provider
+    )
+    
+    answers = answerer.generate_answers(
+        library_name=args.product,
+        library_id=library_id,
+        questions=questions,
+        max_tokens_per_question=args.max_tokens
+    )
+    
+    # Count successful answers
+    with_docs_count = sum(1 for a in answers if a.get("with_docs") is not None)
+    without_docs_count = sum(1 for a in answers if a.get("without_docs") is not None)
+    error_count = sum(1 for a in answers if "error" in a)
+    
+    print(f"\n✓ Generated answers:")
+    print(f"  WITH docs: {with_docs_count}/{len(answers)}")
+    print(f"  WITHOUT docs: {without_docs_count}/{len(answers)}")
+    if error_count > 0:
+        print(f"  Errors: {error_count}")
+    
+    # Save output
+    output_path = Path(args.output) if args.output else Path(f"answers/{args.product}.json")
+    answerer.save_answers(answers, output_path)
+    
+    print(f"\n✅ Saved answers to {output_path}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build CLI argument parser."""
     p = argparse.ArgumentParser(prog="doc-benchmark-cli")
@@ -311,6 +370,20 @@ def build_parser() -> argparse.ArgumentParser:
     gen_q_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
     gen_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
     gen_q_p.set_defaults(func=cmd_questions_generate)
+    
+    # Answers subcommand group
+    answers_p = sub.add_parser("answers", help="Answer generation")
+    answers_sub = answers_p.add_subparsers(dest="answers_cmd", required=True)
+    
+    # answers generate
+    gen_a_p = answers_sub.add_parser("generate", help="Generate answers (WITH and WITHOUT docs)")
+    gen_a_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    gen_a_p.add_argument("--questions", required=True, help="Path to questions JSON file")
+    gen_a_p.add_argument("--output", default=None, help="Output file (default: answers/{product}.json)")
+    gen_a_p.add_argument("--model", default="gpt-4o", help="LLM model for answering")
+    gen_a_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    gen_a_p.add_argument("--max-tokens", type=int, default=4000, help="Max tokens to retrieve per question")
+    gen_a_p.set_defaults(func=cmd_answers_generate)
 
     return p
 
