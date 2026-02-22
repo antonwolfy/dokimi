@@ -300,6 +300,42 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
     print(f"\n✅ Saved answers to {output_path}")
 
 
+def cmd_eval_score(args: argparse.Namespace) -> None:
+    """Evaluate answers using LLM-as-judge."""
+    from doc_benchmarks.eval import Judge
+    
+    # Load answers
+    answers_data = json.loads(Path(args.answers).read_text())
+    answers = answers_data.get("answers", answers_data)
+    print(f"Loaded {len(answers)} answers from {args.answers}")
+    
+    print(f"Evaluating with judge: {args.judge_provider}/{args.judge_model}")
+    
+    # Evaluate
+    judge = Judge(
+        model=args.judge_model,
+        provider=args.judge_provider
+    )
+    
+    evaluations = judge.evaluate_answers(args.product, answers)
+    
+    # Calculate statistics
+    with_docs_scores = [e["with_docs"]["aggregate"] for e in evaluations if e.get("with_docs")]
+    without_docs_scores = [e["without_docs"]["aggregate"] for e in evaluations if e.get("without_docs")]
+    deltas = [e["delta"] for e in evaluations if e.get("delta") is not None]
+    
+    print(f"\n✓ Evaluation complete:")
+    print(f"  WITH docs avg: {sum(with_docs_scores)/len(with_docs_scores):.1f}" if with_docs_scores else "  WITH docs: N/A")
+    print(f"  WITHOUT docs avg: {sum(without_docs_scores)/len(without_docs_scores):.1f}" if without_docs_scores else "  WITHOUT docs: N/A")
+    print(f"  Average delta: {sum(deltas)/len(deltas):.1f}" if deltas else "  Delta: N/A")
+    
+    # Save output
+    output_path = Path(args.output) if args.output else Path(f"eval/{args.product}.json")
+    judge.save_evaluations(evaluations, output_path)
+    
+    print(f"\n✅ Saved evaluations to {output_path}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build CLI argument parser."""
     p = argparse.ArgumentParser(prog="doc-benchmark-cli")
@@ -384,6 +420,19 @@ def build_parser() -> argparse.ArgumentParser:
     gen_a_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
     gen_a_p.add_argument("--max-tokens", type=int, default=4000, help="Max tokens to retrieve per question")
     gen_a_p.set_defaults(func=cmd_answers_generate)
+    
+    # Eval subcommand group
+    eval_p = sub.add_parser("eval", help="Evaluate answers")
+    eval_sub = eval_p.add_subparsers(dest="eval_cmd", required=True)
+    
+    # eval score
+    score_p = eval_sub.add_parser("score", help="Score answers using LLM-as-judge")
+    score_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    score_p.add_argument("--answers", required=True, help="Path to answers JSON file")
+    score_p.add_argument("--output", default=None, help="Output file (default: eval/{product}.json)")
+    score_p.add_argument("--judge-model", default="claude-sonnet-4", help="LLM model for judging")
+    score_p.add_argument("--judge-provider", default="anthropic", choices=["openai", "anthropic"])
+    score_p.set_defaults(func=cmd_eval_score)
 
     return p
 
