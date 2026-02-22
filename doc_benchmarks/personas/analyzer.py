@@ -56,22 +56,17 @@ class PersonaAnalyzer:
             repo_name: Repository in format "owner/repo"
             
         Returns:
-            Dictionary with analysis results:
-            {
-                "readme_content": str,
-                "use_cases": List[str],
-                "issues_analysis": {
-                    "common_questions": List[str],
-                    "common_labels": List[str],
-                    "sample_issues": List[dict]
-                },
-                "api_patterns": List[str]
-            }
+            Dictionary with analysis results
         """
-        if not self.github_client:
-            logger.error("GitHub client not available")
-            return self._empty_analysis()
-        
+        # Try PyGithub first, fall back to gh CLI
+        if GITHUB_AVAILABLE and self.github_client:
+            return self._analyze_with_pygithub(repo_name)
+        else:
+            logger.info("PyGithub not available, using gh CLI fallback")
+            return self._analyze_with_gh_cli(repo_name)
+    
+    def _analyze_with_pygithub(self, repo_name: str) -> Dict[str, Any]:
+        """Analyze using PyGithub library."""
         try:
             logger.info(f"Analyzing repository: {repo_name}")
             repo = self.github_client.get_repo(repo_name)
@@ -90,12 +85,100 @@ class PersonaAnalyzer:
             
             return analysis
             
-        except GithubException as e:
-            logger.error(f"GitHub API error: {e}")
-            return self._empty_analysis()
         except Exception as e:
-            logger.error(f"Analysis error: {e}")
+            logger.error(f"PyGithub analysis error: {e}, falling back to gh CLI")
+            return self._analyze_with_gh_cli(repo_name)
+    
+    def _analyze_with_gh_cli(self, repo_name: str) -> Dict[str, Any]:
+        """Analyze using gh CLI as fallback."""
+        import subprocess
+        import json as json_lib
+        
+        try:
+            logger.info(f"Analyzing repository via gh CLI: {repo_name}")
+            
+            # Get basic repo info
+            result = subprocess.run(
+                ["gh", "repo", "view", repo_name, "--json", "description,languages"],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"gh CLI error: {result.stderr}")
+                return self._empty_analysis()
+            
+            repo_data = json_lib.loads(result.stdout)
+            
+            # Get README (first 2000 chars)
+            readme_result = subprocess.run(
+                ["gh", "repo", "view", repo_name],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            readme = readme_result.stdout if readme_result.returncode == 0 else ""
+            
+            return {
+                "readme_content": readme[:2000],
+                "use_cases": self._extract_use_cases_from_text(readme),
+                "issues_analysis": {
+                    "common_questions": [],
+                    "common_labels": [],
+                    "sample_issues": []
+                },
+                "api_patterns": self._extract_api_patterns_from_text(readme),
+                "description": repo_data.get("description", ""),
+                "topics": []
+            }
+            
+        except Exception as e:
+            logger.error(f"gh CLI analysis failed: {e}")
             return self._empty_analysis()
+    
+    
+    @staticmethod
+    def _extract_use_cases_from_text(text: str) -> List[str]:
+        """Extract use cases from text (fallback for gh CLI)."""
+        if not text:
+            return []
+        
+        use_cases = []
+        lines = text.lower().split('\n')
+        in_use_case_section = False
+        
+        for line in lines:
+            if any(keyword in line for keyword in ['use case', 'application', 'when to use']):
+                in_use_case_section = True
+                continue
+            
+            if in_use_case_section:
+                if line.startswith('#'):
+                    in_use_case_section = False
+                elif line.strip().startswith(('-', '*', '•')):
+                    use_cases.append(line.strip().lstrip('-*• '))
+        
+        return use_cases[:10]
+    
+    @staticmethod
+    def _extract_api_patterns_from_text(text: str) -> List[str]:
+        """Extract API patterns from text (fallback for gh CLI)."""
+        if not text:
+            return []
+        
+        patterns = []
+        in_code_block = False
+        
+        for line in text.split('\n'):
+            if line.strip().startswith('```'):
+                in_code_block = not in_code_block
+                continue
+            
+            if in_code_block and ('::' in line or '.' in line):
+                patterns.append(line.strip())
+        
+        return patterns[:20]
     
     def _get_readme(self, repo) -> str:
         """Extract README content."""
