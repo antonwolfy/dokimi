@@ -14,6 +14,8 @@ try:
 except ImportError:
     LANGCHAIN_AVAILABLE = False
 
+from .reranker import SimpleReranker
+
 
 ANSWER_PROMPT_WITH_DOCS = """You are a technical documentation expert answering a user question.
 
@@ -52,7 +54,10 @@ class Answerer:
         mcp_client=None,
         model: str = "gpt-4o",
         provider: str = "openai",
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        top_k: int = 5,
+        rerank_threshold: float = 0.3,
+        debug_retrieval: bool = False
     ):
         """
         Args:
@@ -60,6 +65,9 @@ class Answerer:
             model: LLM model name
             provider: "openai" or "anthropic"
             api_key: Optional API key
+            top_k: Number of docs to retrieve before reranking
+            rerank_threshold: Minimum relevance score (0-1) to keep docs
+            debug_retrieval: If True, include detailed retrieval metadata in output
         """
         if not LANGCHAIN_AVAILABLE:
             raise ImportError(
@@ -70,11 +78,41 @@ class Answerer:
         self.mcp_client = mcp_client
         self.model = model
         self.provider = provider
+        self.top_k = top_k
+        self.debug_retrieval = debug_retrieval
+        
+        # Initialize reranker
+        self.reranker = SimpleReranker(threshold=rerank_threshold)
+        logger.info(f"Reranker initialized with threshold={rerank_threshold:.2f}")
+        
+        # If api_key not provided, check environment
+        if not api_key:
+            import os
+            if provider == "openai":
+                api_key = os.getenv("OPENAI_API_KEY")
+            elif provider == "anthropic":
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+        
+        # Check for OpenRouter API key (starts with sk-or-)
+        openrouter_base = None
+        if api_key and api_key.startswith("sk-or-"):
+            openrouter_base = "https://openrouter.ai/api/v1"
+            logger.info("Detected OpenRouter API key, using openrouter.ai endpoint")
         
         if provider == "openai":
-            self.llm = ChatOpenAI(model=model, api_key=api_key)
+            if api_key:
+                self.llm = ChatOpenAI(
+                    model=model, 
+                    api_key=api_key,
+                    base_url=openrouter_base
+                )
+            else:
+                self.llm = ChatOpenAI(model=model)
         elif provider == "anthropic":
-            self.llm = ChatAnthropic(model=model, api_key=api_key)
+            if api_key:
+                self.llm = ChatAnthropic(model=model, api_key=api_key)
+            else:
+                self.llm = ChatAnthropic(model=model)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
         
@@ -158,8 +196,28 @@ class Answerer:
         # WITH docs
         with_docs_answer = None
         if self.mcp_client is not None:
-            retrieved_docs = self._retrieve_docs(library_id, question_text, max_tokens)
-            with_docs_answer = self._generate_with_docs(question_text, retrieved_docs)
+            retrieved_docs, retrieval_metadata = self._retrieve_docs(
+                library_id, question_text, max_tokens
+            )
+            
+            if retrieved_docs:
+                # Generate answer with retrieved docs
+                with_docs_answer = self._generate_with_docs(
+                    question_text, retrieved_docs, retrieval_metadata
+                )
+            else:
+                # Fallback: no relevant docs found
+                logger.warning(
+                    f"No relevant docs for {question['id']}, "
+                    f"metadata: {retrieval_metadata}"
+                )
+                with_docs_answer = {
+                    "answer": "[FALLBACK: No relevant documentation found]",
+                    "retrieved_docs": [],
+                    "model": self.model,
+                    "doc_source": "fallback_none",
+                    "retrieval_metadata": retrieval_metadata if self.debug_retrieval else None
+                }
         else:
             logger.warning(f"No MCP client - skipping WITH docs for {question['id']}")
         
@@ -179,24 +237,62 @@ class Answerer:
         library_id: str,
         question: str,
         max_tokens: int
-    ) -> List[Dict[str, Any]]:
-        """Retrieve relevant docs via MCP client."""
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """
+        Retrieve relevant docs via MCP client with reranking.
+        
+        Returns:
+            (docs, metadata): Reranked docs and retrieval metadata dict
+        """
+        metadata = {
+            "raw_count": 0,
+            "after_rerank": 0,
+            "top_score": None,
+            "avg_score": None,
+            "fallback_triggered": False
+        }
+        
         try:
-            docs = self.mcp_client.get_library_docs(
+            # Retrieve top-k docs
+            # Note: Context7 client returns single doc, so we call it once for now
+            # TODO: Update Context7 client to support top_k natively
+            raw_docs = self.mcp_client.get_library_docs(
                 library_id=library_id,
                 query=question,
                 max_tokens=max_tokens
             )
-            logger.info(f"Retrieved {len(docs)} doc chunks")
-            return docs
+            metadata["raw_count"] = len(raw_docs)
+            logger.info(f"Retrieved {len(raw_docs)} raw doc chunks")
+            
+            if not raw_docs:
+                return [], metadata
+            
+            # Rerank docs by relevance
+            reranked_docs = self.reranker.rerank(question, raw_docs)
+            metadata["after_rerank"] = len(reranked_docs)
+            
+            if reranked_docs:
+                scores = [d.get('relevance_score', 0) for d in reranked_docs]
+                metadata["top_score"] = round(max(scores), 3)
+                metadata["avg_score"] = round(sum(scores) / len(scores), 3)
+                
+                # Keep top 3 after reranking
+                return reranked_docs[:3], metadata
+            else:
+                # No docs passed threshold
+                metadata["fallback_triggered"] = True
+                logger.warning(f"No docs passed rerank threshold for question")
+                return [], metadata
+                
         except Exception as e:
             logger.error(f"Doc retrieval failed: {e}")
-            return []
+            return [], metadata
     
     def _generate_with_docs(
         self,
         question: str,
-        docs: List[Dict[str, Any]]
+        docs: List[Dict[str, Any]],
+        retrieval_metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Generate answer WITH documentation context."""
         if not docs:
@@ -204,7 +300,8 @@ class Answerer:
                 "answer": "[No documentation retrieved]",
                 "retrieved_docs": [],
                 "model": self.model,
-                "doc_source": "none"
+                "doc_source": "none",
+                "retrieval_metadata": retrieval_metadata if self.debug_retrieval else None
             }
         
         # Format docs
@@ -219,18 +316,25 @@ class Answerer:
         response = self.llm.invoke(prompt)
         answer_text = response.content if hasattr(response, "content") else str(response)
         
-        return {
+        result = {
             "answer": answer_text,
             "retrieved_docs": [
                 {
                     "source": d.get("source", "unknown"),
-                    "snippet": d["content"][:200] + "..." if len(d["content"]) > 200 else d["content"]
+                    "snippet": d["content"][:200] + "..." if len(d["content"]) > 200 else d["content"],
+                    "relevance_score": d.get("relevance_score")
                 }
                 for d in docs
             ],
             "model": self.model,
             "doc_source": docs[0].get("source", "unknown") if docs else "none"
         }
+        
+        # Add metadata if debug mode enabled
+        if self.debug_retrieval and retrieval_metadata:
+            result["retrieval_metadata"] = retrieval_metadata
+        
+        return result
     
     def _generate_without_docs(self, question: str) -> Dict[str, Any]:
         """Generate answer WITHOUT documentation (baseline)."""

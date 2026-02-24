@@ -272,7 +272,10 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
     answerer = Answerer(
         mcp_client=mcp_client,
         model=args.model,
-        provider=args.provider
+        provider=args.provider,
+        top_k=args.top_k,
+        rerank_threshold=args.rerank_threshold,
+        debug_retrieval=args.debug_retrieval
     )
     
     answers = answerer.generate_answers(
@@ -336,6 +339,38 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
     print(f"\n✅ Saved evaluations to {output_path}")
 
 
+def cmd_report_generate(args: argparse.Namespace) -> None:
+    """Generate comprehensive analysis report from eval results."""
+    from doc_benchmarks.report import ReportGenerator
+    
+    # Load eval and questions
+    eval_data = json.loads(Path(args.eval).read_text())
+    questions_data = json.loads(Path(args.questions).read_text())
+    
+    print(f"Loaded {len(eval_data.get('evaluations', []))} evaluations from {args.eval}")
+    print(f"Loaded {len(questions_data.get('questions', []))} questions from {args.questions}")
+    
+    # Generate report
+    generator = ReportGenerator()
+    report = generator.generate_report(
+        eval_data=eval_data,
+        questions_data=questions_data,
+        output_format=args.format
+    )
+    
+    # Save output
+    output_path = Path(args.output) if args.output else Path(f"reports/{args.product}.{args.format}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(report)
+    
+    print(f"\n✅ Generated report: {output_path}")
+    
+    # Print summary to console
+    if args.format == "markdown":
+        print("\n" + "="*80)
+        print(report.split("---")[0])  # Print just the summary section
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build CLI argument parser."""
     p = argparse.ArgumentParser(prog="doc-benchmark-cli")
@@ -357,10 +392,18 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p.add_argument("--out-md", default="reports/compare.md")
     cmp_p.set_defaults(func=cmd_compare)
 
-    rep_p = sub.add_parser("report")
-    rep_p.add_argument("--input", required=True)
-    rep_p.add_argument("--out-md", default="reports/report.md")
-    rep_p.set_defaults(func=cmd_report)
+    # Report subcommand group
+    report_p = sub.add_parser("report", help="Generate analysis reports")
+    report_sub = report_p.add_subparsers(dest="report_cmd", required=True)
+    
+    # report generate
+    gen_r_p = report_sub.add_parser("generate", help="Generate comprehensive report from eval results")
+    gen_r_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    gen_r_p.add_argument("--eval", required=True, help="Path to eval JSON file")
+    gen_r_p.add_argument("--questions", required=True, help="Path to questions JSON file")
+    gen_r_p.add_argument("--output", default=None, help="Output file (default: reports/{product}.md)")
+    gen_r_p.add_argument("--format", default="markdown", choices=["markdown", "json"], help="Output format")
+    gen_r_p.set_defaults(func=cmd_report_generate)
 
     # Personas subcommand group
     personas_p = sub.add_parser("personas", help="Persona discovery and management")
@@ -419,6 +462,9 @@ def build_parser() -> argparse.ArgumentParser:
     gen_a_p.add_argument("--model", default="gpt-4o", help="LLM model for answering")
     gen_a_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
     gen_a_p.add_argument("--max-tokens", type=int, default=4000, help="Max tokens to retrieve per question")
+    gen_a_p.add_argument("--top-k", type=int, default=5, help="Number of docs to retrieve before reranking")
+    gen_a_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score (0-1) to keep docs")
+    gen_a_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata in output")
     gen_a_p.set_defaults(func=cmd_answers_generate)
     
     # Eval subcommand group
