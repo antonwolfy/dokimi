@@ -371,6 +371,64 @@ def cmd_report_generate(args: argparse.Namespace) -> None:
         print(report.split("---")[0])  # Print just the summary section
 
 
+def cmd_evaluate(args: argparse.Namespace) -> None:
+    """Run full evaluation pipeline (orchestrator)."""
+    from doc_benchmarks.orchestrator import EvaluationPipeline
+    
+    print(f"Starting full evaluation pipeline for {args.product}")
+    print(f"Repository: {args.repo}")
+    print(f"Output directory: {args.output_dir}")
+    if args.custom_questions:
+        print(f"Custom questions: {args.custom_questions}")
+    print()
+    
+    # Create pipeline
+    pipeline = EvaluationPipeline(
+        product=args.product,
+        repo=args.repo,
+        output_dir=Path(args.output_dir),
+        custom_questions_path=Path(args.custom_questions) if args.custom_questions else None,
+        model=args.model,
+        provider=args.provider,
+        judge_model=args.judge_model,
+        judge_provider=args.judge_provider,
+        personas_count=args.personas_count,
+        questions_per_topic=args.questions_per_topic,
+        top_k=args.top_k,
+        rerank_threshold=args.rerank_threshold,
+        debug_retrieval=args.debug_retrieval
+    )
+    
+    # Run pipeline
+    try:
+        results = pipeline.run()
+        
+        print("\n" + "="*80)
+        print("✅ Pipeline completed successfully!")
+        print("="*80)
+        print("\nOutput files:")
+        print(f"  Personas:   {results['steps']['personas']['path']}")
+        print(f"  Questions:  {results['steps']['questions_merged']['path']}")
+        print(f"  Answers:    {results['steps']['answers']['path']}")
+        print(f"  Evaluation: {results['steps']['evaluation']['path']}")
+        print(f"  Report:     {results['steps']['report']['path']}")
+        
+        if "summary" in results["steps"]["evaluation"]:
+            summary = results["steps"]["evaluation"]["summary"]
+            print("\nResults:")
+            print(f"  WITH docs avg:    {summary['with_avg']}")
+            print(f"  WITHOUT docs avg: {summary['without_avg']}")
+            print(f"  Delta:            {summary['delta_avg']:+.1f}")
+        
+        print(f"\n📊 View full report: cat {results['steps']['report']['path']}")
+        
+    except Exception as e:
+        print(f"\n❌ Pipeline failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build CLI argument parser."""
     p = argparse.ArgumentParser(prog="doc-benchmark-cli")
@@ -383,6 +441,23 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--out-md", default="reports/current.md")
     run_p.add_argument("--strict", action="store_true", help="Enable hard gate and critical bands (exit 1 on failure)")
     run_p.set_defaults(func=cmd_run)
+
+    # evaluate (orchestrator) - full pipeline
+    eval_p = sub.add_parser("evaluate", help="Run full evaluation pipeline (one command)")
+    eval_p.add_argument("--product", required=True, help="Product name (e.g., oneDNN)")
+    eval_p.add_argument("--repo", required=True, help="GitHub repo (e.g., oneapi-src/oneDNN)")
+    eval_p.add_argument("--output-dir", default=".", help="Base output directory")
+    eval_p.add_argument("--custom-questions", default=None, help="Optional: path to manual questions JSON")
+    eval_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation/answering")
+    eval_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    eval_p.add_argument("--judge-model", default="gpt-4o-mini", help="LLM model for evaluation")
+    eval_p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic"])
+    eval_p.add_argument("--personas-count", type=int, default=5, help="Target number of personas")
+    eval_p.add_argument("--questions-per-topic", type=int, default=2, help="Questions per topic per persona")
+    eval_p.add_argument("--top-k", type=int, default=5, help="Docs to retrieve before reranking")
+    eval_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score")
+    eval_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata")
+    eval_p.set_defaults(func=cmd_evaluate)
 
     cmp_p = sub.add_parser("compare")
     cmp_p.add_argument("--base", required=True)
