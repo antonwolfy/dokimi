@@ -138,6 +138,7 @@ class Judge:
                         self._save_incremental(ordered, output_path)
             except Exception as e:
                 elapsed = time.time() - t0
+                logger.exception(f"Evaluation failed for {q_id}")
                 with lock:
                     results[idx] = {
                         "question_id": answer["question_id"],
@@ -266,19 +267,22 @@ class Judge:
         
         return "\n".join(formatted)
     
-    def _save_incremental(self, evaluations: List[Dict[str, Any]], output_path: Path) -> None:
-        """Write current evaluations to disk (called after each question)."""
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output = {
+    def _build_evaluation_output(self, evaluations: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Build the serialisable output structure for a set of evaluations."""
+        return {
             "evaluated_at": self._get_timestamp(),
             "judge_model": self.model,
             "judge_provider": self.provider,
             "total_evaluations": len(evaluations),
-            "evaluations": evaluations
+            "evaluations": evaluations,
         }
+
+    def _save_incremental(self, evaluations: List[Dict[str, Any]], output_path: Path) -> None:
+        """Write current evaluations to disk atomically (called after each question)."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
         with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(output, f, indent=2)
+            json.dump(self._build_evaluation_output(evaluations), f, indent=2)
         os.replace(tmp_path, output_path)
 
     def save_evaluations(
@@ -288,18 +292,8 @@ class Judge:
     ):
         """Save evaluations to JSON file."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        output = {
-            "evaluated_at": self._get_timestamp(),
-            "judge_model": self.model,
-            "judge_provider": self.provider,
-            "total_evaluations": len(evaluations),
-            "evaluations": evaluations
-        }
-        
-        with open(output_path, 'w') as f:
-            json.dump(output, f, indent=2)
-        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(self._build_evaluation_output(evaluations), f, indent=2)
         logger.info(f"✓ Saved evaluations for {len(evaluations)} answers to {output_path}")
     
     @staticmethod

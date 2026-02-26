@@ -286,7 +286,7 @@ class Answerer:
                 return ([], metadata) if return_metadata else []
                 
         except Exception as e:
-            logger.error(f"Doc retrieval failed: {e}")
+            logger.exception("Doc retrieval failed")
             return ([], metadata) if return_metadata else []
     
     def _generate_with_docs(
@@ -349,19 +349,22 @@ class Answerer:
             "model": self.model
         }
     
-    def _save_incremental(self, answers: List[Dict[str, Any]], output_path: Path) -> None:
-        """Write current answers to disk (called after each question)."""
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output = {
+    def _build_output(self, answers: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Build the serialisable output structure for a set of answers."""
+        return {
             "generated_at": self._get_timestamp(),
             "model": self.model,
             "provider": self.provider,
             "total_questions": len(answers),
-            "answers": answers
+            "answers": answers,
         }
+
+    def _save_incremental(self, answers: List[Dict[str, Any]], output_path: Path) -> None:
+        """Write current answers to disk atomically (called after each question)."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
         with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(output, f, indent=2)
+            json.dump(self._build_output(answers), f, indent=2)
         os.replace(tmp_path, output_path)
 
     def save_answers(
@@ -371,18 +374,8 @@ class Answerer:
     ):
         """Save answers to JSON file."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        output = {
-            "generated_at": self._get_timestamp(),
-            "model": self.model,
-            "provider": self.provider,
-            "total_questions": len(answers),
-            "answers": answers
-        }
-        
-        with open(output_path, 'w') as f:
-            json.dump(output, f, indent=2)
-        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(self._build_output(answers), f, indent=2)
         logger.info(f"✓ Saved answers for {len(answers)} questions to {output_path}")
     
     @staticmethod
