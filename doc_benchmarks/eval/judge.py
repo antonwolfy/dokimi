@@ -12,6 +12,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
+from doc_benchmarks.eval.diagnoser import diagnose
 
 
 JUDGE_PROMPT = """You are evaluating the quality of an answer to a technical question.
@@ -209,8 +210,8 @@ class Judge:
         delta = None
         if with_docs_eval and without_docs_eval:
             delta = with_docs_eval["aggregate"] - without_docs_eval["aggregate"]
-        
-        return {
+
+        result = {
             "question_id": answer["question_id"],
             "question_text": question_text,
             "category": answer.get("category"),
@@ -218,8 +219,12 @@ class Judge:
             "persona": answer.get("persona"),
             "with_docs": with_docs_eval,
             "without_docs": without_docs_eval,
-            "delta": delta
+            "delta": delta,
         }
+
+        # Classify retrieval outcome (why docs helped or didn't)
+        result["diagnosis"] = diagnose(answer, result)
+        return result
     
     def _judge_answer(
         self,

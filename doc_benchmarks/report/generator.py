@@ -7,6 +7,12 @@ from pathlib import Path
 from collections import defaultdict
 import re
 
+from doc_benchmarks.eval.diagnoser import (
+    summarise_diagnoses,
+    DIAGNOSIS_LABELS,
+    DIAGNOSIS_DESCRIPTIONS,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,7 +66,10 @@ class ReportGenerator:
         
         # Cluster by topic
         clusters = self._cluster_by_topic(evaluations, q_lookup)
-        
+
+        # Failure analysis
+        failure_summary = summarise_diagnoses(evaluations)
+
         if output_format == "json":
             return json.dumps({
                 "stats": stats,
@@ -68,11 +77,13 @@ class ReportGenerator:
                 "bottom_with_docs": bottom_with,
                 "top_deltas": top_deltas,
                 "bottom_deltas": bottom_deltas,
-                "clusters": clusters
+                "clusters": clusters,
+                "failure_analysis": failure_summary,
             }, indent=2)
         else:
             return self._format_markdown(
-                stats, top_with, bottom_with, top_deltas, bottom_deltas, clusters, q_lookup
+                stats, top_with, bottom_with, top_deltas, bottom_deltas,
+                clusters, failure_summary
             )
     
     def _compute_stats(self, evaluations: List[Dict]) -> Dict[str, Any]:
@@ -213,7 +224,7 @@ class ReportGenerator:
         top_deltas: List[Dict],
         bottom_deltas: List[Dict],
         clusters: List[Dict],
-        q_lookup: Dict[str, Dict]
+        failure_summary: Optional[Dict] = None,
     ) -> str:
         """Format report as Markdown."""
         lines = [
@@ -307,6 +318,51 @@ class ReportGenerator:
                 f"**{cluster['delta_avg']:+.1f}** |"
             )
         
+        # ── Failure Analysis section ─────────────────────────────────────
+        if failure_summary:
+            lines.extend([
+                "",
+                "---",
+                "",
+                "## Failure Analysis",
+                "",
+                "Breakdown of *why* documentation helped or failed for each question.",
+                "",
+                "| Diagnosis | Count | Rate | Description |",
+                "|-----------|------:|-----:|-------------|",
+            ])
+            counts = failure_summary.get("counts", {})
+            total_q = failure_summary.get("total", 1)
+            for label, display in DIAGNOSIS_LABELS.items():
+                count = counts.get(label, 0)
+                rate = f"{count / total_q:.0%}"
+                desc = DIAGNOSIS_DESCRIPTIONS.get(label, "")
+                lines.append(f"| {display} | {count} | {rate} | {desc} |")
+
+            # Detail table for failures (delta < 0)
+            failures = failure_summary.get("failures", [])
+            if failures:
+                lines.extend([
+                    "",
+                    f"### Questions with Negative Delta ({len(failures)} total)",
+                    "",
+                    "| Question ID | Delta | Diagnosis | Evidence |",
+                    "|-------------|------:|-----------|---------|",
+                ])
+                for e in sorted(failures, key=lambda x: x.get("delta") or 0)[:20]:
+                    diag = e.get("diagnosis") or {}
+                    label = diag.get("label", "?")
+                    display = DIAGNOSIS_LABELS.get(label, label)
+                    evidence = diag.get("evidence", {})
+                    ev_str = ", ".join(
+                        f"{k}={v}" for k, v in evidence.items()
+                        if k != "delta" and v is not None
+                    )
+                    lines.append(
+                        f"| {e['question_id']} | **{(e.get('delta') or 0):+.1f}** "
+                        f"| {display} | {ev_str} |"
+                    )
+
         lines.extend([
             "",
             "---",
