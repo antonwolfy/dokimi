@@ -4,6 +4,8 @@ import logging
 import json
 import os
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -99,6 +101,7 @@ class Answerer:
         questions: List[Dict[str, Any]],
         max_tokens_per_question: int = 4000,
         output_path: Optional[Path] = None,
+        concurrency: int = 1,
     ) -> List[Dict[str, Any]]:
         """
         Generate answers for all questions (WITH and WITHOUT docs).
@@ -109,55 +112,71 @@ class Answerer:
             questions: List of question dicts from QuestionGenerator
             max_tokens_per_question: Max tokens to retrieve per question
             output_path: If set, write incrementally after each question
+            concurrency: Number of parallel API calls (default: 1 = sequential)
 
         Returns:
-            List of answer dicts with question metadata preserved.
+            List of answer dicts ordered by original question order.
         """
-        answers = []
         n = len(questions)
-        errors = 0
+        results: Dict[int, Dict] = {}   # idx → answer_pair
+        lock = threading.Lock()
+        completed = [0]
 
-        for i, q in enumerate(questions):
+        def _process(idx: int, q: Dict) -> None:
             q_id = q["id"]
             t0 = time.time()
-
             try:
-                answer_pair = self._generate_answer_pair(
+                pair = self._generate_answer_pair(
                     library_name=library_name,
                     library_id=library_id,
                     question=q,
                     max_tokens=max_tokens_per_question
                 )
-                answers.append(answer_pair)
                 elapsed = time.time() - t0
-                print(f"[{i+1}/{n}] {q_id} ✓ ({elapsed:.1f}s)", flush=True)
-
+                with lock:
+                    results[idx] = pair
+                    completed[0] += 1
+                    print(f"[{completed[0]}/{n}] {q_id} ✓ ({elapsed:.1f}s)", flush=True)
+                    if output_path is not None:
+                        ordered = [results[i] for i in sorted(results)]
+                        self._save_incremental(ordered, output_path)
             except Exception as e:
-                errors += 1
-                logger.error(f"Failed to generate answers for {q_id}: {e}")
-                answers.append({
-                    "question_id": q_id,
-                    "question_text": q["text"],
-                    "library_name": library_name,
-                    "category": q.get("category"),
-                    "difficulty": q.get("difficulty"),
-                    "persona": q.get("persona"),
-                    "error": str(e),
-                    "with_docs": None,
-                    "without_docs": None
-                })
                 elapsed = time.time() - t0
-                print(f"[{i+1}/{n}] {q_id} ✗ error ({elapsed:.1f}s): {e}", flush=True)
+                with lock:
+                    results[idx] = {
+                        "question_id": q_id,
+                        "question_text": q["text"],
+                        "library_name": library_name,
+                        "category": q.get("category"),
+                        "difficulty": q.get("difficulty"),
+                        "persona": q.get("persona"),
+                        "error": str(e),
+                        "with_docs": None,
+                        "without_docs": None
+                    }
+                    completed[0] += 1
+                    print(f"[{completed[0]}/{n}] {q_id} ✗ ({elapsed:.1f}s): {e}", flush=True)
+                    if output_path is not None:
+                        ordered = [results[i] for i in sorted(results)]
+                        self._save_incremental(ordered, output_path)
 
-            # Incremental save after each question
-            if output_path is not None:
-                self._save_incremental(answers, output_path)
+        print(f"Generating answers for {n} questions (concurrency={concurrency})", flush=True)
+
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_process, i, q): i for i, q in enumerate(questions)}
+            for f in as_completed(futures):
+                f.result()  # wait for completion
+
+        answers = [results[i] for i in range(n)]
+        ok_with = sum(1 for a in answers if a.get("with_docs"))
+        ok_without = sum(1 for a in answers if a.get("without_docs"))
+        errors = sum(1 for a in answers if a.get("error"))
 
         print("\n✓ Generated answers:", flush=True)
-        print(f"  WITH docs: {sum(1 for a in answers if a.get('with_docs'))}/{n}", flush=True)
-        print(f"  WITHOUT docs: {sum(1 for a in answers if a.get('without_docs'))}/{n}", flush=True)
+        print(f"  WITH docs:    {ok_with}/{n}", flush=True)
+        print(f"  WITHOUT docs: {ok_without}/{n}", flush=True)
         if errors:
-            print(f"  Errors: {errors}", flush=True)
+            print(f"  Errors:       {errors}", flush=True)
         return answers
     
     def _generate_answer_pair(

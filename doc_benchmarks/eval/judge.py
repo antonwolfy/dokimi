@@ -4,6 +4,8 @@ import logging
 import json
 import os
 import time
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -100,6 +102,7 @@ class Judge:
         library_name: str,
         answers: List[Dict[str, Any]],
         output_path: Optional[Path] = None,
+        concurrency: int = 1,
     ) -> List[Dict[str, Any]]:
         """
         Evaluate all answers (WITH and WITHOUT docs).
@@ -108,55 +111,68 @@ class Judge:
             library_name: Library name for context
             answers: List of answer dicts from Answerer
             output_path: If set, write incrementally after each evaluation
+            concurrency: Number of parallel judge calls (default: 1 = sequential)
 
         Returns:
-            List of evaluation dicts with question metadata preserved.
+            List of evaluation dicts ordered by input order.
         """
-        evaluations = []
         n = len(answers)
+        results: Dict[int, Dict] = {}
+        lock = threading.Lock()
+        completed = [0]
 
-        for i, answer in enumerate(answers):
+        def _process(idx: int, answer: Dict) -> None:
             q_id = answer["question_id"]
             t0 = time.time()
-
             try:
                 eval_result = self._evaluate_answer_pair(library_name, answer)
-                evaluations.append(eval_result)
                 elapsed = time.time() - t0
                 delta = eval_result.get("delta")
                 delta_str = f"delta={delta:+}" if delta is not None else "delta=n/a"
-                print(f"[{i+1}/{n}] {q_id} ✓ {delta_str} ({elapsed:.1f}s)", flush=True)
-
+                with lock:
+                    results[idx] = eval_result
+                    completed[0] += 1
+                    print(f"[{completed[0]}/{n}] {q_id} ✓ {delta_str} ({elapsed:.1f}s)", flush=True)
+                    if output_path is not None:
+                        ordered = [results[i] for i in sorted(results)]
+                        self._save_incremental(ordered, output_path)
             except Exception as e:
-                logger.error(f"Evaluation failed for {q_id}: {e}")
-                evaluations.append({
-                    "question_id": q_id,
-                    "question_text": answer["question_text"],
-                    "category": answer.get("category"),
-                    "difficulty": answer.get("difficulty"),
-                    "persona": answer.get("persona"),
-                    "error": str(e),
-                    "with_docs": None,
-                    "without_docs": None,
-                    "delta": None
-                })
                 elapsed = time.time() - t0
-                print(f"[{i+1}/{n}] {q_id} ✗ error ({elapsed:.1f}s): {e}", flush=True)
+                with lock:
+                    results[idx] = {
+                        "question_id": answer["question_id"],
+                        "question_text": answer["question_text"],
+                        "category": answer.get("category"),
+                        "difficulty": answer.get("difficulty"),
+                        "persona": answer.get("persona"),
+                        "error": str(e),
+                        "with_docs": None,
+                        "without_docs": None,
+                        "delta": None
+                    }
+                    completed[0] += 1
+                    print(f"[{completed[0]}/{n}] {q_id} ✗ ({elapsed:.1f}s): {e}", flush=True)
+                    if output_path is not None:
+                        ordered = [results[i] for i in sorted(results)]
+                        self._save_incremental(ordered, output_path)
 
-            if output_path is not None:
-                self._save_incremental(evaluations, output_path)
+        print(f"Evaluating {n} answers with judge: {self.provider}/{self.model} (concurrency={concurrency})", flush=True)
 
-        # Summary
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = {pool.submit(_process, i, a): i for i, a in enumerate(answers)}
+            for f in as_completed(futures):
+                f.result()  # wait for completion
+
+        evaluations = [results[i] for i in range(n)]
         valid = [e for e in evaluations if e.get("delta") is not None]
         if valid:
             avg_with = sum((e.get("with_docs") or {}).get("aggregate", 0) for e in valid) / len(valid)
             avg_without = sum((e.get("without_docs") or {}).get("aggregate", 0) for e in valid) / len(valid)
             avg_delta = sum(e["delta"] for e in valid) / len(valid)
             print("\n✓ Evaluation complete:", flush=True)
-            print(f"  WITH docs avg: {avg_with:.1f}", flush=True)
+            print(f"  WITH docs avg:    {avg_with:.1f}", flush=True)
             print(f"  WITHOUT docs avg: {avg_without:.1f}", flush=True)
-            print(f"  Average delta: {avg_delta:.1f}", flush=True)
-
+            print(f"  Average delta:    {avg_delta:.1f}", flush=True)
         return evaluations
     
     def _evaluate_answer_pair(

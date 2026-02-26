@@ -286,6 +286,7 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
         questions=questions,
         max_tokens_per_question=args.max_tokens,
         output_path=output_path,
+        concurrency=args.concurrency,
     )
 
     answerer.save_answers(answers, output_path)
@@ -311,7 +312,7 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
     
     output_path = Path(args.output) if args.output else Path(f"eval/{args.product}.json")
 
-    evaluations = judge.evaluate_answers(args.product, answers, output_path=output_path)
+    evaluations = judge.evaluate_answers(args.product, answers, output_path=output_path, concurrency=args.concurrency)
 
     judge.save_evaluations(evaluations, output_path)
     print(f"\n✅ Saved evaluations to {output_path}")
@@ -518,6 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen_a_p.add_argument("--top-k", type=int, default=5, help="Number of docs to retrieve before reranking")
     gen_a_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score (0-1) to keep docs")
     gen_a_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata in output")
+    gen_a_p.add_argument("--concurrency", type=int, default=5, help="Parallel API calls (default: 5)")
     gen_a_p.set_defaults(func=cmd_answers_generate)
     
     # Eval subcommand group
@@ -531,6 +533,7 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--output", default=None, help="Output file (default: eval/{product}.json)")
     score_p.add_argument("--judge-model", default="claude-sonnet-4", help="LLM model for judging")
     score_p.add_argument("--judge-provider", default="anthropic", choices=["openai", "anthropic"])
+    score_p.add_argument("--concurrency", type=int, default=5, help="Parallel judge calls (default: 5)")
     score_p.set_defaults(func=cmd_eval_score)
 
     return p
