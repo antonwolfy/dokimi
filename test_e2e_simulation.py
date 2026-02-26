@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""E2E test simulation for doc quality pipeline."""
+"""E2E test simulation for doc quality pipeline.
+
+This is an executable demo script, not a pytest unit test.
+Skip module import during pytest collection.
+"""
+
+if __name__ != "__main__":
+    import pytest
+    pytest.skip("simulation script; skip during pytest collection", allow_module_level=True)
 
 import sys
 import json

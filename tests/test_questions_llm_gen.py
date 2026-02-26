@@ -82,7 +82,7 @@ class TestQuestionGeneratorInit:
         with patch('doc_benchmarks.questions.llm_gen.LANGCHAIN_AVAILABLE', False):
             with pytest.raises(ImportError) as exc:
                 QuestionGenerator()
-            assert "langchain not available" in str(exc.value)
+            assert "LLM dependencies not available" in str(exc.value)
 
 
 class TestGenerateQuestions:

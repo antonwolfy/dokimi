@@ -126,7 +126,7 @@ class TestPersonaGenerator:
         with patch('doc_benchmarks.personas.generator.LANGCHAIN_AVAILABLE', False):
             with pytest.raises(ImportError) as exc_info:
                 PersonaGenerator()
-            assert "langchain not available" in str(exc_info.value)
+            assert "LLM dependencies not available" in str(exc_info.value)
     
     def test_generate_personas_success(self, sample_analysis, sample_llm_response):
         """Test successful persona generation."""

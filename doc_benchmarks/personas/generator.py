@@ -5,12 +5,7 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 import json
 
-try:
-    from langchain_openai import ChatOpenAI
-    from langchain_anthropic import ChatAnthropic
-    LANGCHAIN_AVAILABLE = True
-except ImportError:
-    LANGCHAIN_AVAILABLE = False
+from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -90,12 +85,15 @@ class PersonaGenerator:
             api_key: API key (optional, will use env var if not provided)
         """
         if not LANGCHAIN_AVAILABLE:
-            raise ImportError("langchain not available. Install: pip install langchain-openai langchain-anthropic")
-        
+            raise ImportError(
+                "LLM dependencies not available. "
+                "Install: pip install litellm"
+            )
+
         self.model = model
         self.provider = provider
-        
-        # Initialize LLM client
+        self.api_key = api_key
+
         if provider == "openai":
             self.llm = ChatOpenAI(model=model, api_key=api_key)
         elif provider == "anthropic":

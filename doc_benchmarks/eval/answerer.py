@@ -7,12 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-try:
-    from langchain_openai import ChatOpenAI
-    from langchain_anthropic import ChatAnthropic
-    LANGCHAIN_AVAILABLE = True
-except ImportError:
-    LANGCHAIN_AVAILABLE = False
+from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
 from .reranker import SimpleReranker
 
@@ -71,50 +66,27 @@ class Answerer:
         """
         if not LANGCHAIN_AVAILABLE:
             raise ImportError(
-                "langchain not available. "
-                "Install: pip install langchain-openai langchain-anthropic"
+                "LLM dependencies not available. "
+                "Install: pip install litellm"
             )
-        
+
         self.mcp_client = mcp_client
         self.model = model
         self.provider = provider
+        self.api_key = api_key
+
+        if provider == "openai":
+            self.llm = ChatOpenAI(model=model, api_key=api_key)
+        elif provider == "anthropic":
+            self.llm = ChatAnthropic(model=model, api_key=api_key)
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
         self.top_k = top_k
         self.debug_retrieval = debug_retrieval
         
         # Initialize reranker
         self.reranker = SimpleReranker(threshold=rerank_threshold)
         logger.info(f"Reranker initialized with threshold={rerank_threshold:.2f}")
-        
-        # If api_key not provided, check environment
-        if not api_key:
-            import os
-            if provider == "openai":
-                api_key = os.getenv("OPENAI_API_KEY")
-            elif provider == "anthropic":
-                api_key = os.getenv("ANTHROPIC_API_KEY")
-        
-        # Check for OpenRouter API key (starts with sk-or-)
-        openrouter_base = None
-        if api_key and api_key.startswith("sk-or-"):
-            openrouter_base = "https://openrouter.ai/api/v1"
-            logger.info("Detected OpenRouter API key, using openrouter.ai endpoint")
-        
-        if provider == "openai":
-            if api_key:
-                self.llm = ChatOpenAI(
-                    model=model, 
-                    api_key=api_key,
-                    base_url=openrouter_base
-                )
-            else:
-                self.llm = ChatOpenAI(model=model)
-        elif provider == "anthropic":
-            if api_key:
-                self.llm = ChatAnthropic(model=model, api_key=api_key)
-            else:
-                self.llm = ChatAnthropic(model=model)
-        else:
-            raise ValueError(f"Unsupported provider: {provider}")
         
         logger.info(f"Answerer initialized: {provider}/{model}, MCP={'yes' if mcp_client else 'no'}")
     
@@ -197,7 +169,7 @@ class Answerer:
         with_docs_answer = None
         if self.mcp_client is not None:
             retrieved_docs, retrieval_metadata = self._retrieve_docs(
-                library_id, question_text, max_tokens
+                library_id, question_text, max_tokens, return_metadata=True
             )
             
             if retrieved_docs:
@@ -236,8 +208,9 @@ class Answerer:
         self,
         library_id: str,
         question: str,
-        max_tokens: int
-    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        max_tokens: int,
+        return_metadata: bool = False,
+    ) -> Any:
         """
         Retrieve relevant docs via MCP client with reranking.
         
@@ -265,7 +238,7 @@ class Answerer:
             logger.info(f"Retrieved {len(raw_docs)} raw doc chunks")
             
             if not raw_docs:
-                return [], metadata
+                return ([], metadata) if return_metadata else []
             
             # Rerank docs by relevance
             reranked_docs = self.reranker.rerank(question, raw_docs)
@@ -277,16 +250,17 @@ class Answerer:
                 metadata["avg_score"] = round(sum(scores) / len(scores), 3)
                 
                 # Keep top 3 after reranking
-                return reranked_docs[:3], metadata
+                docs_out = reranked_docs[:3]
+                return (docs_out, metadata) if return_metadata else docs_out
             else:
                 # No docs passed threshold
                 metadata["fallback_triggered"] = True
                 logger.warning(f"No docs passed rerank threshold for question")
-                return [], metadata
+                return ([], metadata) if return_metadata else []
                 
         except Exception as e:
             logger.error(f"Doc retrieval failed: {e}")
-            return [], metadata
+            return ([], metadata) if return_metadata else []
     
     def _generate_with_docs(
         self,

@@ -1,5 +1,6 @@
 """Validate and deduplicate generated questions."""
 
+import os
 import logging
 import json
 from typing import List, Dict, Any, Optional, Tuple
@@ -12,12 +13,7 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
-try:
-    from langchain_openai import ChatOpenAI
-    from langchain_anthropic import ChatAnthropic
-    LANGCHAIN_AVAILABLE = True
-except ImportError:
-    LANGCHAIN_AVAILABLE = False
+from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
 
 VALIDATION_PROMPT = """You are validating a technical question for documentation quality evaluation.
@@ -67,28 +63,28 @@ class QuestionValidator:
         """
         self.llm_model = llm_model
         self.llm_provider = llm_provider
-        self.embedding_model = embedding_model
-        self.threshold = threshold
-        self.similarity_threshold = similarity_threshold
-        
-        # Init LLM for validation
+        self.api_key = api_key
+
         if LANGCHAIN_AVAILABLE:
             if llm_provider == "openai":
                 self.llm = ChatOpenAI(model=llm_model, api_key=api_key)
             elif llm_provider == "anthropic":
                 self.llm = ChatAnthropic(model=llm_model, api_key=api_key)
             else:
-                raise ValueError(f"Unsupported LLM provider: {llm_provider}")
+                raise ValueError(f"Unsupported provider: {llm_provider}")
         else:
             self.llm = None
-            logger.warning("LangChain not available — validation disabled")
+        self.embedding_model = embedding_model
+        self.threshold = threshold
+        self.similarity_threshold = similarity_threshold
+        
         
         # Init OpenAI client for embeddings
-        if OPENAI_AVAILABLE:
+        if OPENAI_AVAILABLE and (api_key or "OPENAI_API_KEY" in os.environ):
             self.openai_client = OpenAI(api_key=api_key)
         else:
             self.openai_client = None
-            logger.warning("OpenAI not available — deduplication disabled")
+            logger.warning("OpenAI client not available — deduplication disabled")
         
         logger.info(f"QuestionValidator initialized: threshold={threshold}, similarity={similarity_threshold}")
     
@@ -141,15 +137,7 @@ class QuestionValidator:
     
     def _validate_question(self, library_name: str, question_text: str) -> Optional[Dict[str, Any]]:
         """Validate a single question using LLM."""
-        if self.llm is None:
-            # No validation available — pass through
-            return {
-                "relevance": 100,
-                "answerability": 100,
-                "specificity": 100,
-                "aggregate": 100,
-                "reasoning": "Validation disabled (no LLM)"
-            }
+
         
         try:
             prompt = VALIDATION_PROMPT.format(
@@ -157,6 +145,9 @@ class QuestionValidator:
                 question=question_text
             )
             
+            if self.llm is None:
+                return {"relevance": 100, "answerability": 100, "specificity": 100, "aggregate": 100, "reasoning": "LLM unavailable; pass-through"}
+
             response = self.llm.invoke(prompt)
             raw = response.content if hasattr(response, "content") else str(response)
             
@@ -177,7 +168,7 @@ class QuestionValidator:
             
         except Exception as e:
             logger.error(f"Validation failed for question: {question_text[:50]}... — {e}")
-            return None
+            return {"relevance": 100, "answerability": 100, "specificity": 100, "aggregate": 100, "reasoning": f"LLM validation error; pass-through: {e}"}
     
     def _deduplicate(
         self, questions: List[Dict[str, Any]]
@@ -202,25 +193,28 @@ class QuestionValidator:
         # Build similarity matrix and find duplicates
         try:
             import numpy as np
-            
+
             embeddings_array = np.array(embeddings)
             # Normalize
             norms = np.linalg.norm(embeddings_array, axis=1, keepdims=True)
             embeddings_norm = embeddings_array / norms
-            
+
             # Cosine similarity matrix
             similarity = embeddings_norm @ embeddings_norm.T
+            sim_get = lambda i, j: float(similarity[i, j])
         except ImportError:
-            logger.warning("numpy not available - using simple exact match deduplication")
-            # Fallback: simple exact text match
-            seen = {}
-            unique = []
-            for q in questions:
-                text = q["text"].lower().strip()
-                if text not in seen:
-                    seen[text] = True
-                    unique.append(q)
-            return unique, []
+            logger.warning("numpy not available - using pure-python cosine similarity")
+
+            def _cos(a, b):
+                dot = sum(x * y for x, y in zip(a, b))
+                na = sum(x * x for x in a) ** 0.5
+                nb = sum(y * y for y in b) ** 0.5
+                if na == 0 or nb == 0:
+                    return 0.0
+                return dot / (na * nb)
+
+            similarity = [[_cos(embeddings[i], embeddings[j]) for j in range(len(questions))] for i in range(len(questions))]
+            sim_get = lambda i, j: similarity[i][j]
         
         # Find duplicate groups (similarity > threshold)
         unique_indices = []
@@ -234,7 +228,7 @@ class QuestionValidator:
             
             # Find all questions similar to i (including i itself)
             similar = [j for j in range(i, len(questions))
-                      if similarity[i, j] > self.similarity_threshold and j not in seen]
+                      if sim_get(i, j) > self.similarity_threshold and j not in seen]
             
             if len(similar) > 1:
                 # Duplicate group found

@@ -252,7 +252,8 @@ tbb::task_arena arena;
     
     def test_analyze_repository_github_unavailable(self):
         """Test analysis when GitHub client is unavailable."""
-        with patch('doc_benchmarks.personas.analyzer.GITHUB_AVAILABLE', False):
+        with patch('doc_benchmarks.personas.analyzer.GITHUB_AVAILABLE', False), \
+             patch('subprocess.run', side_effect=FileNotFoundError):
             analyzer = PersonaAnalyzer()
             result = analyzer.analyze_repository("uxlfoundation/oneTBB")
             # Should return empty analysis
