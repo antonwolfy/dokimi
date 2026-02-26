@@ -1,6 +1,5 @@
 """URL-based documentation source client."""
 
-import re
 import hashlib
 import logging
 from pathlib import Path
@@ -9,33 +8,9 @@ from typing import List, Dict, Any, Optional
 import httpx
 
 from . import MCPClient, MCPConnectionError
+from .utils import strip_html, score_chunk, split_paragraphs
 
 logger = logging.getLogger(__name__)
-
-
-def _strip_html(text: str) -> str:
-    """Remove HTML tags from text."""
-    text = re.sub(r"<(script|style)[^>]*>.*?</(script|style)>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-def _split_paragraphs(text: str, min_len: int = 80) -> List[str]:
-    """Split text into paragraphs, discarding very short ones."""
-    # Split on blank lines or sentence boundaries
-    chunks = re.split(r"\n{2,}|\r\n{2,}", text)
-    return [c.strip() for c in chunks if len(c.strip()) >= min_len]
-
-
-def _score_chunk(query: str, content: str) -> float:
-    """Simple keyword overlap score (0-1)."""
-    query_tokens = set(re.findall(r"\w+", query.lower()))
-    if not query_tokens:
-        return 0.0
-    content_lower = content.lower()
-    hits = sum(1 for tok in query_tokens if tok in content_lower)
-    return hits / len(query_tokens)
 
 
 class URLClient(MCPClient):
@@ -56,19 +31,19 @@ class URLClient(MCPClient):
         url: str,
         timeout: int = 30,
         cache_dir: Optional[Path] = None,
-        max_page_size_kb: int = 1024,
+        max_page_size_kchars: int = 1024,
     ):
         """
         Args:
             url: Documentation URL to fetch.
             timeout: HTTP request timeout in seconds.
             cache_dir: Directory for caching fetched pages (None = no cache).
-            max_page_size_kb: Truncate pages larger than this.
+            max_page_size_kchars: Truncate pages larger than this (measured in characters).
         """
         self.url = url
         self.timeout = timeout
         self.cache_dir = Path(cache_dir) if cache_dir else None
-        self.max_page_size_bytes = max_page_size_kb * 1024
+        self.max_page_size_chars = max_page_size_kchars * 1024
 
         if self.cache_dir:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -102,7 +77,7 @@ class URLClient(MCPClient):
         if not raw:
             return []
 
-        paragraphs = _split_paragraphs(raw)
+        paragraphs = split_paragraphs(raw)
         if not paragraphs:
             # Fall back to the whole page as one chunk
             chunk_limit = max_tokens * 4
@@ -112,11 +87,11 @@ class URLClient(MCPClient):
                 "url": self.url,
                 "library_id": library_id,
                 "query": query,
-                "relevance_score": _score_chunk(query, raw[:chunk_limit]),
+                "relevance_score": score_chunk(query, raw[:chunk_limit]),
             }]
 
         scored = sorted(
-            ((p, _score_chunk(query, p)) for p in paragraphs),
+            ((p, score_chunk(query, p)) for p in paragraphs),
             key=lambda x: -x[1],
         )
 
@@ -182,10 +157,10 @@ class URLClient(MCPClient):
             raise MCPConnectionError(f"URLClient fetch failed: {exc}") from exc
 
         content_type = resp.headers.get("content-type", "")
-        text = resp.text[: self.max_page_size_bytes]
+        text = resp.text[: self.max_page_size_chars]
 
         if "html" in content_type or text.lstrip().startswith("<"):
-            text = _strip_html(text)
+            text = strip_html(text)
 
         # Persist to cache
         if self.cache_dir:

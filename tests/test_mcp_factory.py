@@ -67,10 +67,20 @@ def test_unknown_source_plain_string_raises():
 
 def test_returns_mcp_client_interface():
     """All returned clients must satisfy the MCPClient interface."""
+    import tempfile
     from doc_benchmarks.mcp import MCPClient
-    for source in ["context7"]:
-        client = create_doc_source_client(source)
-        assert isinstance(client, MCPClient)
-        assert hasattr(client, "resolve_library_id")
-        assert hasattr(client, "get_library_docs")
-        assert hasattr(client, "check_connection")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        (tmp_path / "test.md").write_text("# Test\n\nSome content here.")
+        sources = [
+            "context7",
+            f"local:{tmp_path}",
+            "url:https://example.com/docs",
+        ]
+        for source in sources:
+            client = create_doc_source_client(source)
+            assert isinstance(client, MCPClient), f"{source} did not return MCPClient"
+            assert hasattr(client, "resolve_library_id")
+            assert hasattr(client, "get_library_docs")
+            assert hasattr(client, "check_connection")

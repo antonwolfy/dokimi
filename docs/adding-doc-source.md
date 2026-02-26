@@ -124,7 +124,7 @@ CONFLUENCE_TOKEN=xxx python cli.py answers generate \
 
 `LocalMarkdownClient` and `URLClient` use a lightweight keyword-overlap score:
 
-```
+```text
 score = (query tokens found in chunk) / (total query tokens)
 ```
 

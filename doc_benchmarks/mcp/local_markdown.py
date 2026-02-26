@@ -1,37 +1,16 @@
 """Local Markdown/HTML documentation source client."""
 
-import re
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 from . import MCPClient, MCPConnectionError
+from .utils import strip_html, score_chunk
 
 logger = logging.getLogger(__name__)
 
 # Supported doc file extensions
 _DOC_EXTENSIONS = {".md", ".rst", ".html", ".htm", ".txt"}
-
-
-def _strip_html(text: str) -> str:
-    """Remove HTML tags from text."""
-    # Remove script/style blocks entirely
-    text = re.sub(r"<(script|style)[^>]*>.*?</(script|style)>", "", text, flags=re.DOTALL | re.IGNORECASE)
-    # Remove remaining tags
-    text = re.sub(r"<[^>]+>", " ", text)
-    # Collapse whitespace
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
-
-
-def _score_chunk(query: str, content: str) -> float:
-    """Simple keyword overlap score (0-1)."""
-    query_tokens = set(re.findall(r"\w+", query.lower()))
-    if not query_tokens:
-        return 0.0
-    content_lower = content.lower()
-    hits = sum(1 for tok in query_tokens if tok in content_lower)
-    return hits / len(query_tokens)
 
 
 class LocalMarkdownClient(MCPClient):
@@ -113,7 +92,7 @@ class LocalMarkdownClient(MCPClient):
             if not content:
                 continue
 
-            score = _score_chunk(query, content)
+            score = score_chunk(query, content)
             scored.append((score, fp, content))
 
         # Sort by score descending, then by file name for determinism
@@ -160,5 +139,5 @@ class LocalMarkdownClient(MCPClient):
         """Read a file and return cleaned text, truncated to char_limit."""
         raw = fp.read_text(encoding=self.encoding, errors="replace")
         if fp.suffix.lower() in {".html", ".htm"}:
-            raw = _strip_html(raw)
+            raw = strip_html(raw)
         return raw[:char_limit]

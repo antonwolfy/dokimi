@@ -6,6 +6,8 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import tempfile
 
+from doc_benchmarks.mcp.factory import create_doc_source_client
+
 logger = logging.getLogger(__name__)
 
 
@@ -206,7 +208,6 @@ class EvaluationPipeline:
     def _generate_questions(self, personas: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate questions from personas."""
         from doc_benchmarks.questions import RagasSeedExtractor, QuestionGenerator
-        from doc_benchmarks.mcp.factory import create_doc_source_client
 
         # Extract topics
         mcp_client = create_doc_source_client(self.doc_source)
@@ -297,7 +298,6 @@ class EvaluationPipeline:
     def _generate_answers(self, questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Generate answers WITH and WITHOUT docs."""
         from doc_benchmarks.eval import Answerer
-        from doc_benchmarks.mcp.factory import create_doc_source_client
 
         # Setup documentation source client
         mcp_client = create_doc_source_client(self.doc_source)
