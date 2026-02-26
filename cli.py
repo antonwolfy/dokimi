@@ -278,28 +278,17 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
         debug_retrieval=args.debug_retrieval
     )
     
+    output_path = Path(args.output) if args.output else Path(f"answers/{args.product}.json")
+
     answers = answerer.generate_answers(
         library_name=args.product,
         library_id=library_id,
         questions=questions,
-        max_tokens_per_question=args.max_tokens
+        max_tokens_per_question=args.max_tokens,
+        output_path=output_path,
     )
-    
-    # Count successful answers
-    with_docs_count = sum(1 for a in answers if a.get("with_docs") is not None)
-    without_docs_count = sum(1 for a in answers if a.get("without_docs") is not None)
-    error_count = sum(1 for a in answers if "error" in a)
-    
-    print(f"\n✓ Generated answers:")
-    print(f"  WITH docs: {with_docs_count}/{len(answers)}")
-    print(f"  WITHOUT docs: {without_docs_count}/{len(answers)}")
-    if error_count > 0:
-        print(f"  Errors: {error_count}")
-    
-    # Save output
-    output_path = Path(args.output) if args.output else Path(f"answers/{args.product}.json")
+
     answerer.save_answers(answers, output_path)
-    
     print(f"\n✅ Saved answers to {output_path}")
 
 
@@ -320,22 +309,11 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
         provider=args.judge_provider
     )
     
-    evaluations = judge.evaluate_answers(args.product, answers)
-    
-    # Calculate statistics
-    with_docs_scores = [e["with_docs"]["aggregate"] for e in evaluations if e.get("with_docs")]
-    without_docs_scores = [e["without_docs"]["aggregate"] for e in evaluations if e.get("without_docs")]
-    deltas = [e["delta"] for e in evaluations if e.get("delta") is not None]
-    
-    print(f"\n✓ Evaluation complete:")
-    print(f"  WITH docs avg: {sum(with_docs_scores)/len(with_docs_scores):.1f}" if with_docs_scores else "  WITH docs: N/A")
-    print(f"  WITHOUT docs avg: {sum(without_docs_scores)/len(without_docs_scores):.1f}" if without_docs_scores else "  WITHOUT docs: N/A")
-    print(f"  Average delta: {sum(deltas)/len(deltas):.1f}" if deltas else "  Delta: N/A")
-    
-    # Save output
     output_path = Path(args.output) if args.output else Path(f"eval/{args.product}.json")
+
+    evaluations = judge.evaluate_answers(args.product, answers, output_path=output_path)
+
     judge.save_evaluations(evaluations, output_path)
-    
     print(f"\n✅ Saved evaluations to {output_path}")
 
 

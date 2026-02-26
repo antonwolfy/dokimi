@@ -2,6 +2,8 @@
 
 import logging
 import json
+import os
+import time
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -96,58 +98,65 @@ class Judge:
     def evaluate_answers(
         self,
         library_name: str,
-        answers: List[Dict[str, Any]]
+        answers: List[Dict[str, Any]],
+        output_path: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         """
         Evaluate all answers (WITH and WITHOUT docs).
-        
+
         Args:
             library_name: Library name for context
             answers: List of answer dicts from Answerer
-        
+            output_path: If set, write incrementally after each evaluation
+
         Returns:
-            List of evaluation dicts:
-            [
-                {
-                    "question_id": "q_001",
-                    "question_text": "...",
-                    "with_docs": {
-                        "correctness": 90,
-                        "completeness": 85,
-                        "specificity": 80,
-                        "code_quality": 85,
-                        "actionability": 90,
-                        "aggregate": 86,
-                        "reasoning": {...}
-                    },
-                    "without_docs": {
-                        "correctness": 70,
-                        ...
-                    },
-                    "delta": 16  # with_docs.aggregate - without_docs.aggregate
-                }
-            ]
+            List of evaluation dicts with question metadata preserved.
         """
         evaluations = []
-        
+        n = len(answers)
+
         for i, answer in enumerate(answers):
-            logger.info(f"Evaluating {i+1}/{len(answers)}: {answer['question_id']}")
-            
+            q_id = answer["question_id"]
+            t0 = time.time()
+
             try:
                 eval_result = self._evaluate_answer_pair(library_name, answer)
                 evaluations.append(eval_result)
+                elapsed = time.time() - t0
+                delta = eval_result.get("delta")
+                delta_str = f"delta={delta:+}" if delta is not None else "delta=n/a"
+                print(f"[{i+1}/{n}] {q_id} ✓ {delta_str} ({elapsed:.1f}s)", flush=True)
+
             except Exception as e:
-                logger.error(f"Evaluation failed for {answer['question_id']}: {e}")
+                logger.error(f"Evaluation failed for {q_id}: {e}")
                 evaluations.append({
-                    "question_id": answer["question_id"],
+                    "question_id": q_id,
                     "question_text": answer["question_text"],
+                    "category": answer.get("category"),
+                    "difficulty": answer.get("difficulty"),
+                    "persona": answer.get("persona"),
                     "error": str(e),
                     "with_docs": None,
                     "without_docs": None,
                     "delta": None
                 })
-        
-        logger.info(f"Evaluated {len(evaluations)} answer pairs")
+                elapsed = time.time() - t0
+                print(f"[{i+1}/{n}] {q_id} ✗ error ({elapsed:.1f}s): {e}", flush=True)
+
+            if output_path is not None:
+                self._save_incremental(evaluations, output_path)
+
+        # Summary
+        valid = [e for e in evaluations if e.get("delta") is not None]
+        if valid:
+            avg_with = sum((e.get("with_docs") or {}).get("aggregate", 0) for e in valid) / len(valid)
+            avg_without = sum((e.get("without_docs") or {}).get("aggregate", 0) for e in valid) / len(valid)
+            avg_delta = sum(e["delta"] for e in valid) / len(valid)
+            print("\n✓ Evaluation complete:", flush=True)
+            print(f"  WITH docs avg: {avg_with:.1f}", flush=True)
+            print(f"  WITHOUT docs avg: {avg_without:.1f}", flush=True)
+            print(f"  Average delta: {avg_delta:.1f}", flush=True)
+
         return evaluations
     
     def _evaluate_answer_pair(
@@ -187,6 +196,9 @@ class Judge:
         return {
             "question_id": answer["question_id"],
             "question_text": question_text,
+            "category": answer.get("category"),
+            "difficulty": answer.get("difficulty"),
+            "persona": answer.get("persona"),
             "with_docs": with_docs_eval,
             "without_docs": without_docs_eval,
             "delta": delta
@@ -238,6 +250,21 @@ class Judge:
         
         return "\n".join(formatted)
     
+    def _save_incremental(self, evaluations: List[Dict[str, Any]], output_path: Path) -> None:
+        """Write current evaluations to disk (called after each question)."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output = {
+            "evaluated_at": self._get_timestamp(),
+            "judge_model": self.model,
+            "judge_provider": self.provider,
+            "total_evaluations": len(evaluations),
+            "evaluations": evaluations
+        }
+        tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(output, f, indent=2)
+        os.replace(tmp_path, output_path)
+
     def save_evaluations(
         self,
         evaluations: List[Dict[str, Any]],

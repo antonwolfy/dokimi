@@ -2,6 +2,8 @@
 
 import logging
 import json
+import os
+import time
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -95,42 +97,30 @@ class Answerer:
         library_name: str,
         library_id: str,
         questions: List[Dict[str, Any]],
-        max_tokens_per_question: int = 4000
+        max_tokens_per_question: int = 4000,
+        output_path: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         """
         Generate answers for all questions (WITH and WITHOUT docs).
-        
+
         Args:
             library_name: Library name (e.g., "oneTBB")
             library_id: Library ID for MCP (e.g., "uxlfoundation/oneTBB")
             questions: List of question dicts from QuestionGenerator
             max_tokens_per_question: Max tokens to retrieve per question
-        
+            output_path: If set, write incrementally after each question
+
         Returns:
-            List of answer dicts:
-            [
-                {
-                    "question_id": "q_001",
-                    "question_text": "...",
-                    "library_name": "oneTBB",
-                    "with_docs": {
-                        "answer": "...",
-                        "retrieved_docs": [...],
-                        "model": "gpt-4o",
-                        "doc_source": "context7"
-                    },
-                    "without_docs": {
-                        "answer": "...",
-                        "model": "gpt-4o"
-                    }
-                }
-            ]
+            List of answer dicts with question metadata preserved.
         """
         answers = []
-        
+        n = len(questions)
+        errors = 0
+
         for i, q in enumerate(questions):
-            logger.info(f"Generating answers for question {i+1}/{len(questions)}: {q['id']}")
-            
+            q_id = q["id"]
+            t0 = time.time()
+
             try:
                 answer_pair = self._generate_answer_pair(
                     library_name=library_name,
@@ -139,20 +129,35 @@ class Answerer:
                     max_tokens=max_tokens_per_question
                 )
                 answers.append(answer_pair)
-                
+                elapsed = time.time() - t0
+                print(f"[{i+1}/{n}] {q_id} ✓ ({elapsed:.1f}s)", flush=True)
+
             except Exception as e:
-                logger.error(f"Failed to generate answers for {q['id']}: {e}")
-                # Add placeholder with error
+                errors += 1
+                logger.error(f"Failed to generate answers for {q_id}: {e}")
                 answers.append({
-                    "question_id": q["id"],
+                    "question_id": q_id,
                     "question_text": q["text"],
                     "library_name": library_name,
+                    "category": q.get("category"),
+                    "difficulty": q.get("difficulty"),
+                    "persona": q.get("persona"),
                     "error": str(e),
                     "with_docs": None,
                     "without_docs": None
                 })
-        
-        logger.info(f"Generated answers for {len(answers)} questions")
+                elapsed = time.time() - t0
+                print(f"[{i+1}/{n}] {q_id} ✗ error ({elapsed:.1f}s): {e}", flush=True)
+
+            # Incremental save after each question
+            if output_path is not None:
+                self._save_incremental(answers, output_path)
+
+        print("\n✓ Generated answers:", flush=True)
+        print(f"  WITH docs: {sum(1 for a in answers if a.get('with_docs'))}/{n}", flush=True)
+        print(f"  WITHOUT docs: {sum(1 for a in answers if a.get('without_docs'))}/{n}", flush=True)
+        if errors:
+            print(f"  Errors: {errors}", flush=True)
         return answers
     
     def _generate_answer_pair(
@@ -200,6 +205,9 @@ class Answerer:
             "question_id": question["id"],
             "question_text": question_text,
             "library_name": library_name,
+            "category": question.get("category"),
+            "difficulty": question.get("difficulty"),
+            "persona": question.get("persona"),
             "with_docs": with_docs_answer,
             "without_docs": without_docs_answer
         }
@@ -322,6 +330,21 @@ class Answerer:
             "model": self.model
         }
     
+    def _save_incremental(self, answers: List[Dict[str, Any]], output_path: Path) -> None:
+        """Write current answers to disk (called after each question)."""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output = {
+            "generated_at": self._get_timestamp(),
+            "model": self.model,
+            "provider": self.provider,
+            "total_questions": len(answers),
+            "answers": answers
+        }
+        tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(output, f, indent=2)
+        os.replace(tmp_path, output_path)
+
     def save_answers(
         self,
         answers: List[Dict[str, Any]],
