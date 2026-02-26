@@ -7,6 +7,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, Dict
 
 from doc_benchmarks.report.json_report import write_json
 from doc_benchmarks.report.markdown_report import write_compare_report, write_run_report
@@ -75,6 +76,174 @@ def cmd_compare(args: argparse.Namespace) -> None:
     write_json(result, out_json)
     write_compare_report(result, out_md)
     print(json.dumps(result["diff"], indent=2))
+
+
+# ─── Baseline management ──────────────────────────────────────────────────────
+
+BASELINES_DIR = Path("baselines/eval")
+
+
+def _baseline_manifest() -> Dict[str, Any]:
+    """Load or create the baseline manifest."""
+    manifest_path = BASELINES_DIR / "manifest.json"
+    if manifest_path.exists():
+        return json.loads(manifest_path.read_text())
+    return {"baselines": []}
+
+
+def _save_manifest(manifest: Dict[str, Any]) -> None:
+    BASELINES_DIR.mkdir(parents=True, exist_ok=True)
+    (BASELINES_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+
+def _compute_summary(eval_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract key stats from an eval file."""
+    evals = eval_data.get("evaluations", [])
+    valid = [e for e in evals if e.get("delta") is not None]
+    if not valid:
+        return {}
+    avg_with = sum((e.get("with_docs") or {}).get("aggregate", 0) for e in valid) / len(valid)
+    avg_without = sum((e.get("without_docs") or {}).get("aggregate", 0) for e in valid) / len(valid)
+    avg_delta = sum(e["delta"] for e in valid) / len(valid)
+    return {
+        "n": len(valid),
+        "avg_with": round(avg_with, 2),
+        "avg_without": round(avg_without, 2),
+        "avg_delta": round(avg_delta, 2),
+    }
+
+
+def cmd_baseline_save(args: argparse.Namespace) -> None:
+    """Save an eval result as a named baseline."""
+    from datetime import datetime, timezone
+
+    eval_path = Path(args.from_eval)
+    if not eval_path.exists():
+        print(f"❌ Eval file not found: {eval_path}")
+        raise SystemExit(1)
+
+    eval_data = json.loads(eval_path.read_text())
+    product = args.product or eval_data.get("product", "unknown")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    name = args.name or f"{product}-{timestamp}"
+
+    BASELINES_DIR.mkdir(parents=True, exist_ok=True)
+    dest = BASELINES_DIR / f"{name}.json"
+    dest.write_text(json.dumps(eval_data, indent=2))
+
+    manifest = _baseline_manifest()
+    manifest["baselines"].append({
+        "name": name,
+        "product": product,
+        "saved_at": timestamp,
+        "path": str(dest),
+        "summary": _compute_summary(eval_data),
+    })
+    _save_manifest(manifest)
+
+    print(f"✅ Saved baseline '{name}' → {dest}")
+    summary = _compute_summary(eval_data)
+    if summary:
+        print(f"   n={summary['n']}  with={summary['avg_with']}  without={summary['avg_without']}  delta={summary['avg_delta']:+}")
+
+
+def cmd_baseline_list(args: argparse.Namespace) -> None:
+    """List all saved baselines."""
+    manifest = _baseline_manifest()
+    baselines = manifest.get("baselines", [])
+    product_filter = getattr(args, "product", None)
+
+    if product_filter:
+        baselines = [b for b in baselines if b.get("product") == product_filter]
+
+    if not baselines:
+        print("No baselines saved yet.")
+        print("Run: python cli.py baseline save --from-eval eval/oneTBB.json --product oneTBB")
+        return
+
+    print(f"{'Name':<35} {'Product':<12} {'Saved':<17} {'n':>4} {'with':>6} {'without':>8} {'delta':>7}")
+    print("─" * 95)
+    for b in baselines:
+        s = b.get("summary", {})
+        print(
+            f"{b['name']:<35} {b.get('product','?'):<12} {b.get('saved_at','?'):<17}"
+            f" {s.get('n','?'):>4} {s.get('avg_with','?'):>6} {s.get('avg_without','?'):>8}"
+            f" {s.get('avg_delta', 'n/a'):>7}"
+        )
+
+
+def cmd_baseline_compare(args: argparse.Namespace) -> None:
+    """Compare an eval result against a saved baseline."""
+    eval_path = Path(args.eval)
+    if not eval_path.exists():
+        print(f"❌ Eval file not found: {eval_path}")
+        raise SystemExit(1)
+
+    eval_data = json.loads(eval_path.read_text())
+    manifest = _baseline_manifest()
+    baselines = manifest.get("baselines", [])
+
+    if not baselines:
+        print("No baselines found. Save one first:")
+        print("  python cli.py baseline save --from-eval eval/oneTBB.json --product oneTBB")
+        raise SystemExit(1)
+
+    # Find baseline: by name or latest for same product
+    if args.baseline:
+        entry = next((b for b in baselines if b["name"] == args.baseline), None)
+        if not entry:
+            print(f"❌ Baseline '{args.baseline}' not found.")
+            raise SystemExit(1)
+    else:
+        product = args.product or eval_data.get("product")
+        candidates = [b for b in baselines if b.get("product") == product] if product else baselines
+        if not candidates:
+            candidates = baselines
+        entry = candidates[-1]   # most recent
+
+    baseline_data = json.loads(Path(entry["path"]).read_text())
+    baseline_evals = {e["question_id"]: e for e in baseline_data.get("evaluations", [])}
+    current_evals = eval_data.get("evaluations", [])
+
+    print(f"Comparing against baseline: {entry['name']} (saved {entry.get('saved_at', '?')})\n")
+
+    deltas_changed = []
+    for e in current_evals:
+        q_id = e["question_id"]
+        base_e = baseline_evals.get(q_id)
+        if not base_e:
+            continue
+        cur_delta = e.get("delta")
+        base_delta = base_e.get("delta")
+        if cur_delta is not None and base_delta is not None:
+            change = cur_delta - base_delta
+            if abs(change) >= 1:
+                deltas_changed.append((q_id, base_delta, cur_delta, change,
+                                       e.get("question_text", "")[:60]))
+
+    # Overall summary
+    cur_summary = _compute_summary(eval_data)
+    base_summary = entry.get("summary", {})
+
+    print(f"{'Metric':<20} {'Baseline':>10} {'Current':>10} {'Change':>8}")
+    print("─" * 52)
+    for k, label in [("avg_with", "WITH docs avg"), ("avg_without", "WITHOUT avg"), ("avg_delta", "Avg delta")]:
+        b_val = base_summary.get(k, "?")
+        c_val = cur_summary.get(k, "?")
+        try:
+            change = f"{c_val - b_val:+.2f}"
+        except TypeError:
+            change = "?"
+        print(f"{label:<20} {str(b_val):>10} {str(c_val):>10} {change:>8}")
+
+    if deltas_changed:
+        print(f"\nQuestions with notable changes (|Δ| ≥ 1):")
+        print(f"  {'ID':<20} {'base_δ':>7} {'cur_δ':>7} {'change':>7}  Question")
+        print("  " + "─" * 80)
+        for q_id, bd, cd, ch, txt in sorted(deltas_changed, key=lambda x: -abs(x[3])):
+            print(f"  {q_id:<20} {bd:>7} {cd:>7} {ch:>+7}  {txt}")
+    else:
+        print("\n✅ No notable changes vs baseline.")
 
 
 def cmd_report(args: argparse.Namespace) -> None:
@@ -445,6 +614,29 @@ def build_parser() -> argparse.ArgumentParser:
     cmp_p.add_argument("--out-json", default="reports/compare.json")
     cmp_p.add_argument("--out-md", default="reports/compare.md")
     cmp_p.set_defaults(func=cmd_compare)
+
+    # Baseline subcommand group
+    bl_p = sub.add_parser("baseline", help="Save and compare eval baselines")
+    bl_sub = bl_p.add_subparsers(dest="baseline_cmd", required=True)
+
+    # baseline save
+    bl_save = bl_sub.add_parser("save", help="Save an eval result as a named baseline")
+    bl_save.add_argument("--from-eval", required=True, help="Path to eval JSON file")
+    bl_save.add_argument("--product", default=None, help="Product name (e.g., oneTBB)")
+    bl_save.add_argument("--name", default=None, help="Baseline name (auto-generated if omitted)")
+    bl_save.set_defaults(func=cmd_baseline_save)
+
+    # baseline list
+    bl_list = bl_sub.add_parser("list", help="List saved baselines")
+    bl_list.add_argument("--product", default=None, help="Filter by product")
+    bl_list.set_defaults(func=cmd_baseline_list)
+
+    # baseline compare
+    bl_cmp = bl_sub.add_parser("compare", help="Compare eval result vs saved baseline")
+    bl_cmp.add_argument("--eval", required=True, help="Path to current eval JSON file")
+    bl_cmp.add_argument("--product", default=None, help="Product name for baseline lookup")
+    bl_cmp.add_argument("--baseline", default=None, help="Baseline name (latest if omitted)")
+    bl_cmp.set_defaults(func=cmd_baseline_compare)
 
     # Report subcommand group
     report_p = sub.add_parser("report", help="Generate analysis reports")
