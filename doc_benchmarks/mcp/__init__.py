@@ -1,7 +1,14 @@
-"""MCP (Model Context Protocol) base interface."""
+"""MCP (Model Context Protocol) base interface and doc-source clients."""
 
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
+
+__all__ = [
+    "MCPClient",
+    "MCPError",
+    "MCPConnectionError",
+    "MCPLibraryNotFoundError",
+]
 
 
 class MCPClient(ABC):

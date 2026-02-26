@@ -336,8 +336,7 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
     import os
     import yaml
     from doc_benchmarks.questions import RagasSeedExtractor, QuestionGenerator, QuestionValidator
-    from doc_benchmarks.mcp.context7 import create_context7_client
-    
+
     # Load config
     config_path = Path("config/products.yaml")
     if config_path.exists():
@@ -357,9 +356,11 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
         topics = json.loads(Path(args.topics).read_text())
     else:
         print(f"Extracting seed topics for {args.product}...")
-        
-        # Setup Context7 MCP client
-        mcp_client = create_context7_client(cache_dir=Path(".cache/context7"))
+
+        # Setup documentation source client
+        doc_source = getattr(args, "doc_source", "context7")
+        from doc_benchmarks.mcp.factory import create_doc_source_client
+        mcp_client = create_doc_source_client(doc_source)
         library_id = mcp_client.resolve_library_id(args.product)
         
         # Extract topics
@@ -414,24 +415,26 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
     """Generate answers (WITH and WITHOUT docs) for questions."""
     import yaml
     from doc_benchmarks.eval import Answerer
-    from doc_benchmarks.mcp.context7 import create_context7_client
-    
+    from doc_benchmarks.mcp.factory import create_doc_source_client
+
     # Load config
     config_path = Path("config/products.yaml")
     if config_path.exists():
         config = yaml.safe_load(config_path.read_text())
     else:
         config = {}
-    
+
     product_config = config.get("products", {}).get(args.product, {})
-    
+
     # Load questions
     questions_data = json.loads(Path(args.questions).read_text())
     questions = questions_data.get("questions", questions_data)  # Handle both formats
     print(f"Loaded {len(questions)} questions from {args.questions}")
-    
-    # Setup Context7 MCP client
-    mcp_client = create_context7_client(cache_dir=Path(".cache/context7"))
+
+    # Setup documentation source client
+    doc_source = getattr(args, "doc_source", "context7")
+    print(f"Documentation source: {doc_source}")
+    mcp_client = create_doc_source_client(doc_source)
     library_id = mcp_client.resolve_library_id(args.product)
     
     print(f"Generating answers for {args.product} (library_id={library_id})")
@@ -547,7 +550,8 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         questions_per_topic=args.questions_per_topic,
         top_k=args.top_k,
         rerank_threshold=args.rerank_threshold,
-        debug_retrieval=args.debug_retrieval
+        debug_retrieval=args.debug_retrieval,
+        doc_source=getattr(args, "doc_source", "context7"),
     )
     
     # Run pipeline
@@ -619,6 +623,8 @@ def build_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--top-k", type=int, default=5, help="Docs to retrieve before reranking")
     eval_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score")
     eval_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata")
+    eval_p.add_argument("--doc-source", default="context7",
+                        help="Documentation source: 'context7' (default), 'local:<path>', 'url:<url>'")
     eval_p.set_defaults(func=cmd_evaluate)
 
     cmp_p = sub.add_parser("compare")
@@ -708,6 +714,8 @@ def build_parser() -> argparse.ArgumentParser:
     gen_q_p.add_argument("--validate", action="store_true", help="Enable validation and deduplication")
     gen_q_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
     gen_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    gen_q_p.add_argument("--doc-source", default="context7",
+                         help="Documentation source for topic extraction: 'context7', 'local:<path>', 'url:<url>'")
     gen_q_p.set_defaults(func=cmd_questions_generate)
     
     # Answers subcommand group
@@ -726,6 +734,8 @@ def build_parser() -> argparse.ArgumentParser:
     gen_a_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score (0-1) to keep docs")
     gen_a_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata in output")
     gen_a_p.add_argument("--concurrency", type=positive_int, default=5, help="Parallel API calls (default: 5)")
+    gen_a_p.add_argument("--doc-source", default="context7",
+                         help="Documentation source: 'context7' (default), 'local:<path>', 'url:<url>'")
     gen_a_p.set_defaults(func=cmd_answers_generate)
     
     # Eval subcommand group

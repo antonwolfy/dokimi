@@ -1,0 +1,195 @@
+"""URL-based documentation source client."""
+
+import re
+import hashlib
+import logging
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+import httpx
+
+from . import MCPClient, MCPConnectionError
+
+logger = logging.getLogger(__name__)
+
+
+def _strip_html(text: str) -> str:
+    """Remove HTML tags from text."""
+    text = re.sub(r"<(script|style)[^>]*>.*?</(script|style)>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _split_paragraphs(text: str, min_len: int = 80) -> List[str]:
+    """Split text into paragraphs, discarding very short ones."""
+    # Split on blank lines or sentence boundaries
+    chunks = re.split(r"\n{2,}|\r\n{2,}", text)
+    return [c.strip() for c in chunks if len(c.strip()) >= min_len]
+
+
+def _score_chunk(query: str, content: str) -> float:
+    """Simple keyword overlap score (0-1)."""
+    query_tokens = set(re.findall(r"\w+", query.lower()))
+    if not query_tokens:
+        return 0.0
+    content_lower = content.lower()
+    hits = sum(1 for tok in query_tokens if tok in content_lower)
+    return hits / len(query_tokens)
+
+
+class URLClient(MCPClient):
+    """
+    Documentation client that fetches content from an arbitrary URL.
+
+    Fetches once, caches the result (if cache_dir is set), then splits
+    the text into paragraphs and returns the most query-relevant ones.
+
+    Usage::
+
+        client = URLClient("https://spec.example.com/api.html")
+        docs = client.get_library_docs("https://...", "parallel_for")
+    """
+
+    def __init__(
+        self,
+        url: str,
+        timeout: int = 30,
+        cache_dir: Optional[Path] = None,
+        max_page_size_kb: int = 1024,
+    ):
+        """
+        Args:
+            url: Documentation URL to fetch.
+            timeout: HTTP request timeout in seconds.
+            cache_dir: Directory for caching fetched pages (None = no cache).
+            max_page_size_kb: Truncate pages larger than this.
+        """
+        self.url = url
+        self.timeout = timeout
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        self.max_page_size_bytes = max_page_size_kb * 1024
+
+        if self.cache_dir:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── MCPClient interface ────────────────────────────────────────────────
+
+    def resolve_library_id(self, library_name: str) -> str:
+        """Return the URL as the canonical library ID."""
+        return self.url
+
+    def get_library_docs(
+        self,
+        library_id: str,
+        query: str,
+        max_results: int = 5,
+        max_tokens: int = 8000,
+    ) -> List[Dict[str, Any]]:
+        """
+        Fetch the URL, split into paragraphs, return top query-relevant chunks.
+
+        Args:
+            library_id: Ignored (URL is set at construction time).
+            query: Natural-language search query.
+            max_results: Maximum number of paragraph chunks to return.
+            max_tokens: Soft limit — output capped at max_tokens*4 total chars.
+
+        Returns:
+            List of dicts with keys: content, source, url, library_id, query.
+        """
+        raw = self._fetch()
+        if not raw:
+            return []
+
+        paragraphs = _split_paragraphs(raw)
+        if not paragraphs:
+            # Fall back to the whole page as one chunk
+            chunk_limit = max_tokens * 4
+            return [{
+                "content": raw[:chunk_limit],
+                "source": "url",
+                "url": self.url,
+                "library_id": library_id,
+                "query": query,
+                "relevance_score": _score_chunk(query, raw[:chunk_limit]),
+            }]
+
+        scored = sorted(
+            ((p, _score_chunk(query, p)) for p in paragraphs),
+            key=lambda x: -x[1],
+        )
+
+        # Combine top paragraphs up to max_tokens*4 chars total
+        char_limit = max_tokens * 4
+        results = []
+        total_chars = 0
+        for para, score in scored[:max_results]:
+            if total_chars >= char_limit:
+                break
+            results.append({
+                "content": para[: char_limit - total_chars],
+                "source": "url",
+                "url": self.url,
+                "library_id": library_id,
+                "query": query,
+                "relevance_score": round(score, 4),
+            })
+            total_chars += len(para)
+
+        logger.info(
+            f"URLClient: returning {len(results)} chunks for query='{query[:40]}...'"
+        )
+        return results
+
+    def check_connection(self) -> bool:
+        """Return True if the URL is reachable (HTTP 2xx)."""
+        try:
+            resp = httpx.head(self.url, timeout=self.timeout, follow_redirects=True)
+            return 200 <= resp.status_code < 300
+        except Exception as exc:
+            logger.debug(f"URLClient.check_connection failed: {exc}")
+            return False
+
+    # ── Helpers ───────────────────────────────────────────────────────────
+
+    def _cache_key(self) -> str:
+        return hashlib.sha256(self.url.encode()).hexdigest()
+
+    def _fetch(self) -> str:
+        """Fetch URL (with optional caching). Returns cleaned plain text."""
+        # Try cache first
+        if self.cache_dir:
+            cache_file = self.cache_dir / f"{self._cache_key()}.txt"
+            if cache_file.exists():
+                logger.info(f"URLClient: cache hit for {self.url}")
+                return cache_file.read_text(encoding="utf-8")
+
+        logger.info(f"URLClient: fetching {self.url}")
+        try:
+            resp = httpx.get(
+                self.url,
+                timeout=self.timeout,
+                follow_redirects=True,
+                headers={"User-Agent": "doc-benchmark/1.0"},
+            )
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise MCPConnectionError(f"URLClient HTTP error {exc.response.status_code}: {self.url}") from exc
+        except httpx.TimeoutException as exc:
+            raise MCPConnectionError(f"URLClient timeout fetching {self.url}") from exc
+        except Exception as exc:
+            raise MCPConnectionError(f"URLClient fetch failed: {exc}") from exc
+
+        content_type = resp.headers.get("content-type", "")
+        text = resp.text[: self.max_page_size_bytes]
+
+        if "html" in content_type or text.lstrip().startswith("<"):
+            text = _strip_html(text)
+
+        # Persist to cache
+        if self.cache_dir:
+            cache_file.write_text(text, encoding="utf-8")
+            logger.info(f"URLClient: cached {self.url} → {cache_file}")
+
+        return text

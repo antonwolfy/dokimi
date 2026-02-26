@@ -36,11 +36,12 @@ class EvaluationPipeline:
         questions_per_topic: int = 2,
         top_k: int = 5,
         rerank_threshold: float = 0.3,
-        debug_retrieval: bool = False
+        debug_retrieval: bool = False,
+        doc_source: str = "context7",
     ):
         """
         Initialize pipeline.
-        
+
         Args:
             product: Product name (e.g., "oneDNN")
             repo: GitHub repo (e.g., "oneapi-src/oneDNN")
@@ -55,22 +56,25 @@ class EvaluationPipeline:
             top_k: Docs to retrieve before reranking
             rerank_threshold: Min relevance score
             debug_retrieval: Include retrieval metadata
+            doc_source: Documentation source descriptor — 'context7' (default),
+                'local:<path>', or 'url:<url>'
         """
         self.product = product
         self.repo = repo
         self.output_dir = Path(output_dir)
         self.custom_questions_path = Path(custom_questions_path) if custom_questions_path else None
-        
+
         self.model = model
         self.provider = provider
         self.judge_model = judge_model
         self.judge_provider = judge_provider
-        
+
         self.personas_count = personas_count
         self.questions_per_topic = questions_per_topic
         self.top_k = top_k
         self.rerank_threshold = rerank_threshold
         self.debug_retrieval = debug_retrieval
+        self.doc_source = doc_source
         
         # Output paths
         self.personas_path = self.output_dir / "personas" / f"{product}.json"
@@ -202,10 +206,10 @@ class EvaluationPipeline:
     def _generate_questions(self, personas: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Generate questions from personas."""
         from doc_benchmarks.questions import RagasSeedExtractor, QuestionGenerator
-        from doc_benchmarks.mcp.context7 import create_context7_client
-        
+        from doc_benchmarks.mcp.factory import create_doc_source_client
+
         # Extract topics
-        mcp_client = create_context7_client(cache_dir=Path(".cache/context7"))
+        mcp_client = create_doc_source_client(self.doc_source)
         library_id = mcp_client.resolve_library_id(self.product)
         
         extractor = RagasSeedExtractor(mcp_client=mcp_client, cache_dir=Path(".cache/topics"))
@@ -293,10 +297,10 @@ class EvaluationPipeline:
     def _generate_answers(self, questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Generate answers WITH and WITHOUT docs."""
         from doc_benchmarks.eval import Answerer
-        from doc_benchmarks.mcp.context7 import create_context7_client
-        
-        # Setup Context7 MCP client
-        mcp_client = create_context7_client(cache_dir=Path(".cache/context7"))
+        from doc_benchmarks.mcp.factory import create_doc_source_client
+
+        # Setup documentation source client
+        mcp_client = create_doc_source_client(self.doc_source)
         library_id = mcp_client.resolve_library_id(self.product)
         
         # Generate answers
