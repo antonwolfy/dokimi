@@ -1,0 +1,953 @@
+{
+  "evaluated_at": "2026-02-26T04:15:48.781321Z",
+  "judge_model": "gpt-4o",
+  "judge_provider": "openai",
+  "total_evaluations": 27,
+  "evaluations": [
+    {
+      "question_id": "tbb-gs-01",
+      "question_text": "How do I install oneTBB on Ubuntu and verify the installation?",
+      "with_docs": {
+        "correctness": 75,
+        "completeness": 80,
+        "specificity": 85,
+        "code_quality": 80,
+        "actionability": 85,
+        "aggregate": 81,
+        "reasoning": {
+          "correctness": "Some details are missing or incorrect, such as the incorrect git repository URL for oneTBB.",
+          "completeness": "Most necessary steps are included, but detailed verification steps or common troubleshooting tips could enhance it.",
+          "specificity": "The answer focuses on oneTBB, mentioning specific instructions in its context.",
+          "code_quality": "Code examples are mostly correct but assume a standard setup without addressing potential variations or errors.",
+          "actionability": "Instructions are clear and actionable, enabling users to follow along effectively."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer accurately describes the installation of oneTBB using multiple methods and includes a verification step, consistent with current installation practices.",
+          "completeness": "The response is comprehensive, covering system preparation, installation, and multiple verification methods, but could mention potential troubleshooting steps.",
+          "specificity": "The instructions are specific to installing oneTBB, though some steps like system update and building libraries are more general.",
+          "code_quality": "The example code is correctly structured and should compile and run as intended, although using task-based TBB components directly might be more illustrative.",
+          "actionability": "The guide is actionable, providing a clear, step-by-step approach that a user can immediately apply to install and verify oneTBB."
+        }
+      },
+      "delta": -5
+    },
+    {
+      "question_id": "tbb-gs-02",
+      "question_text": "How do I parallelize a simple for-loop using oneTBB? Show a complete hello-world example.",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer accurately demonstrates parallelizing a loop using oneTBB, but could be more rigorous in explaining some details like thread safety concerns or performance impacts.",
+          "completeness": "The answer fully addresses the question with a complete example, including code, explanation, and compilation instructions.",
+          "specificity": "The answer is specific to oneTBB as it uses the parallel_for function available in oneTBB.",
+          "code_quality": "The code is mostly correct, compiles, and demonstrates the concept correctly, but it might miss some edge cases or more advanced usage scenarios.",
+          "actionability": "The steps are clear and actionable, allowing the user to quickly apply the solution to a similar problem."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer uses the correct oneTBB function and provides the expected parallel behavior for a loop. However, it assumes the correct setup and linking of the TBB library without further installation details.",
+          "completeness": "It covers the necessary steps to parallelize a for-loop using oneTBB, including setup and explanation, but could enhance this by explaining the installation and environment configuration of oneTBB more extensively for beginners.",
+          "specificity": "The response specifically uses the oneTBB library and its functions rather than generic parallelization strategies, but could delve deeper into the library's specifics.",
+          "code_quality": "The code given is correct, functional, and well-structured but might benefit from additional comments and handling of potential multithreading issues, such as unordered printing due to `std::cout` usage in parallel. Proper use of TBB would involve more complex examples showcasing data handling.",
+          "actionability": "The steps are clear and understandable, allowing users to adopt this pattern into their codebases quickly, assuming they have a baseline understanding of how to set up their environment correctly."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-gs-03",
+      "question_text": "What are the basic building blocks of oneTBB? Explain the core concepts.",
+      "with_docs": {
+        "correctness": 90,
+        "completeness": 85,
+        "specificity": 95,
+        "code_quality": 80,
+        "actionability": 85,
+        "aggregate": 87,
+        "reasoning": {
+          "correctness": "The answer correctly outlines the primary building blocks of oneTBB and explains parallel algorithms, task groups, flow graphs, task arena, and data structures effectively.",
+          "completeness": "While it covers key concepts of oneTBB, the answer could explore some additional aspects like work stealing, load balancing, or synchronization support in more depth.",
+          "specificity": "The answer is highly specific to oneTBB, detailing the specific APIs and components offered by oneTBB.",
+          "code_quality": "The code examples illustrate usage correctly, but some details like error handling or edge cases in the examples could be more robust.",
+          "actionability": "Provides clear examples and explanations that a user can follow to apply the concepts directly in their code."
+        }
+      },
+      "without_docs": {
+        "correctness": 80,
+        "completeness": 85,
+        "specificity": 85,
+        "code_quality": 80,
+        "actionability": 85,
+        "aggregate": 83,
+        "reasoning": {
+          "correctness": "The answer is mostly accurate but contains outdated details. For example, `tbb::task_scheduler_init` is deprecated in recent versions of oneTBB.",
+          "completeness": "The answer addresses the main components of oneTBB but lacks details about some modern features like heterogeneity support and recent changes in flow graph API.",
+          "specificity": "Focuses well on oneTBB-specific components, APIs, and concepts.",
+          "code_quality": "Some code snippets use deprecated or outdated constructs, though they are illustrative of concepts.",
+          "actionability": "The provided codes and explanations would allow a user familiar with C++ to begin using oneTBB, though updates may be necessary for the latest versions."
+        }
+      },
+      "delta": 4
+    },
+    {
+      "question_id": "tbb-int-01",
+      "question_text": "How do I integrate oneTBB with CMake? Show a complete CMakeLists.txt example.",
+      "with_docs": {
+        "correctness": 90,
+        "completeness": 95,
+        "specificity": 95,
+        "code_quality": 90,
+        "actionability": 95,
+        "aggregate": 93,
+        "reasoning": {
+          "correctness": "Answer accurately uses the find_package and target_link_libraries commands for oneTBB, which should work as intended.",
+          "completeness": "Includes all necessary parts of CMake setup for using oneTBB and provides an example of how to include OpenMP optionally, covering additional info the user may need.",
+          "specificity": "Directly refers to integrating oneTBB using specific CMake commands associated with it.",
+          "code_quality": "The CMake code is well-written, logical, and should run without issues when provided with correct inputs.",
+          "actionability": "Gives clear instructions and commands that a user can immediately use to implement oneTBB in a CMake project."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer provides a generally accurate method for integrating oneTBB with CMake, using the find_package and target_link_libraries functionalities correctly.",
+          "completeness": "The response covers all necessary parts of integrating oneTBB, including setting up CMakeLists.txt and building the project.",
+          "specificity": "The answer is focused on oneTBB, although the use of TBB::<component> specifically is mentioned as a potential improvement for specificity.",
+          "code_quality": "The code provided should work for most use cases, assuming TBB is installed correctly, and follows modern CMake practices.",
+          "actionability": "The user has clear, actionable steps to follow to integrate oneTBB, provided they've met the prerequisites (e.g., TBB installation)."
+        }
+      },
+      "delta": 7
+    },
+    {
+      "question_id": "tbb-int-02",
+      "question_text": "How do I use oneTBB with conan package manager? Show the conanfile and integration.",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer aligns well with documentation for using oneTBB and integrating it via Conan and CMake.",
+          "completeness": "The answer provides a comprehensive guide, including a conanfile and CMake integration, along with build instructions.",
+          "specificity": "While it uses oneTBB-specific APIs, the Conan command assumes the package name is 'onetbb', which might need verification from a specific repository.",
+          "code_quality": "The syntax and structure used are correct, and the examples are likely to work, assuming the right Conan package is available.",
+          "actionability": "The steps are actionable, with clear instructions on what commands to use and changes to make."
+        }
+      },
+      "without_docs": {
+        "correctness": 75,
+        "completeness": 80,
+        "specificity": 75,
+        "code_quality": 75,
+        "actionability": 80,
+        "aggregate": 77,
+        "reasoning": {
+          "correctness": "The answer correctly uses Conan to manage the oneTBB library and provides the correct framework for setting up a project. However, the versioning notation in 'requires' should be improved to specify a particular version or exact format that is ensured to exist in the Conan repositories.",
+          "completeness": "The response covers the steps for installing Conan, setting up a conanfile, integrating with CMake, and building the project. It could improve by adding specific instructions on specifying the 'tbb' Conan package, which is the legacy name often used in practices.",
+          "specificity": "The answer is somewhat specific to using oneTBB with Conan by mentioning parallel_for and oneTBB. However, it could focus more on version differences or known issues/solutions specific to oneTBB in the context of Conan.",
+          "code_quality": "The codes generally adhere to best practices but should be more specific about using modern imports and potential options that might be essential for oneTBB (e.g., versions, feature options). The 'configure' method is mixing build-time configurations that might be better handled in 'requirements' or 'build_requires'.",
+          "actionability": "The instructions are clear, allowing the user to follow and apply them with minor modifications needed. However, improvements in version specification can further help with direct applicability."
+        }
+      },
+      "delta": 9
+    },
+    {
+      "question_id": "tbb-int-03",
+      "question_text": "How do I use oneTBB together with OpenMP in the same application? Are there conflicts or oversubscription issues?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer accurately describes combining oneTBB with OpenMP and addresses potential issues like oversubscription, which aligns with existing documentation.",
+          "completeness": "It thoroughly covers the main points of the question, including an example and potential issues, and provides advice on mitigating those issues.",
+          "specificity": "While it addresses oneTBB, the answer could be more specific about oneTBB features beyond parallel_for.",
+          "code_quality": "The code is correct, uses appropriate constructs, and demonstrates a valid method for combining oneTBB and OpenMP.",
+          "actionability": "Steps are clearly outlined, allowing a user to implement the solution directly in their application."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is mostly accurate according to available documentation, but it could mention additional aspects such as integration issues and specific tuning tips.",
+          "completeness": "The answer addresses key points like thread management and configuration, but lacks mention of other best practices like avoiding nested parallelism or using advanced features of TBB and OpenMP.",
+          "specificity": "The answer refers specifically to oneTBB and has some library-specific configurations, but it is somewhat high-level for someone looking for very detailed solutions.",
+          "code_quality": "The code provided is correct and exemplifies key concepts like setting thread limits, but could be slightly improved with more explicit comments or error handling.",
+          "actionability": "The answer gives clear instructions and examples that can be applied immediately to help mitigate oversubscription in applications using both oneTBB and OpenMP."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-int-04",
+      "question_text": "How do I integrate oneTBB with vcpkg? Show installation and CMake usage.",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer accurately describes the integration process for oneTBB using vcpkg as referenced in the provided documentation.",
+          "completeness": "The answer covers installation, environment integration, package finding, and linking, which are the main aspects needed for the integration.",
+          "specificity": "The answer provides specific instructions relevant to oneTBB and mentions the package by name but could be more focused on unique properties of oneTBB.",
+          "code_quality": "The included code is correct, follows best practices, and is runnable assuming all dependencies and environment are correctly set up.",
+          "actionability": "The step-by-step instructions are clear and actionable, allowing the user to apply the instructions immediately."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is accurate regarding the use of vcpkg and CMake with oneTBB, but it misses specifying different installation procedures for different OS, especially for Windows.",
+          "completeness": "The answer addresses installation and integration using vcpkg and CMake clearly. It provides a working example, but it could mention potential environment settings or configurations.",
+          "specificity": "The answer is tailored to oneTBB and demonstrates its integration specifically. However, it could include more detail on specific features of oneTBB or version considerations.",
+          "code_quality": "The code included is correct and should compile, but could better specify the path variable settings for different environments.",
+          "actionability": "Steps are clear and actionable, enabling users to follow them to integrate oneTBB promptly."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-int-05",
+      "question_text": "Can I use oneTBB with std::execution parallel algorithms? How do they interoperate?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs with specific flags mentioned for compatibility.",
+          "completeness": "Covers the potential issues with libstdc++ versions and demonstrates both APIs.",
+          "specificity": "Uses oneTBB-specific APIs and discusses std::execution interoperability.",
+          "code_quality": "Code compiles, demonstrates concepts well, and follows C++ best practices.",
+          "actionability": "Clear steps and examples are provided for immediate application."
+        }
+      },
+      "without_docs": {
+        "correctness": 75,
+        "completeness": 70,
+        "specificity": 60,
+        "code_quality": 85,
+        "actionability": 75,
+        "aggregate": 73,
+        "reasoning": {
+          "correctness": "While the general idea of using std::execution::par with oneTBB is presented, the integration is not straightforward out-of-the-box, especially regarding the direct usage of oneTBB with C++ standard algorithms.",
+          "completeness": "The answer misses details on how to set up oneTBB specifically as the execution backend for std::execution policies, leaving important implementation steps unexplained.",
+          "specificity": "The answer mentions oneTBB but doesn't provide specific methods or configurations on how to ensure interoperability with std::execution policies.",
+          "code_quality": "The provided code correctly demonstrates the use of std::execution::par, but does not showcase oneTBB's role explicitly.",
+          "actionability": "The advice given is somewhat actionable but lacks detail on implementing oneTBB as an execution provider, which constitutes a key part of the original question."
+        }
+      },
+      "delta": 13
+    },
+    {
+      "question_id": "tbb-int-06",
+      "question_text": "How do I use oneTBB from a Python application? Show the Python bindings setup and usage.",
+      "with_docs": {
+        "correctness": 75,
+        "completeness": 60,
+        "specificity": 70,
+        "code_quality": 65,
+        "actionability": 70,
+        "aggregate": 68,
+        "reasoning": {
+          "correctness": "The answer contains inaccuracies. For example, the installation commands provided seem incorrect or incomplete for using oneTBB with Python.",
+          "completeness": "The answer provides a general direction but lacks a comprehensive explanation of specific oneTBB functionalities and necessary system requirements.",
+          "specificity": "The answer mentions oneTBB-specific details, but lacks depth in explaining its Python integration features effectively.",
+          "code_quality": "The code example provided is vague and does not contain executable or descriptive tasks (e.g., '...'). Importing of the module might be wrong; typically, this could be 'import tbb' or a specific package.",
+          "actionability": "The user can follow some steps but might face issues due to incomplete paths and parameters, requiring further assistance or documentation."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is mostly accurate, providing a clear explanation and steps to bind oneTBB functionality using pybind11.",
+          "completeness": "The answer covers the necessary steps to set up and use oneTBB in a Python application, including installation, creating bindings, and usage.",
+          "specificity": "The response is relevant to oneTBB and demonstrates usage specific to its parallel processing capabilities.",
+          "code_quality": "The code provided is well-structured and should work as intended, following typical setup practices for a Python extension.",
+          "actionability": "The answer provides actionable steps that a user can follow to integrate oneTBB with Python using pybind11."
+        }
+      },
+      "delta": -18
+    },
+    {
+      "question_id": "tbb-perf-01",
+      "question_text": "How do I optimize parallel_for grainsize for my workload? What's the impact on performance?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs, with a clear explanation of grainsize and its impact on performance.",
+          "completeness": "Covers main aspects such as definition, choosing the grainsize, performance impact, and testing and benchmarking.",
+          "specificity": "Uses oneTBB-specific APIs, but could benefit from mentioning specific TBB features like auto_partitioner.",
+          "code_quality": "Code compiles and follows best practices, though a more complex usage example with real-world computation might have been ideal.",
+          "actionability": "Clear steps provided, allowing the user to follow guidelines for optimizing grainsize in their workload."
+        }
+      },
+      "without_docs": {
+        "correctness": 90,
+        "completeness": 90,
+        "specificity": 85,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 88,
+        "reasoning": {
+          "correctness": "The answer accurately describes factors affecting grainsize optimization and its impact on performance, as well as providing generally valid methods for determining an optimized grainsize.",
+          "completeness": "The response covers the topic well, touching on important aspects like task duration, CPU core count, and potential overhead, as well as giving guidance on finding an optimal grainsize.",
+          "specificity": "The response uses Intel TBB (`parallel_for` with `tbb::blocked_range`), which is specific, but it could expand on specific TBB strategies or function behaviors more deeply.",
+          "code_quality": "Code is clear, demonstrates the concept, compiles correctly, and follows best practices for this simple demonstration. However, more complex examples or error-handling might be beneficial.",
+          "actionability": "The user can apply the guidance immediately in their code, and the provided example gives a good starting point for experimentation."
+        }
+      },
+      "delta": -2
+    },
+    {
+      "question_id": "tbb-perf-02",
+      "question_text": "How do I use task_arena to control thread counts and affinity for specific code sections?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs but lacks detail on some advanced aspects of task_arena.",
+          "completeness": "Covers main aspects, including basic usage, nested parallel constructs, and NUMA node preference.",
+          "specificity": "Uses oneTBB-specific APIs and focuses on task_arena, though could emphasize affinity control more.",
+          "code_quality": "Code compiles and follows best practices, demonstrating various scenarios like concurrency limit and NUMA handling.",
+          "actionability": "Clear steps provided allow the user to apply the information to their specific problems effectively."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs, but the mention of task_arena being part of C++17 is incorrect. It is a part of oneTBB, not the C++ standard library.",
+          "completeness": "Covers the main aspects of using task_arena, including creation, execution, and affinity handling.",
+          "specificity": "Uses oneTBB-specific APIs but incorrectly links them to C++17, affecting specificity.",
+          "code_quality": "Code compiles and follows best practices, although the affinity example is a bit misleading without platform-specific details.",
+          "actionability": "Clear steps provided for creating and using a task arena, allowing the user to apply the guidance immediately."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-perf-03",
+      "question_text": "How do I implement NUMA-aware parallel algorithms with oneTBB for multi-socket systems?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer provides accurate technical information in line with typical NUMA-aware parallel computing principles and oneTBB documentation.",
+          "completeness": "The response covers the major aspects necessary for implementing NUMA-aware algorithms with oneTBB, including thread management and memory access localization.",
+          "specificity": "The answer is somewhat specific to oneTBB, using task_arena and parallel_for, but could benefit from more detailed examples and advanced techniques specific to NUMA and oneTBB.",
+          "code_quality": "The included code snippet is correct and demonstrates the use of oneTBB for parallel processing, though it could include more explicit NUMA management details.",
+          "actionability": "The steps provided are clear and actionable, allowing users to implement basic NUMA-aware parallel algorithms using oneTBB."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is generally correct in terms of leveraging oneTBB for NUMA awareness, but it could include more about how oneTBB inherently handles NUMA configurations.",
+          "completeness": "The response covers key concepts and provides a step-by-step guide suitable for implementing NUMA-aware algorithms with oneTBB.",
+          "specificity": "OneTBB is mentioned and used specifically, but some areas, like thread affinity, could be more deeply tied to oneTBB capabilities rather than generic OS-based threading solutions.",
+          "code_quality": "The provided code is mostly correct and shows good practices for memory management and parallel computation, but error checking and real-world considerations might be enhanced.",
+          "actionability": "The answer is actionable, offering clear and concise steps that can be directly implemented by users experimenting with NUMA-aware algorithms."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-perf-04",
+      "question_text": "What's the difference between auto_partitioner, simple_partitioner, and affinity_partitioner? When should I use each?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs",
+          "completeness": "Covers main aspects",
+          "specificity": "Uses oneTBB-specific APIs",
+          "code_quality": "Code compiles and follows best practices",
+          "actionability": "Clear steps provided"
+        }
+      },
+      "without_docs": {
+        "correctness": 50,
+        "completeness": 60,
+        "specificity": 10,
+        "code_quality": 30,
+        "actionability": 40,
+        "aggregate": 38,
+        "reasoning": {
+          "correctness": "The answer inaccurately addresses the question by providing information related to Spark partitioning mechanisms instead of oneTBB's partitioners. The descriptions of partitioners do not match those in oneTBB.",
+          "completeness": "The main aspects of the actual question about oneTBB partitioners are not covered. The answer needs to focus on describing the behavior and use-cases within the context of oneTBB.",
+          "specificity": "The response is not specific to oneTBB; it describes Spark DataFrame partitioning, which is irrelevant to the question.",
+          "code_quality": "The provided code examples are for Spark and not relevant to the context of oneTBB. Hence, the code is not applicable here.",
+          "actionability": "Due to the misalignment with oneTBB's constructs, the steps aren't actionable for an inquiry about oneTBB partitioning. Correct examples and explanations regarding oneTBB are not provided."
+        }
+      },
+      "delta": 48
+    },
+    {
+      "question_id": "tbb-perf-05",
+      "question_text": "How do I profile and measure the efficiency of my oneTBB parallel code? What metrics should I track?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs and technical understanding of profiling with oneTBB.",
+          "completeness": "Covers main aspects of performance profiling including execution time, scalability, and load balancing.",
+          "specificity": "Uses oneTBB-specific APIs like task_arena, but some parts (like general profiling techniques) are not exclusive to oneTBB.",
+          "code_quality": "Code compiles and follows best practices, but could have better error handling and corner case consideration.",
+          "actionability": "Clear steps provided with code examples, making it easy for users to apply in their own work."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is accurate and contains relevant information for profiling and measuring oneTBB parallel code, aligning well with standard practices.",
+          "completeness": "The response comprehensively addresses the aspects of profiling oneTBB code, listing both tools and specific metrics to track, making it a thorough guide.",
+          "specificity": "While the response does mention general profiling tools like Intel VTune, it integrates with oneTBB functionalities, although it could be slightly more tailored to oneTBB-specific scenarios.",
+          "code_quality": "The provided code is correct, demonstrates essential principles, and follows best practices, although minor improvements in demonstrating different use cases might increase quality.",
+          "actionability": "The answer provides clear and actionable steps that a reader can implement immediately to start profiling and measuring the efficiency of their oneTBB code."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-trouble-01",
+      "question_text": "My oneTBB application hangs occasionally. How do I debug potential deadlocks?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to the available documentation, addressing common causes and providing relevant solutions for deadlocks in oneTBB applications.",
+          "completeness": "It covers most key areas needed to debug deadlocks, such as runtime loading, task management, and the use of task arenas.",
+          "specificity": "The explanation and example code are specific to oneTBB but could benefit from referencing unique behaviors or issues tied directly to oneTBB rather than general parallel computation advice.",
+          "code_quality": "The provided code examples appear correct and demonstrate the recommended practices effectively, although they could be more comprehensive.",
+          "actionability": "Users are provided with clear steps they can implement immediately to address potential deadlocks, making it highly actionable."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is accurate and aligns with documentation about oneTBB, though some minor aspects such as the specifics of enabling tracing in TBB could be clarified.",
+          "completeness": "Covers the major aspects of debugging deadlocks in oneTBB, including common causes, using TBB-specific tools, and general deadlock resolution techniques.",
+          "specificity": "Although primarily focused on oneTBB, some parts are slightly generic for multithreading deadlock debugging without deep diving into oneTBB-provided mechanisms specifically.",
+          "code_quality": "The code examples provided are correct, follow best practices, and are applicable to the context of the question.",
+          "actionability": "The steps and methods described are actionable and provide clear instructions for the user to debug and potentially resolve the deadlocks."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-trouble-02",
+      "question_text": "I'm seeing worse performance with parallel_for than serial code. What are common causes?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs",
+          "completeness": "Covers main aspects",
+          "specificity": "Uses oneTBB-specific APIs",
+          "code_quality": "Code compiles and follows best practices",
+          "actionability": "Clear steps provided"
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 75,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 85,
+        "reasoning": {
+          "correctness": "The answer correctly identifies common causes of poor performance with parallel constructs, which aligns with best practices and known pitfalls in parallel programming.",
+          "completeness": "The answer addresses several key factors and provides examples for each, making it thorough in addressing potential performance issues with `parallel_for` versus serial code.",
+          "specificity": "While the advice is mostly relevant and applicable to oneTBB, it is somewhat generic and could apply to other parallel libraries as well. More specific references to oneTBB patterns could improve specificity.",
+          "code_quality": "The code includes clear examples that illustrate the points discussed. It follows good practices but should directly reference oneTBB constructs for greater relevance and correctness.",
+          "actionability": "The answer gives actionable advice that the user can apply directly to diagnose and address performance issues, enhancing its practical value."
+        }
+      },
+      "delta": 1
+    },
+    {
+      "question_id": "tbb-trouble-03",
+      "question_text": "How do I handle exceptions properly in oneTBB parallel algorithms? My program crashes on errors.",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is largely accurate and follows the recommended pattern of using try-catch blocks with oneTBB parallel algorithms, aligning with best practices for handling exceptions.",
+          "completeness": "The answer provides detailed steps for handling exceptions, complete with example code and some explanation on exception types and actions to take, which are fundamental for solving the problem.",
+          "specificity": "Although the example is tailored to oneTBB and mentions specific functions like `parallel_for`, it also uses a general approach for exception handling in C++, slightly reducing specificity.",
+          "code_quality": "The code is well-structured, correctly uses oneTBB constructs, and demonstrates a common error scenario with an intentional exception, which is useful for illustration purposes, but it also assumes some knowledge of the format for initializing ranges.",
+          "actionability": "The user is provided with clear, actionable information and example code that can be directly applied in their program to handle exceptions without program crashes."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer provides accurate strategies for exception handling in oneTBB, including using try-catch and exception_ptr.",
+          "completeness": "The answer addresses the question thoroughly, covering different methods to manage exceptions in oneTBB.",
+          "specificity": "While the answer addresses oneTBB-specific concerns, it could more directly reference oneTBB documentation or features for better specificity.",
+          "code_quality": "The example code is correct and runnable, demonstrating exception handling techniques properly.",
+          "actionability": "The answer provides direct and clear steps the user can follow, making it highly actionable."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-trouble-04",
+      "question_text": "I get segfaults when using concurrent_vector. What are the common mistakes?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs",
+          "completeness": "Covers main aspects",
+          "specificity": "Uses oneTBB-specific APIs",
+          "code_quality": "Code compiles and follows best practices",
+          "actionability": "Clear steps provided"
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer accurately describes common issues leading to segfaults with concurrent_vector and provides sound advice for avoiding them.",
+          "completeness": "It addresses key areas of concern like out-of-bounds access, concurrent modification, and dangling references, providing a comprehensive overview.",
+          "specificity": "The answer is generally specific to oneTBB but could benefit from deeper integration of oneTBB-specific details.",
+          "code_quality": "The code examples are mostly correct and illustrate the described issues, but some comments could be more precise for clarity.",
+          "actionability": "The steps and fixes suggested can be applied by users facing these issues, making the advice actionable."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-trouble-05",
+      "question_text": "How do I debug race conditions and data races in oneTBB code?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is generally accurate and adheres to practices within the oneTBB framework.",
+          "completeness": "Covers a range of strategies to address race conditions and data races within a oneTBB context.",
+          "specificity": "The answer shows a good use of oneTBB-specific APIs and practices, but some suggestions are a bit more general (e.g., using mutexes).",
+          "code_quality": "Provided code snippets are correct, but might need additional context or setup for a complete solution.",
+          "actionability": "The user can implement the suggestions directly, making the approach immediately useful."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer accurately uses threading concepts, although it fails to highlight certain caveats specific to oneTBB, such as differences in behavior with other threading libraries.",
+          "completeness": "The answer provides a comprehensive guide on approaches to debug race conditions and data races in oneTBB using synchronization primitives, tools, and coding techniques.",
+          "specificity": "While the answer uses simple examples to demonstrate concepts, it could be more focused on oneTBB-specific features, such as using task-based parallelism in addition to generic threading concepts.",
+          "code_quality": "The code examples are correct and demonstrate proper usage of synchronization techniques, but could include more oneTBB-specific constructs.",
+          "actionability": "The answer gives actionable advice and step-by-step guidance that users can follow to debug and resolve race conditions in their code."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-api-01",
+      "question_text": "How do I build a flow graph pipeline using oneTBB? Show a multi-stage producer-consumer example.",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is generally accurate but does not perfectly align with the most recent updates in oneTBB. It uses correct node types but slightly misrepresents function signatures and details in a few areas.",
+          "completeness": "The answer provides a well-rounded overview of creating a multi-stage pipeline, including setup, processing logic, node connections, and data insertion workflows, making it comprehensive.",
+          "specificity": "While the answer incorporates oneTBB flow graph principles, it could include more nuances tied to recent version-specific updates and lesser-known features or best practices of oneTBB.",
+          "code_quality": "The code example given is clear, appropriate for the topic, uses correct syntax, and should compile, although it might not cover teaching more advanced error handling or performance tips.",
+          "actionability": "It gives detailed steps allowing users to follow them in setting up a basic model; however, further guidance on customizing or expanding the system would enhance its usability."
+        }
+      },
+      "without_docs": {
+        "correctness": 80,
+        "completeness": 85,
+        "specificity": 80,
+        "code_quality": 75,
+        "actionability": 85,
+        "aggregate": 81,
+        "reasoning": {
+          "correctness": "The basic structure and usage of oneTBB is explained correctly. The use of `tbb::flow` namespace and node types is accurate, though there might be minor inconsistencies with updated syntax for the most recent versions.",
+          "completeness": "The answer provides a comprehensive overview of setting up a flow graph pipeline using oneTBB and explains the steps in detail. However, it could include more advanced features or error handling for even greater completeness.",
+          "specificity": "The answer employs oneTBB-specific functionality, specifically targeting its flow graph API. That said, it remains somewhat basic and doesn't delve deeply into oneTBB's advanced features.",
+          "code_quality": "The provided code example outlines the necessary steps to create and manipulate a flow graph. Nonetheless, minor adjustments may be necessary depending on the specific version of oneTBB used, and a few initializations (like the constructor for `make_source_node`) are slightly off.",
+          "actionability": "The instructions are direct and actionable, allowing a user to follow them to set up a simple flow graph pipeline using oneTBB. Compilation instructions are also provided, enhancing usability."
+        }
+      },
+      "delta": 5
+    },
+    {
+      "question_id": "tbb-api-02",
+      "question_text": "What are the differences between concurrent_vector, concurrent_queue, and concurrent_hash_map? When to use each?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 70,
+        "actionability": 90,
+        "aggregate": 83,
+        "reasoning": {
+          "correctness": "The answer mostly correctly describes each data structure and their intended use, but contains a mistake in the `concurrent_hash_map` usage since it requires an accessor to modify or access elements, not direct insertion.",
+          "completeness": "The answer sufficiently covers the key differences and typical use cases of each concurrent data structure, offering a clear understanding for users.",
+          "specificity": "The answer is specific to oneTBB with mentions of functionality and methods specific to its concurrent data structures, but lacks some depth on certain TBB-specific mechanisms (e.g., the use of accessors in concurrent_hash_map).",
+          "code_quality": "While the sample code for `concurrent_vector` is clear, the example for `concurrent_hash_map` is misleading about its usage. Correct implementation in real scenarios requires more specific syntax according to TBB's requirements. The snippet for `concurrent_queue` is overly abstract, lacking runnable code.",
+          "actionability": "The provided examples (aside from the `concurrent_hash_map`) and the descriptions make it easy for a user to understand when and how to use these data structures, fostering immediate application."
+        }
+      },
+      "without_docs": {
+        "correctness": 95,
+        "completeness": 90,
+        "specificity": 90,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 90,
+        "reasoning": {
+          "correctness": "The answer accurately describes the differences and appropriate use cases for each of the concurrent data structures according to Intel's oneTBB documentation.",
+          "completeness": "The answer covers the main aspects of each data structure, including their use cases and a basic explanation of how they work.",
+          "specificity": "The answer specifically addresses oneTBB's implementation details rather than generic C++ containers.",
+          "code_quality": "The provided code examples are mostly correct and demonstrate the usage of the data structures, though there could be slight improvements like ensuring elements are available for 'consumer' after 'producer' adds them.",
+          "actionability": "The explanations and code examples provide a clear guide for users to implement the data structures in their applications."
+        }
+      },
+      "delta": -7
+    },
+    {
+      "question_id": "tbb-api-03",
+      "question_text": "How do I implement parallel reduction (sum, min, max) using parallel_reduce? Show custom reduction body.",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to the documentation and provides correct logic for parallel reductions using oneTBB.",
+          "completeness": "Covers the major aspects of implementing parallel reduction with specific examples for summation and minimum, which are the key operations mentioned.",
+          "specificity": "Uses oneTBB-specific APIs, but doesn't delve into oneTBB's particular nuances such as grain size or dynamic partitioner settings, which could provide additional specificity.",
+          "code_quality": "Code compiles and follows good practices, but validation or testing code snippets would further enhance the quality.",
+          "actionability": "Clear steps and example codes are provided, making it easy for users to adapt and use the information immediately."
+        }
+      },
+      "without_docs": {
+        "correctness": 70,
+        "completeness": 75,
+        "specificity": 60,
+        "code_quality": 80,
+        "actionability": 80,
+        "aggregate": 73,
+        "reasoning": {
+          "correctness": "The use of C++17's std::reduce with parallel execution policy is correct, but it does not specifically address parallel_reduce from oneTBB which uses a different approach.",
+          "completeness": "The answer explains the implementations of sum, min, and max reductions with a custom reduction body including necessary components and conditions.",
+          "specificity": "This is not specific to oneTBB; it uses std::execution::par, which is different from oneTBB's parallel_reduce mechanism.",
+          "code_quality": "The code appears to be logically sound and appropriate for the method it discusses, though improvements could be made by focusing more directly on TBB usage.",
+          "actionability": "The user can apply the presented `std::reduce` techniques immediately, but it won't directly help with oneTBB's parallel_reduce."
+        }
+      },
+      "delta": 13
+    },
+    {
+      "question_id": "tbb-api-04",
+      "question_text": "How do I use enumerable_thread_specific for efficient thread-local storage with reduction?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is mostly accurate according to oneTBB documentation, but could be improved with minor refinements in explanation.",
+          "completeness": "The answer addresses the core concept of using enumerable_thread_specific for reduction adequately.",
+          "specificity": "The explanation and code provided are specific to oneTBB APIs, particularly regarding enumerable_thread_specific.",
+          "code_quality": "The code is mostly correct, compiles, and illustrates the use of enumerable_thread_specific, but could be refined for optimal performance considerations.",
+          "actionability": "Provides clear steps and code that can be directly used or adapted by the user for their needs."
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "The answer is generally accurate and aligns with the known usage of enumerable_thread_specific in the oneTBB library.",
+          "completeness": "The answer covers the primary components of using enumerable_thread_specific, including setup and reduction, which are the core parts needed.",
+          "specificity": "It mentions the oneTBB library and uses its specific features, although some more detailed oneTBB-specific nuances could be included.",
+          "code_quality": "The provided code example is correct, adheres to good practices, and should compile and run as expected.",
+          "actionability": "The instructions for implementation are clear and actionable, providing a user a direct example to follow."
+        }
+      },
+      "delta": 0
+    },
+    {
+      "question_id": "tbb-mig-01",
+      "question_text": "I'm migrating from legacy TBB (2020) to oneTBB. What are the breaking changes?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 85,
+        "code_quality": 80,
+        "actionability": 85,
+        "aggregate": 85,
+        "reasoning": {
+          "correctness": "The answer accurately describes key incompatibilities and migration steps based on available documentation.",
+          "completeness": "The answer covers major breaking changes, but might omit some minor differences and nuances for edge cases.",
+          "specificity": "The answer focuses on specific aspects of migrating from legacy TBB to oneTBB, using oneTBB-specific APIs and concepts.",
+          "code_quality": "The provided code examples generally follow best practices but one example contains an error: `tbb::feeder` is not available in `oneapi::tbb::parallel_for_each`.",
+          "actionability": "The user is given concrete steps and examples to assist in the migration, making it fairly actionable."
+        }
+      },
+      "without_docs": {
+        "correctness": 90,
+        "completeness": 85,
+        "specificity": 95,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 89,
+        "reasoning": {
+          "correctness": "The answer correctly outlines the primary changes when migrating from TBB 2020 to oneTBB, referencing actual namespace changes, and offers accurate code snippets demonstrating those differences.",
+          "completeness": "While the answer covers major breaking changes, it may miss some less commonly used features or smaller migration hurdles, which might be important to some users.",
+          "specificity": "The response provides specific information related to the oneTBB migration, including changes to namespace and API usage, which is highly relevant to the question.",
+          "code_quality": "The code snippets are generally correct and illustrate the differences between legacy TBB and oneTBB well. However, the examples might not encompass all edge cases or configurations users might need to address.",
+          "actionability": "The user is provided with practical steps and examples to apply during the migration, making the guidance actionable and easy to implement in their own projects."
+        }
+      },
+      "delta": -4
+    },
+    {
+      "question_id": "tbb-mig-02",
+      "question_text": "How do I replace std::thread and std::mutex with oneTBB equivalents? Why would I want to?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is generally accurate according to documentation, though there might be nuances based on the actual specifics of one's use-case and system.",
+          "completeness": "Covers the main aspects of why and how to switch from std::thread and std::mutex to oneTBB equivalents. Introduces task_group, concurrent_hash_map, and spin_mutex.",
+          "specificity": "Uses oneTBB-specific APIs to replace std::thread and std::mutex, but could delve more into specific use-cases that make TBB preferable.",
+          "code_quality": "The code examples are correct and demonstrate the concepts well; however, they could benefit from error handling or additional context for robustness.",
+          "actionability": "The answer provides clear steps and examples, allowing for immediate application in replacing standard threading and mutex constructs with TBB."
+        }
+      },
+      "without_docs": {
+        "correctness": 80,
+        "completeness": 85,
+        "specificity": 80,
+        "code_quality": 70,
+        "actionability": 80,
+        "aggregate": 79,
+        "reasoning": {
+          "correctness": "The TBB solution provided does not employ proper concurrency management for the counter, leaving potential race conditions.",
+          "completeness": "The text explains why one might prefer TBB over standard threading and mutex mechanisms, but omits critical aspects of TBB, such as proper atomic operations or concurrent containers for counter management.",
+          "specificity": "The response discusses specific TBB features like `parallel_for` and `task_arena`, but could better leverage TBB's full suite of concurrent utilities.",
+          "code_quality": "The given replacement code includes operations that aren't thread-safe, lacking the use of atomic operations or other proper concurrent structures.",
+          "actionability": "The answer gives a general sense of transition but lacks detailed instruction on critical parts where thread safety is compromised."
+        }
+      },
+      "delta": 7
+    },
+    {
+      "question_id": "tbb-mig-03",
+      "question_text": "What APIs were deprecated in oneTBB? What are the recommended replacements?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 85,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 87,
+        "reasoning": {
+          "correctness": "The answer correctly identifies deprecated APIs and their replacements based on available documentation.",
+          "completeness": "The answer addresses the question by listing deprecated APIs and their recommended replacements. However, it could include more deprecated APIs if they exist.",
+          "specificity": "The answer specifically addresses APIs in oneTBB and does not generalize to unrelated topics.",
+          "code_quality": "The code examples provided are correct, although they could benefit from additional comments for clarity.",
+          "actionability": "The answer includes clear instructions and code examples that can be implemented immediately by the user."
+        }
+      },
+      "without_docs": {
+        "correctness": 90,
+        "completeness": 85,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 85,
+        "aggregate": 85,
+        "reasoning": {
+          "correctness": "The answer correctly identifies deprecated APIs in oneTBB and provides recommended replacements.",
+          "completeness": "While it discusses several important deprecations, it could include more details or other deprecated APIs.",
+          "specificity": "The answer is specific to oneTBB, addressing changes in its API and using relevant classes.",
+          "code_quality": "The code provided is clear, concise, and adheres to the recommended practices; however, some parts could be simplified further.",
+          "actionability": "The user has clear examples of deprecated practices and how to update their code to comply with new standards."
+        }
+      },
+      "delta": 2
+    },
+    {
+      "question_id": "tbb-mig-04",
+      "question_text": "How do I migrate from OpenMP parallel sections to oneTBB task_group?",
+      "with_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs",
+          "completeness": "Covers main aspects",
+          "specificity": "Uses oneTBB-specific APIs",
+          "code_quality": "Code compiles and follows best practices",
+          "actionability": "Clear steps provided"
+        }
+      },
+      "without_docs": {
+        "correctness": 85,
+        "completeness": 90,
+        "specificity": 80,
+        "code_quality": 85,
+        "actionability": 90,
+        "aggregate": 86,
+        "reasoning": {
+          "correctness": "Answer is accurate according to docs, but misses possible nuances of parallel computation that could affect the transition.",
+          "completeness": "Covers main aspects of migrating from OpenMP to oneTBB, including task creation, task synchronization, and differences in approach.",
+          "specificity": "Uses oneTBB-specific APIs and explains their usage, but could delve deeper into oneTBB-specific features or optimizations.",
+          "code_quality": "Code compiles and follows best practices, making use of correct TBB constructs like task_group and task_scheduler_init.",
+          "actionability": "Clear steps provided that a user can follow to migrate code, though additional guidance on performance optimization could be useful."
+        }
+      },
+      "delta": 0
+    }
+  ]
+}
