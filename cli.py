@@ -535,6 +535,51 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
     print(f"\n✅ Saved answers to {output_path}")
 
 
+def cmd_eval_panel_score(args: argparse.Namespace) -> None:
+    """Score answers using a multi-judge panel (parallel, role-diverse judges)."""
+    from doc_benchmarks.eval.panel import JudgePanel, JudgeConfig, DEFAULT_PANEL, JUDGE_ROLES
+
+    roles = [r.strip() for r in args.roles.split(",")] if args.roles else DEFAULT_PANEL
+    unknown = [r for r in roles if r not in JUDGE_ROLES]
+    if unknown:
+        print(f"Error: unknown roles: {unknown}. Valid: {list(JUDGE_ROLES)}", file=sys.stderr)
+        sys.exit(1)
+
+    judges = [JudgeConfig(role=r, model=args.model, provider=args.provider) for r in roles]
+    panel = JudgePanel(judges=judges, concurrency=args.concurrency)
+
+    try:
+        answers_data = json.loads(Path(args.answers).read_text())
+    except FileNotFoundError:
+        print(f"Error: answers file not found: {args.answers}", file=sys.stderr)
+        sys.exit(1)
+    answers = answers_data.get("answers", answers_data) if isinstance(answers_data, dict) else answers_data
+    if not isinstance(answers, list):
+        print(f"Error: expected a list of answers in {args.answers}", file=sys.stderr)
+        sys.exit(1)
+    n_effective = min(len(answers), args.limit) if args.limit else len(answers)
+    print(f"Panel evaluation: {n_effective} answers × {len(judges)} judges → {n_effective * len(judges)} LLM calls")
+    print(f"Roles: {', '.join(roles)}\nModel: {args.provider}/{args.model}\n")
+
+    output_path = Path(args.output) if args.output else Path(f"eval/{args.product}_panel.json")
+    results = panel.evaluate_answers(answers, library_name=args.product,
+                                     output_path=output_path,
+                                     limit=getattr(args, "limit", None))
+
+    # Summary
+    valid = [r for r in results if r.get("with_docs") and r["with_docs"].get("aggregate") is not None]
+    if valid:
+        mean_score = sum(r["with_docs"]["aggregate"] for r in valid) / len(valid)
+        mean_agree = sum(r["with_docs"].get("agreement_score", 1) for r in valid) / len(valid)
+        flagged = sum(1 for r in valid if r["with_docs"].get("disagreement_flag", False))
+        print(f"\n{'─'*50}")
+        print(f"Panel score (with docs):  {mean_score:.1f}/100")
+        print(f"Mean agreement score:     {mean_agree:.3f}  (1.0 = perfect)")
+        print(f"Disagreement flags:       {flagged}/{len(valid)} questions")
+
+    print(f"\n✅ Saved to {output_path}")
+
+
 def cmd_eval_score(args: argparse.Namespace) -> None:
     """Evaluate answers using LLM-as-judge."""
     from doc_benchmarks.eval import Judge
@@ -837,6 +882,21 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--judge-provider", default="anthropic", choices=["openai", "anthropic"])
     score_p.add_argument("--concurrency", type=positive_int, default=5, help="Parallel judge calls (default: 5)")
     score_p.set_defaults(func=cmd_eval_score)
+
+    # eval panel-score
+    panel_p = eval_sub.add_parser("panel-score", help="Score answers using a multi-judge panel")
+    panel_p.add_argument("--answers", required=True, help="Path to answers JSON file")
+    panel_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    panel_p.add_argument("--output", default=None, help="Output file (default: eval/{product}_panel.json)")
+    panel_p.add_argument("--model", default="gpt-4o-mini", help="Default LLM model for all judges")
+    panel_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    panel_p.add_argument("--roles", default=None,
+                         help="Comma-separated judge roles (default: technical_expert,developer_advocate,doc_reviewer)")
+    panel_p.add_argument("--concurrency", type=positive_int, default=6,
+                         help="Parallel judge API calls (default: 6)")
+    panel_p.add_argument("--limit", type=positive_int, default=None,
+                         help="Evaluate only first N answers (useful for testing)")
+    panel_p.set_defaults(func=cmd_eval_panel_score)
 
     # library subcommand group
     library_p = sub.add_parser("library", help="Library registry management")
