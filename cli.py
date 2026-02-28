@@ -346,6 +346,61 @@ def cmd_personas_approve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_questions_panel_review(args: argparse.Namespace) -> None:
+    """Panel review of question quality with 3 role-differentiated LLM reviewers."""
+    from doc_benchmarks.questions.panel_reviewer import QuestionPanelReviewer, DEFAULT_REVIEWERS
+
+    reviewers = [r.strip() for r in args.reviewers.split(",") if r.strip()] if args.reviewers else DEFAULT_REVIEWERS
+    unknown = [r for r in reviewers if r not in DEFAULT_REVIEWERS]
+    if unknown:
+        print(f"Error: unknown reviewers: {unknown}. Valid: {DEFAULT_REVIEWERS}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        questions_data = json.loads(Path(args.questions).read_text())
+    except FileNotFoundError:
+        print(f"Error: file not found: {args.questions}", file=sys.stderr)
+        sys.exit(1)
+
+    # Extract question strings from various JSON shapes
+    if isinstance(questions_data, dict):
+        raw = questions_data.get("questions") or questions_data.get("answers") or list(questions_data.values())
+    else:
+        raw = questions_data
+    if not isinstance(raw, list):
+        print("Error: expected a list of questions", file=sys.stderr)
+        sys.exit(1)
+    questions = [
+        (q.get("question") or q.get("text") or "").strip() if isinstance(q, dict) else str(q)
+        for q in raw if q
+    ]
+    questions = [q for q in questions if q]  # drop empty strings
+
+    output_path = Path(args.output) if args.output else Path(f"reports/{args.product}_question_panel.json")
+    n_eff = min(len(questions), args.limit) if args.limit else len(questions)
+    print(f"Panel review: {n_eff} questions × {len(reviewers)} reviewers → {n_eff * len(reviewers)} LLM calls")
+    print(f"Reviewers: {', '.join(reviewers)} | Model: {args.provider}/{args.model}\n")
+
+    reviewer = QuestionPanelReviewer(
+        reviewers=reviewers, model=args.model,
+        provider=args.provider, concurrency=args.concurrency,
+    )
+    report = reviewer.review_questions(questions, library_name=args.product,
+                                        output_path=output_path, limit=args.limit)
+
+    s = report.summary
+    print(f"\n{'─'*55}")
+    print(f"Panel Review Summary: {args.product}")
+    print(f"  Total reviewed : {report.total}")
+    print(f"  ✅ Keep        : {s.get('keep', 0)}")
+    print(f"  ✏️  Revise      : {s.get('revise', 0)}")
+    print(f"  ❌ Drop        : {s.get('drop', 0)}")
+    print(f"  Mean score     : {s.get('mean_panel_score', '—')}/100")
+    if s.get("top_flags"):
+        print(f"  Top issues     : {', '.join(f'{k}({v})' for k, v in s['top_flags'])}")
+    print(f"\n✅ Full report: {output_path}")
+
+
 def cmd_questions_analyze(args: argparse.Namespace) -> None:
     """Analyze question quality: difficulty distribution and triviality detection."""
     from doc_benchmarks.questions.quality_analyzer import QuestionQualityAnalyzer
@@ -847,6 +902,22 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_q_p.add_argument("--concurrency", type=int, default=5, help="Parallel classification requests")
     analyze_q_p.set_defaults(func=cmd_questions_analyze)
 
+    # questions panel-review
+    panel_q_p = questions_sub.add_parser("panel-review",
+                                          help="Multi-agent panel review of question quality")
+    panel_q_p.add_argument("--questions", required=True, help="Path to questions JSON file")
+    panel_q_p.add_argument("--product", required=True, help="Product name (e.g., oneDAL)")
+    panel_q_p.add_argument("--output", default=None,
+                            help="Output report JSON (default: reports/{product}_question_panel.json)")
+    panel_q_p.add_argument("--model", default="gpt-4o-mini")
+    panel_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    panel_q_p.add_argument("--reviewers", default=None,
+                            help="Comma-separated reviewers (default: domain_expert,user_advocate,qa_engineer)")
+    panel_q_p.add_argument("--concurrency", type=positive_int, default=6)
+    panel_q_p.add_argument("--limit", type=positive_int, default=None,
+                            help="Review only first N questions")
+    panel_q_p.set_defaults(func=cmd_questions_panel_review)
+
     # Answers subcommand group
     answers_p = sub.add_parser("answers", help="Answer generation")
     answers_sub = answers_p.add_subparsers(dest="answers_cmd", required=True)
@@ -878,8 +949,8 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
     score_p.add_argument("--answers", required=True, help="Path to answers JSON file")
     score_p.add_argument("--output", default=None, help="Output file (default: eval/{product}.json)")
-    score_p.add_argument("--judge-model", default="claude-sonnet-4", help="LLM model for judging")
-    score_p.add_argument("--judge-provider", default="anthropic", choices=["openai", "anthropic"])
+    score_p.add_argument("--judge-model", default="gpt-4o-mini", help="LLM model for judging")
+    score_p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic", "azure", "bedrock", "google"])
     score_p.add_argument("--concurrency", type=positive_int, default=5, help="Parallel judge calls (default: 5)")
     score_p.set_defaults(func=cmd_eval_score)
 
@@ -924,7 +995,9 @@ def build_parser() -> argparse.ArgumentParser:
                              help="Output directory (default: results/{library})")
     bench_run_p.add_argument("--model", default="gpt-4o-mini")
     bench_run_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
-    bench_run_p.add_argument("--judge-model", default="claude-sonnet-4", dest="judge_model")
+    bench_run_p.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
+    bench_run_p.add_argument("--judge-provider", default="openai", dest="judge_provider",
+                             choices=["openai", "anthropic"])
     bench_run_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
     bench_run_p.set_defaults(func=cmd_benchmark_run)
 
@@ -938,7 +1011,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench_batch_p.add_argument("--output-dir", default="results", dest="output_dir")
     bench_batch_p.add_argument("--model", default="gpt-4o-mini")
     bench_batch_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
-    bench_batch_p.add_argument("--judge-model", default="claude-sonnet-4", dest="judge_model")
+    bench_batch_p.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
+    bench_batch_p.add_argument("--judge-provider", default="openai", dest="judge_provider",
+                               choices=["openai", "anthropic"])
     bench_batch_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
     bench_batch_p.add_argument("--fail-fast", action="store_true", dest="fail_fast",
                                help="Stop on first failure (default: continue all)")
@@ -1039,7 +1114,7 @@ def cmd_library_show(args: argparse.Namespace) -> None:
     print(f"Description  :\n  {entry.description}")
 
 
-def _run_single_library(entry, output_dir: str, model: str, provider: str, judge_model: str, doc_source_override=None) -> dict:
+def _run_single_library(entry, output_dir: str, model: str, provider: str, judge_model: str, judge_provider: str = "openai", doc_source_override=None) -> dict:
     """Run full evaluation pipeline for one LibraryEntry. Returns result dict."""
     from doc_benchmarks.orchestrator import EvaluationPipeline
     from pathlib import Path as _Path
@@ -1061,6 +1136,7 @@ def _run_single_library(entry, output_dir: str, model: str, provider: str, judge
         model=model,
         provider=provider,
         judge_model=judge_model,
+        judge_provider=judge_provider,
         context7_id=entry.context7_id,
         doc_source=doc_source,
     )
@@ -1084,6 +1160,7 @@ def cmd_benchmark_run(args: argparse.Namespace) -> None:
         model=args.model,
         provider=args.provider,
         judge_model=args.judge_model,
+        judge_provider=getattr(args, "judge_provider", "openai"),
         doc_source_override=getattr(args, "doc_source", None),
     )
     print(f"\n✅ Done: {entry.name}")
@@ -1120,6 +1197,7 @@ def cmd_benchmark_batch(args: argparse.Namespace) -> None:
                 model=args.model,
                 provider=args.provider,
                 judge_model=args.judge_model,
+                judge_provider=getattr(args, "judge_provider", "openai"),
             )
             results.append(r)
         except Exception as exc:
