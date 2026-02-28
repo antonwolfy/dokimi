@@ -258,37 +258,52 @@ def cmd_report(args: argparse.Namespace) -> None:
 
 
 def cmd_personas_discover(args: argparse.Namespace) -> None:
-    """Discover personas for a product by analyzing GitHub repo."""
+    """Discover personas for a product by analyzing GitHub repo or a description."""
     import os
-    
-    # Initialize analyzer
-    github_token = args.github_token or os.getenv("GITHUB_TOKEN")
-    analyzer = PersonaAnalyzer(github_token=github_token)
-    
-    # Analyze repository
-    print(f"Analyzing repository: {args.repo}")
-    analysis = analyzer.analyze_repository(args.repo)
-    
-    # Save analysis if requested
-    if args.save_analysis:
-        analysis_path = Path(args.output).parent / f"{args.product}_analysis.json"
-        analyzer.save_analysis(analysis, analysis_path)
-        print(f"✓ Saved analysis to {analysis_path}")
-    
+
+    if not args.repo and not args.description:
+        print(
+            "✗ Either --repo or --description must be provided.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    generator = PersonaGenerator(model=args.model, provider=args.provider)
+
+    if args.repo:
+        # GitHub-based discovery
+        github_token = args.github_token or os.getenv("GITHUB_TOKEN")
+        analyzer = PersonaAnalyzer(github_token=github_token)
+        print(f"Analyzing repository: {args.repo}")
+        analysis = analyzer.analyze_repository(args.repo)
+
+        if args.save_analysis:
+            output_path = Path(args.output) if args.output else Path(f"personas/{args.product}.json")
+            analysis_path = output_path.parent / f"{args.product}_analysis.json"
+            analyzer.save_analysis(analysis, analysis_path)
+            print(f"✓ Saved analysis to {analysis_path}")
+    else:
+        # Description-only
+        if args.save_analysis:
+            print("⚠ --save-analysis is ignored in description-only mode.", file=sys.stderr)
+        print(f"No repo — generating personas from description for '{args.product}'")
+        analysis = PersonaAnalyzer.create_minimal_analysis(
+            library_name=args.product,
+            description=args.description,
+        )
+
     # Generate personas
     print(f"Generating personas using {args.model}...")
-    generator = PersonaGenerator(model=args.model, provider=args.provider)
-    
     personas = generator.generate_personas(
         library_name=args.product,
         analysis=analysis,
         target_count=args.count
     )
-    
+
     # Save personas
-    output_path = Path(args.output)
+    output_path = Path(args.output) if args.output else Path(f"personas/{args.product}.json")
     generator.save_personas(personas, output_path)
-    
+
     print(f"\n✓ Generated {len(personas['personas'])} personas for {args.product}")
     print(f"✓ Saved to {output_path}")
     print("\nNext steps:")
@@ -361,9 +376,13 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
         doc_source = getattr(args, "doc_source", "context7")
         from doc_benchmarks.mcp.factory import create_doc_source_client
         mcp_client = create_doc_source_client(doc_source)
-        library_id = mcp_client.resolve_library_id(args.product)
-        
-        # Extract topics
+        context7_id = getattr(args, "context7_id", None)
+        if context7_id:
+            library_id = context7_id
+            print(f"Using explicit Context7 library ID: {library_id}")
+        else:
+            library_id = mcp_client.resolve_library_id(args.product)
+
         extractor = RagasSeedExtractor(mcp_client=mcp_client, cache_dir=Path(".cache/topics"))
         topics = extractor.extract_topics(
             library_id=library_id,
@@ -435,8 +454,13 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
     doc_source = getattr(args, "doc_source", "context7")
     print(f"Documentation source: {doc_source}")
     mcp_client = create_doc_source_client(doc_source)
-    library_id = mcp_client.resolve_library_id(args.product)
-    
+    context7_id = getattr(args, "context7_id", None)
+    if context7_id:
+        library_id = context7_id
+        print(f"Using explicit Context7 library ID: {library_id}")
+    else:
+        library_id = mcp_client.resolve_library_id(args.product)
+
     print(f"Generating answers for {args.product} (library_id={library_id})")
     print(f"Using model: {args.provider}/{args.model}")
     
@@ -528,18 +552,26 @@ def cmd_report_generate(args: argparse.Namespace) -> None:
 def cmd_evaluate(args: argparse.Namespace) -> None:
     """Run full evaluation pipeline (orchestrator)."""
     from doc_benchmarks.orchestrator import EvaluationPipeline
-    
+
+    if not getattr(args, "repo", None) and not getattr(args, "description", None):
+        print("Error: either --repo or --description must be provided.", file=sys.stderr)
+        sys.exit(1)
+
     print(f"Starting full evaluation pipeline for {args.product}")
-    print(f"Repository: {args.repo}")
+    if args.repo:
+        print(f"Repository: {args.repo}")
+    else:
+        print(f"Description: {(args.description or '')[:80]}")
     print(f"Output directory: {args.output_dir}")
     if args.custom_questions:
         print(f"Custom questions: {args.custom_questions}")
     print()
-    
+
     # Create pipeline
     pipeline = EvaluationPipeline(
         product=args.product,
-        repo=args.repo,
+        repo=getattr(args, "repo", None),
+        description=getattr(args, "description", None),
         output_dir=Path(args.output_dir),
         custom_questions_path=Path(args.custom_questions) if args.custom_questions else None,
         model=args.model,
@@ -552,6 +584,7 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         rerank_threshold=args.rerank_threshold,
         debug_retrieval=args.debug_retrieval,
         doc_source=getattr(args, "doc_source", "context7"),
+        context7_id=getattr(args, "context7_id", None),
     )
     
     # Run pipeline
@@ -611,7 +644,8 @@ def build_parser() -> argparse.ArgumentParser:
     # evaluate (orchestrator) - full pipeline
     eval_p = sub.add_parser("evaluate", help="Run full evaluation pipeline (one command)")
     eval_p.add_argument("--product", required=True, help="Product name (e.g., oneDNN)")
-    eval_p.add_argument("--repo", required=True, help="GitHub repo (e.g., oneapi-src/oneDNN)")
+    eval_p.add_argument("--repo", default=None, help="GitHub repo (e.g., oneapi-src/oneDNN). Optional if --description is given.")
+    eval_p.add_argument("--description", default=None, help="Plain-text product description (used when --repo is not available).")
     eval_p.add_argument("--output-dir", default=".", help="Base output directory")
     eval_p.add_argument("--custom-questions", default=None, help="Optional: path to manual questions JSON")
     eval_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation/answering")
@@ -625,6 +659,8 @@ def build_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata")
     eval_p.add_argument("--doc-source", default="context7",
                         help="Documentation source: 'context7' (default), 'local:<path>', 'url:<url>'")
+    eval_p.add_argument("--context7-id", default=None, dest="context7_id",
+                        help="Explicit Context7 library ID (e.g., 'intel/mkl-dnn'). Overrides auto-resolution.")
     eval_p.set_defaults(func=cmd_evaluate)
 
     cmp_p = sub.add_parser("compare")
@@ -676,9 +712,10 @@ def build_parser() -> argparse.ArgumentParser:
     personas_sub = personas_p.add_subparsers(dest="personas_cmd", required=True)
     
     # personas discover
-    discover_p = personas_sub.add_parser("discover", help="Auto-discover personas from GitHub repo")
+    discover_p = personas_sub.add_parser("discover", help="Discover personas from a GitHub repo or product description")
     discover_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
-    discover_p.add_argument("--repo", required=True, help="GitHub repo (e.g., uxlfoundation/oneTBB)")
+    discover_p.add_argument("--repo", default=None, help="GitHub repo (e.g., uxlfoundation/oneTBB). Optional if --description is given.")
+    discover_p.add_argument("--description", default=None, help="Plain-text product description (used when --repo is not available).")
     discover_p.add_argument("--output", default=None, help="Output file (default: personas/{product}.json)")
     discover_p.add_argument("--count", type=int, default=5, help="Target number of personas (5-8)")
     discover_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
@@ -686,14 +723,6 @@ def build_parser() -> argparse.ArgumentParser:
     discover_p.add_argument("--github-token", default=None, help="GitHub token (or set GITHUB_TOKEN env)")
     discover_p.add_argument("--save-analysis", action="store_true", help="Save intermediate analysis JSON")
     discover_p.set_defaults(func=cmd_personas_discover)
-    
-    # Set default output path if not provided
-    def set_default_output(args):
-        if args.output is None:
-            args.output = f"personas/{args.product}.json"
-        return args
-    
-    discover_p.set_defaults(func=lambda args: cmd_personas_discover(set_default_output(args)))
     
     # personas approve
     approve_p = personas_sub.add_parser("approve", help="Validate and approve persona file")
@@ -716,6 +745,8 @@ def build_parser() -> argparse.ArgumentParser:
     gen_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
     gen_q_p.add_argument("--doc-source", default="context7",
                          help="Documentation source for topic extraction: 'context7', 'local:<path>', 'url:<url>'")
+    gen_q_p.add_argument("--context7-id", default=None, dest="context7_id",
+                         help="Explicit Context7 library ID. Overrides auto-resolution.")
     gen_q_p.set_defaults(func=cmd_questions_generate)
     
     # Answers subcommand group
@@ -736,6 +767,8 @@ def build_parser() -> argparse.ArgumentParser:
     gen_a_p.add_argument("--concurrency", type=positive_int, default=5, help="Parallel API calls (default: 5)")
     gen_a_p.add_argument("--doc-source", default="context7",
                          help="Documentation source: 'context7' (default), 'local:<path>', 'url:<url>'")
+    gen_a_p.add_argument("--context7-id", default=None, dest="context7_id",
+                         help="Explicit Context7 library ID. Overrides auto-resolution.")
     gen_a_p.set_defaults(func=cmd_answers_generate)
     
     # Eval subcommand group

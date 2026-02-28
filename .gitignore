@@ -7,3 +7,8 @@ __pycache__/
 node_modules/
 context7_comparison_results.json
 reports/
+*.log
+jobs.json
+cr.md
+docs-quality-report/
+baselines/eval/*.json

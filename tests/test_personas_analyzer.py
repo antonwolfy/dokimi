@@ -258,3 +258,17 @@ tbb::task_arena arena;
             result = analyzer.analyze_repository("uxlfoundation/oneTBB")
             # Should return empty analysis
             assert result == analyzer._empty_analysis()
+
+def test_create_minimal_analysis():
+    """Test creating synthetic analysis without GitHub repo."""
+    analysis = PersonaAnalyzer.create_minimal_analysis(
+        library_name="oneMKL",
+        description="Math Kernel Library for high performance computing"
+    )
+    assert analysis["library_name"] == "oneMKL"
+    assert analysis["description"] == "Math Kernel Library for high performance computing"
+    assert analysis["readme_content"] == "Math Kernel Library for high performance computing"
+    assert analysis["use_cases"] == []
+    assert analysis["issues_analysis"] == {"common_questions": [], "common_labels": [], "sample_issues": []}
+    assert analysis["api_patterns"] == []
+    assert analysis["topics"] == []

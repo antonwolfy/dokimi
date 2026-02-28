@@ -64,9 +64,39 @@ class PersonaAnalyzer:
         else:
             logger.info("PyGithub not available, using gh CLI fallback")
             return self._analyze_with_gh_cli(repo_name)
-    
+
+    @staticmethod
+    def create_minimal_analysis(library_name: str, description: str) -> Dict[str, Any]:
+        """
+        Create a minimal analysis dict from a plain-text description.
+
+        Use this when no GitHub repository is available.  The returned
+        structure is compatible with ``PersonaGenerator.generate_personas()``.
+
+        Args:
+            library_name: Human-readable product name (e.g. "oneMKL").
+            description:  Free-form description of the product, its purpose,
+                          typical users, and key use-cases.
+
+        Returns:
+            Analysis dict with ``description`` populated and all other
+            fields empty (the LLM will rely solely on the description text).
+        """
+        return {
+            "library_name": library_name,
+            "description": description,
+            "readme_content": description,  # used as README summary fallback
+            "use_cases": [],
+            "issues_analysis": {
+                "common_questions": [],
+                "common_labels": [],
+                "sample_issues": [],
+            },
+            "api_patterns": [],
+            "topics": [],
+        }
+
     def _analyze_with_pygithub(self, repo_name: str) -> Dict[str, Any]:
-        """Analyze using PyGithub library."""
         try:
             logger.info(f"Analyzing repository: {repo_name}")
             repo = self.github_client.get_repo(repo_name)
