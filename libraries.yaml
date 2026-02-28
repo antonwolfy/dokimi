@@ -1,0 +1,267 @@
+# Library registry — known products for doc-benchmark
+# Run single:  python -m doc_benchmarks benchmark run --library <name>
+# Run batch:   python -m doc_benchmarks benchmark batch --libraries onetbb,onemkl
+#              python -m doc_benchmarks benchmark batch --all
+
+libraries:
+
+  # ── Threading & Parallelism ──────────────────────────────────────────────
+
+  onetbb:
+    name: oneTBB
+    description: >
+      oneAPI Threading Building Blocks (oneTBB) is a C++ template library for
+      task-based parallelism. Provides parallel_for, parallel_reduce, pipeline,
+      flow graph, concurrent containers, and a work-stealing task scheduler.
+      Targets multi-core CPU performance for C++ developers.
+    repo: uxlfoundation/oneTBB
+    context7_id: uxlfoundation/onetbb
+    doc_sources:
+      - context7
+      - url:https://spec.oneapi.io/versions/latest/elements/oneTBB/source/index.html
+
+  openmp:
+    name: Intel OpenMP Runtime
+    description: >
+      Intel's OpenMP runtime library (libomp) provides OpenMP 5.x support for
+      C, C++, and Fortran. Key features: thread affinity, NUMA support, GPU
+      offload, and tuning via environment variables (OMP_NUM_THREADS, KMP_AFFINITY).
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/openmp-runtime/developer-guide-reference/2024-2/overview.html
+
+  # ── Math & Numerics ──────────────────────────────────────────────────────
+
+  onemkl:
+    name: oneMKL
+    description: >
+      oneAPI Math Kernel Library (oneMKL) provides highly optimized routines:
+      BLAS, LAPACK, FFT, sparse solvers, random number generators, and vector
+      math. Supports CPU and GPU (SYCL/DPC++). Used in HPC, data science, ML.
+    repo: oneapi-src/oneMKL
+    context7_id: oneapi-src/onemkl
+    doc_sources:
+      - url:https://spec.oneapi.io/versions/latest/elements/oneMKL/source/index.html
+      - url:https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2024-2/overview.html
+
+  # ── Deep Learning & AI ───────────────────────────────────────────────────
+
+  onednn:
+    name: oneDNN
+    description: >
+      oneAPI Deep Neural Network Library (oneDNN) is a performance library for
+      deep learning primitives: convolutions, pooling, batch normalization, RNN,
+      attention. Used by TensorFlow, PyTorch, OpenVINO as a backend.
+    repo: oneapi-src/oneDNN
+    context7_id: oneapi-src/onednn
+    doc_sources:
+      - url:https://oneapi-src.github.io/oneDNN/
+
+  openvino:
+    name: OpenVINO
+    description: >
+      Intel OpenVINO toolkit for deep learning inference optimization and
+      deployment. Supports model conversion (ONNX, TensorFlow, PyTorch),
+      hardware-specific optimizations (CPU, GPU, NPU), and deployment on
+      Intel edge/cloud hardware. Includes Python and C++ APIs.
+    repo: openvinotoolkit/openvino
+    context7_id: openvinotoolkit/openvino
+    doc_sources:
+      - context7
+      - url:https://docs.openvino.ai/2024/index.html
+
+  onedal:
+    name: oneDAL
+    description: >
+      oneAPI Data Analytics Library (oneDAL) provides optimized algorithms for
+      data preprocessing, dimensionality reduction, regression, classification,
+      and clustering. Accelerates scikit-learn workflows on Intel hardware via
+      sklearnex. Supports both CPU and GPU.
+    repo: uxlfoundation/oneDAL
+    context7_id: uxlfoundation/onedal
+    doc_sources:
+      - url:https://uxlfoundation.github.io/oneDAL/
+
+  sklearnex:
+    name: scikit-learn Intel Extension (sklearnex)
+    description: >
+      Intel Extension for scikit-learn (sklearnex) is a drop-in acceleration
+      for scikit-learn. Patches standard estimators to run faster on Intel CPUs
+      and GPUs via oneDAL. Minimal code change: import patch_sklearn().
+      Supports SVM, KNN, K-Means, PCA, Linear/Ridge regression, and more.
+    repo: uxlfoundation/scikit-learn-intelex
+    context7_id: uxlfoundation/scikit-learn-intelex
+    doc_sources:
+      - context7
+      - url:https://uxlfoundation.github.io/scikit-learn-intelex/
+
+  # ── Data Parallel Python ──────────────────────────────────────────────────
+
+  onedpl:
+    name: oneDPL
+    description: >
+      oneAPI DPC++ Library (oneDPL) extends C++ STL algorithms for parallel and
+      heterogeneous execution (CPU/GPU via SYCL). Includes parallel STL,
+      async algorithms, iterator utilities, and random number generators.
+    repo: uxlfoundation/oneDPL
+    context7_id: uxlfoundation/onedpl
+    doc_sources:
+      - url:https://uxlfoundation.github.io/oneDPL/
+
+  dpctl:
+    name: DPCTL (Data Parallel Control)
+    description: >
+      DPCTL provides Python bindings for SYCL runtime: device selection,
+      USM memory allocation, queue management, and kernel submission.
+      Foundation layer for dpnp and other data-parallel Python libraries.
+    repo: IntelPython/dpctl
+    context7_id: intelpython/dpctl
+    doc_sources:
+      - url:https://intelpython.github.io/dpctl/
+
+  dpnp:
+    name: DPNP (Data Parallel NumPy)
+    description: >
+      DPNP is a NumPy-compatible array library that executes on Intel GPUs and
+      CPUs via SYCL/DPCTL. Provides drop-in replacement for NumPy with GPU
+      acceleration. Useful for porting NumPy code to heterogeneous hardware.
+    repo: IntelPython/dpnp
+    context7_id: intelpython/dpnp
+    doc_sources:
+      - url:https://intelpython.github.io/dpnp/
+
+  # ── Compilers & Runtimes ─────────────────────────────────────────────────
+
+  icx:
+    name: Intel oneAPI DPC++/C++ Compiler
+    description: >
+      Intel's DPC++/C++ compiler (icx/icpx) supports C++17/20, SYCL 2020,
+      and OpenMP offload. Key topics: vectorization reports, IPO, PGO,
+      optimization flags, SYCL kernel compilation, and cross-architecture targeting.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/dpcpp-cpp-compiler/developer-guide-reference/2024-2/overview.html
+
+  ifort:
+    name: Intel Fortran Compiler
+    description: >
+      Intel Fortran Compiler (ifx/ifort) supports Fortran 2018. Topics include
+      OpenMP, auto-vectorization, coarrays, mixed-language programming with C/C++,
+      and optimization flags for Intel architecture.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/fortran-compiler/developer-guide-reference/2024-2/overview.html
+
+  # ── Profiling & Optimization ─────────────────────────────────────────────
+
+  vtune:
+    name: Intel VTune Profiler
+    description: >
+      VTune Profiler analyzes CPU, GPU, and memory performance. Key workflows:
+      hotspot analysis, threading analysis, memory access patterns, microarchitecture
+      exploration, and Python/Java profiling. CLI and GUI interfaces.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/vtune-profiler/user-guide/2024-2/overview.html
+
+  advisor:
+    name: Intel Advisor
+    description: >
+      Intel Advisor guides vectorization and threading optimization for C/C++
+      and Fortran. Features: vectorization advisor, threading advisor, roofline
+      analysis, and offload advisor for GPU/FPGA migration.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/advisor/user-guide/2024-2/overview.html
+
+  optimization_guide:
+    name: Intel 64 and IA-32 Optimization Reference Manual
+    description: >
+      Intel's comprehensive optimization guide for x86/x64 architecture. Covers
+      microarchitecture details, SIMD intrinsics (SSE, AVX, AVX-512), memory
+      hierarchy optimization, branch prediction, and performance tuning patterns
+      for Intel Core and Xeon processors.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/content-details/671488/intel-64-and-ia-32-architectures-optimization-reference-manual-volume-1.html
+
+  # ── Collective Communications ────────────────────────────────────────────
+
+  oneccl:
+    name: oneCCL
+    description: >
+      oneAPI Collective Communications Library (oneCCL) provides optimized
+      primitives for distributed deep learning: allreduce, broadcast, allgather,
+      reduce_scatter. Used by Horovod and PyTorch DDP backends on Intel hardware.
+      Supports CPU and GPU (via SYCL).
+    repo: uxlfoundation/oneCCL
+    context7_id: uxlfoundation/oneccl
+    doc_sources:
+      - url:https://spec.oneapi.io/versions/latest/elements/oneCCL/source/index.html
+
+  # ── MPI ──────────────────────────────────────────────────────────────────
+
+  intelmpi:
+    name: Intel MPI Library
+    description: >
+      Intel MPI Library implements the MPI-4 standard for high-performance
+      cluster communication. Key topics: process pinning, fabric selection
+      (OFI, TCP, shared memory), performance tuning (I_MPI_* variables),
+      NUMA-aware configuration, and debugging with ITAC integration.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/mpi-library/developer-guide-linux/2021-14/overview.html
+
+  # ── Image & Signal Processing ────────────────────────────────────────────
+
+  ipp:
+    name: Intel IPP (Integrated Performance Primitives)
+    description: >
+      Intel IPP provides optimized functions for signal processing, image
+      processing, computer vision, cryptography, and data compression.
+      Functions auto-dispatch to optimal SIMD (SSE, AVX, AVX-512) at runtime.
+      C API with both domain-specific and general interfaces.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/ipp/developer-reference/2021-12/overview.html
+
+  # ── Python GPU Computing ──────────────────────────────────────────────────
+
+  numba_dpex:
+    name: Numba DPEX (Data Parallel Extensions for Numba)
+    description: >
+      numba-dpex adds SYCL/GPU support to Numba for Intel GPUs. Allows writing
+      GPU kernels in Python using @dpex.kernel decorator, with explicit
+      work-group control. Integrates with dpctl for device/queue management.
+    repo: IntelPython/numba-dpex
+    context7_id: intelpython/numba-dpex
+    doc_sources:
+      - url:https://intelpython.github.io/numba-dpex/
+
+  # ── Math (Open Standard) ─────────────────────────────────────────────────
+
+  onemath:
+    name: oneMath (Open-source Math interfaces)
+    description: >
+      oneMath (formerly oneMKL Interfaces) is an open-source interface layer
+      that dispatches math calls to vendor backends (Intel MKL, cuBLAS, rocBLAS,
+      etc.). Enables portable BLAS/LAPACK/FFT/RNG code across CPU and GPU vendors.
+    repo: uxlfoundation/oneMath
+    context7_id: uxlfoundation/onemath
+    doc_sources:
+      - url:https://uxlfoundation.github.io/oneMath/
+
+  # ── Debugging ─────────────────────────────────────────────────────────────
+
+  inspector:
+    name: Intel Inspector
+    description: >
+      Intel Inspector detects memory errors (leaks, invalid access, uninitialized
+      reads) and threading errors (data races, deadlocks) in C/C++ and Fortran.
+      Works without recompilation. Integrates with VTune for full perf+correctness workflow.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/inspector/user-guide/2024-2/overview.html
+
+  # ── Debugging ─────────────────────────────────────────────────────────────
+
+  gdb_intel:
+    name: Intel Distribution for GDB
+    description: >
+      Intel Distribution for GDB extends GNU GDB with GPU debugging support for
+      Intel Iris Xe, Arc, and Data Center GPU. Features: SIMD lane inspection,
+      GPU thread/work-group debugging, SYCL kernel debugging, breakpoints inside
+      GPU kernels, and integration with oneAPI DevCloud environments.
+    doc_sources:
+      - url:https://www.intel.com/content/www/us/en/docs/distribution-for-gdb/get-started-guide/2024-2/overview.html

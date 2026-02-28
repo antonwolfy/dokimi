@@ -838,7 +838,195 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--concurrency", type=positive_int, default=5, help="Parallel judge calls (default: 5)")
     score_p.set_defaults(func=cmd_eval_score)
 
+    # library subcommand group
+    library_p = sub.add_parser("library", help="Library registry management")
+    library_sub = library_p.add_subparsers(dest="library_cmd", required=True)
+
+    lib_list_p = library_sub.add_parser("list", help="List libraries in the registry")
+    lib_list_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
+    lib_list_p.set_defaults(func=cmd_library_list)
+
+    lib_show_p = library_sub.add_parser("show", help="Show details for a library")
+    lib_show_p.add_argument("name", help="Library key (e.g., onetbb)")
+    lib_show_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
+    lib_show_p.set_defaults(func=cmd_library_show)
+
+    # benchmark subcommand group
+    benchmark_p = sub.add_parser("benchmark", help="Run benchmark for one or all registered libraries")
+    benchmark_sub = benchmark_p.add_subparsers(dest="benchmark_cmd", required=True)
+
+    # benchmark run — single library from registry
+    bench_run_p = benchmark_sub.add_parser("run", help="Run full pipeline for a registered library")
+    bench_run_p.add_argument("--library", required=True, help="Library key from registry (e.g., onetbb)")
+    bench_run_p.add_argument("--doc-source", default=None, dest="doc_source",
+                             help="Override doc source (default: first in registry entry)")
+    bench_run_p.add_argument("--output-dir", default=None, dest="output_dir",
+                             help="Output directory (default: results/{library})")
+    bench_run_p.add_argument("--model", default="gpt-4o-mini")
+    bench_run_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    bench_run_p.add_argument("--judge-model", default="claude-sonnet-4", dest="judge_model")
+    bench_run_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
+    bench_run_p.set_defaults(func=cmd_benchmark_run)
+
+    # benchmark batch — multiple libraries
+    bench_batch_p = benchmark_sub.add_parser("batch", help="Run pipeline for multiple libraries")
+    bench_batch_p.add_argument("--libraries", default=None,
+                               help="Comma-separated library keys (e.g., onetbb,onemkl). "
+                                    "Omit or use --all for all registered libraries.")
+    bench_batch_p.add_argument("--all", action="store_true", dest="all_libraries",
+                               help="Run for all libraries in registry")
+    bench_batch_p.add_argument("--output-dir", default="results", dest="output_dir")
+    bench_batch_p.add_argument("--model", default="gpt-4o-mini")
+    bench_batch_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    bench_batch_p.add_argument("--judge-model", default="claude-sonnet-4", dest="judge_model")
+    bench_batch_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
+    bench_batch_p.add_argument("--fail-fast", action="store_true", dest="fail_fast",
+                               help="Stop on first failure (default: continue all)")
+    bench_batch_p.set_defaults(func=cmd_benchmark_batch)
+
     return p
+
+
+def _load_registry(args):
+    from doc_benchmarks.registry import LibraryRegistry
+    from pathlib import Path as _Path
+    reg_path = _Path(args.registry) if getattr(args, "registry", None) else None
+    return LibraryRegistry(path=reg_path)
+
+
+def cmd_library_list(args: argparse.Namespace) -> None:
+    """List all libraries in the registry."""
+    registry = _load_registry(args)
+    entries = registry.list()
+    if not entries:
+        print("Registry is empty.")
+        return
+    print(f"{'Key':<12} {'Name':<16} {'Repo':<35} {'Doc sources'}")
+    print("─" * 85)
+    for e in entries:
+        repo = e.repo or "—"
+        sources = ", ".join(e.doc_sources)
+        print(f"{e.key:<12} {e.name:<16} {repo:<35} {sources}")
+    print(f"\n{len(entries)} libraries registered.")
+
+
+def cmd_library_show(args: argparse.Namespace) -> None:
+    """Show full details for a single library."""
+    registry = _load_registry(args)
+    try:
+        entry = registry.get(args.name)
+    except KeyError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    print(f"Key          : {entry.key}")
+    print(f"Name         : {entry.name}")
+    print(f"Repo         : {entry.repo or '—'}")
+    print(f"Context7 ID  : {entry.context7_id or '—'}")
+    print(f"Doc sources  : {', '.join(entry.doc_sources)}")
+    print(f"Description  :\n  {entry.description}")
+
+
+def _run_single_library(entry, output_dir: str, model: str, provider: str, judge_model: str, doc_source_override=None) -> dict:
+    """Run full evaluation pipeline for one LibraryEntry. Returns result dict."""
+    from doc_benchmarks.orchestrator import EvaluationPipeline
+    from pathlib import Path as _Path
+
+    doc_source = doc_source_override or (entry.doc_sources[0] if entry.doc_sources else "context7")
+    out = _Path(output_dir)
+
+    print(f"\n{'='*60}")
+    print(f"  Library : {entry.name} ({entry.key})")
+    print(f"  Source  : {doc_source}")
+    print(f"  Output  : {out}")
+    print(f"{'='*60}")
+
+    pipeline = EvaluationPipeline(
+        product=entry.name,
+        repo=entry.repo,
+        description=entry.description,
+        output_dir=out,
+        model=model,
+        provider=provider,
+        judge_model=judge_model,
+        context7_id=entry.context7_id,
+        doc_source=doc_source,
+    )
+    result = pipeline.run()
+    return {"library": entry.key, "name": entry.name, "status": "ok", "result": result}
+
+
+def cmd_benchmark_run(args: argparse.Namespace) -> None:
+    """Run full evaluation pipeline for a single registered library."""
+    registry = _load_registry(args)
+    try:
+        entry = registry.get(args.library)
+    except KeyError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    output_dir = args.output_dir or f"results/{entry.key}"
+    _run_single_library(
+        entry,
+        output_dir=output_dir,
+        model=args.model,
+        provider=args.provider,
+        judge_model=args.judge_model,
+        doc_source_override=getattr(args, "doc_source", None),
+    )
+    print(f"\n✅ Done: {entry.name}")
+
+
+def cmd_benchmark_batch(args: argparse.Namespace) -> None:
+    """Run evaluation pipeline for multiple registered libraries."""
+    registry = _load_registry(args)
+
+    if args.all_libraries or not args.libraries:
+        entries = registry.list()
+    else:
+        keys = [k.strip() for k in args.libraries.split(",") if k.strip()]
+        entries = []
+        for k in keys:
+            try:
+                entries.append(registry.get(k))
+            except KeyError as exc:
+                print(f"Warning: {exc}", file=sys.stderr)
+
+    if not entries:
+        print("No libraries to run.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Batch run: {len(entries)} libraries → {args.output_dir}")
+    results = []
+    failed = []
+
+    for entry in entries:
+        try:
+            r = _run_single_library(
+                entry,
+                output_dir=args.output_dir,
+                model=args.model,
+                provider=args.provider,
+                judge_model=args.judge_model,
+            )
+            results.append(r)
+        except Exception as exc:
+            msg = f"FAILED: {entry.key} — {exc}"
+            print(f"\n❌ {msg}", file=sys.stderr)
+            failed.append({"library": entry.key, "name": entry.name, "status": "failed", "error": str(exc)})
+            if args.fail_fast:
+                print("Stopping (--fail-fast).", file=sys.stderr)
+                break
+
+    # Summary
+    print(f"\n{'─'*50}")
+    print(f"Batch complete: {len(results)} succeeded, {len(failed)} failed")
+    for r in results:
+        print(f"  ✅ {r['name']}")
+    for f in failed:
+        print(f"  ❌ {f['name']}: {f['error']}")
+
+    if failed:
+        sys.exit(1)
 
 
 def main() -> None:
