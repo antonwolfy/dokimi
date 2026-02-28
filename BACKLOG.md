@@ -4,7 +4,7 @@
 
 ---
 
-### #29 — Multi-evaluator (LLM Judge Panel)
+- [x] PR #29 — Multi-evaluator (LLM Judge Panel)
 **Scope:** Evaluation quality
 **Status:** PLANNED
 
@@ -53,6 +53,7 @@ Jenkinsfile для автоматического прогона benchmark.
 
 ## Completed
 
+- [x] PR #29 — Multi-evaluator LLM Judge Panel (3 roles, weighted aggregate, agreement score) (merged Feb 27, 2026)
 - [x] PR #28 — Dashboard generate (DASHBOARD.md + JSON) (merged Feb 27, 2026)
 - [x] PR #27 — Library registry (22 продукта) + benchmark run/batch (merged Feb 27, 2026)
 - [x] PR #26 — Question quality analysis (merged Feb 27, 2026)
