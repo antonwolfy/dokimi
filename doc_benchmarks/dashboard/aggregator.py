@@ -143,7 +143,7 @@ class ResultsAggregator:
             if not isinstance(ev, dict):
                 continue
             q_id = ev.get("question_id", "")
-            q_text = ev.get("question", "")
+            q_text = ev.get("question_text") or ev.get("question", "")
 
             with_eval = ev.get("with_docs") or {}
             without_eval = ev.get("without_docs") or {}
