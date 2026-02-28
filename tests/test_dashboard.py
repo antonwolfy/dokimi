@@ -1,0 +1,190 @@
+"""Tests for dashboard aggregator and markdown renderer."""
+import json
+from pathlib import Path
+
+import pytest
+
+from doc_benchmarks.dashboard.aggregator import (
+    DashboardData,
+    ProductSnapshot,
+    QuestionResult,
+    ResultsAggregator,
+)
+from doc_benchmarks.dashboard.markdown_renderer import render_dashboard, save_dashboard_markdown, save_dashboard_json
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────────
+
+def _make_eval_file(tmp_path: Path, name: str, evaluations: list) -> Path:
+    p = tmp_path / name / "eval_results.json"
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({
+        "library_name": name,
+        "evaluated_at": "2026-02-27T00:00:00Z",
+        "judge_model": "gpt-4o-mini",
+        "total_evaluations": len(evaluations),
+        "evaluations": evaluations,
+    }))
+    return p
+
+
+def _ev(q_id, question, with_score, without_score):
+    delta = with_score - without_score if with_score is not None and without_score is not None else None
+    return {
+        "question_id": q_id,
+        "question": question,
+        "with_docs": {"aggregate": with_score, "correctness": with_score, "completeness": with_score} if with_score is not None else None,
+        "without_docs": {"aggregate": without_score, "correctness": without_score} if without_score is not None else None,
+        "delta": delta,
+    }
+
+
+# ── ResultsAggregator ─────────────────────────────────────────────────────────
+
+def test_aggregator_empty_dir(tmp_path):
+    agg = ResultsAggregator(tmp_path / "nonexistent")
+    data = agg.aggregate()
+    assert data.products == []
+
+
+def test_aggregator_finds_eval_files(tmp_path):
+    _make_eval_file(tmp_path, "oneTBB", [
+        _ev("q1", "How to use parallel_for?", 80, 60),
+        _ev("q2", "What is task_arena?", 70, 50),
+    ])
+    agg = ResultsAggregator(tmp_path)
+    data = agg.aggregate()
+    assert len(data.products) == 1
+    p = data.products[0]
+    assert p.product == "oneTBB"
+    assert p.total_questions == 2
+    assert p.avg_with_docs == 75.0
+    assert p.avg_without_docs == 55.0
+    assert p.avg_delta == 20.0
+
+
+def test_aggregator_multiple_products(tmp_path):
+    _make_eval_file(tmp_path, "oneTBB", [_ev("q1", "Q1?", 80, 60)])
+    _make_eval_file(tmp_path, "oneMKL", [_ev("q1", "Q1?", 65, 45)])
+    agg = ResultsAggregator(tmp_path)
+    data = agg.aggregate()
+    assert len(data.products) == 2
+    names = {p.product for p in data.products}
+    assert "oneTBB" in names
+    assert "oneMKL" in names
+
+
+def test_aggregator_skips_empty_eval_file(tmp_path):
+    p = tmp_path / "bad" / "eval_empty.json"
+    p.parent.mkdir()
+    p.write_text(json.dumps({"evaluations": []}))
+    agg = ResultsAggregator(tmp_path)
+    data = agg.aggregate()
+    assert data.products == []
+
+
+def test_aggregator_skips_unreadable_file(tmp_path):
+    p = tmp_path / "x" / "eval_x.json"
+    p.parent.mkdir()
+    p.write_text("not json {{{")
+    agg = ResultsAggregator(tmp_path)
+    data = agg.aggregate()
+    assert data.products == []
+
+
+# ── ProductSnapshot ───────────────────────────────────────────────────────────
+
+def test_product_status_good():
+    s = ProductSnapshot("oneTBB", "onetbb", "", "m", 10, 80.0, 60.0, 20.0)
+    assert s.status == "good"
+    assert s.doc_score == 80.0
+
+
+def test_product_status_fair():
+    s = ProductSnapshot("oneTBB", "onetbb", "", "m", 10, 60.0, 40.0, 20.0)
+    assert s.status == "fair"
+
+
+def test_product_status_poor():
+    s = ProductSnapshot("oneTBB", "onetbb", "", "m", 10, 40.0, 30.0, 10.0)
+    assert s.status == "poor"
+
+
+def test_product_status_no_data():
+    s = ProductSnapshot("oneTBB", "onetbb", "", "m", 0, None, None, None)
+    assert s.status == "no-data"
+    assert s.doc_score is None
+
+
+def test_sorted_by_score(tmp_path):
+    _make_eval_file(tmp_path, "oneTBB", [_ev("q1", "Q?", 80, 60)])
+    _make_eval_file(tmp_path, "oneMKL", [_ev("q1", "Q?", 50, 30)])
+    agg = ResultsAggregator(tmp_path)
+    data = agg.aggregate()
+    scores = [p.doc_score for p in data.sorted_by_score]
+    assert scores == sorted(scores, reverse=True)
+
+
+# ── Markdown renderer ─────────────────────────────────────────────────────────
+
+def _make_dashboard(products=None) -> DashboardData:
+    if products is None:
+        products = [
+            ProductSnapshot(
+                product="oneTBB", library_key="onetbb",
+                evaluated_at="2026-02-27T00:00:00Z", judge_model="gpt-4o-mini",
+                total_questions=5, avg_with_docs=78.0, avg_without_docs=58.0, avg_delta=20.0,
+                questions=[
+                    QuestionResult("q1", "How to use parallel_for?", 60, 40, 20),
+                    QuestionResult("q2", "What is task_arena?", 80, 60, 20),
+                ],
+            )
+        ]
+    return DashboardData(generated_at="2026-02-27T00:00:00Z", products=products)
+
+
+def test_render_dashboard_contains_product():
+    md = render_dashboard(_make_dashboard())
+    assert "oneTBB" in md
+    assert "78.0" in md
+
+
+def test_render_dashboard_contains_table_headers():
+    md = render_dashboard(_make_dashboard())
+    assert "With Docs" in md
+    assert "Without Docs" in md
+    assert "Delta" in md
+
+
+def test_render_dashboard_empty():
+    md = render_dashboard(DashboardData(generated_at="now", products=[]))
+    assert "No evaluation results" in md
+
+
+def test_render_dashboard_shows_bad_questions():
+    md = render_dashboard(_make_dashboard(), top_n_bad_questions=2)
+    assert "parallel_for" in md
+    assert "task_arena" in md
+
+
+def test_render_dashboard_status_emoji():
+    md = render_dashboard(_make_dashboard())
+    assert "🟢" in md or "🟡" in md or "🔴" in md
+
+
+def test_save_dashboard_markdown(tmp_path):
+    data = _make_dashboard()
+    path = tmp_path / "DASHBOARD.md"
+    save_dashboard_markdown(data, path)
+    assert path.exists()
+    content = path.read_text()
+    assert "oneTBB" in content
+
+
+def test_save_dashboard_json(tmp_path):
+    data = _make_dashboard()
+    path = tmp_path / "dashboard.json"
+    save_dashboard_json(data, path)
+    parsed = json.loads(path.read_text())
+    assert parsed["products"][0]["product"] == "oneTBB"
+    assert parsed["products"][0]["avg_with_docs"] == 78.0
