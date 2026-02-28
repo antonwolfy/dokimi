@@ -133,14 +133,8 @@ class RagasSeedExtractor:
         try:
             response = self.llm.invoke(prompt)
             raw = response.content if hasattr(response, "content") else str(response)
-            # Find JSON array in response
-            start = raw.find("[")
-            end = raw.rfind("]") + 1
-            if start == -1 or end == 0:
-                raise ValueError("No JSON array found in LLM response")
-            topics = json.loads(raw[start:end])
-            if not isinstance(topics, list):
-                raise ValueError("LLM did not return a list")
+            from doc_benchmarks.llm import extract_json_array
+            topics = extract_json_array(raw)
             # Clean and deduplicate
             topics = list(dict.fromkeys(str(t).strip() for t in topics if t))
             return topics[:max_topics]

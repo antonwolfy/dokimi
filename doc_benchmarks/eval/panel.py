@@ -195,24 +195,8 @@ class JudgePanel:
 
     @staticmethod
     def _extract_json(text: str) -> Dict:
-        """Robust JSON extraction — handles leading text and markdown fences."""
-        # Try direct parse first
-        try:
-            return json.loads(text.strip())
-        except json.JSONDecodeError:
-            pass
-        # Extract from markdown fence
-        fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-        if fence:
-            try:
-                return json.loads(fence.group(1).strip())
-            except json.JSONDecodeError:
-                pass
-        # Find first { ... } block
-        brace = re.search(r"\{[\s\S]*\}", text)
-        if brace:
-            return json.loads(brace.group(0))
-        raise ValueError(f"No JSON found in LLM response: {text[:200]!r}")
+        from doc_benchmarks.llm import extract_json_object
+        return extract_json_object(text)
 
     def _call_judge(self, config: JudgeConfig, question: str, answer: str,
                     library_name: str, context: str) -> JudgeVote:

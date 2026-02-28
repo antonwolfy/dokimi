@@ -124,3 +124,61 @@ def llm_call(
                 raise
 
     raise last_exc  # should never reach here
+
+
+# ── Robust JSON extraction ─────────────────────────────────────────────────────
+
+import re as _re
+
+def extract_json_object(text: str) -> dict:
+    """Extract a JSON object from LLM output, handling markdown fences and leading text."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("LLM returned empty response")
+    # Direct parse
+    try:
+        return __import__("json").loads(text)
+    except Exception:
+        pass
+    # Markdown fence
+    fence = _re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if fence:
+        try:
+            return __import__("json").loads(fence.group(1).strip())
+        except Exception:
+            pass
+    # First { ... } block
+    m = _re.search(r"\{[\s\S]*\}", text)
+    if m:
+        return __import__("json").loads(m.group(0))
+    raise ValueError(f"No JSON object found in LLM response: {text[:200]!r}")
+
+
+def extract_json_array(text: str) -> list:
+    """Extract a JSON array from LLM output, handling markdown fences and leading text."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("LLM returned empty response")
+    # Direct parse
+    try:
+        result = __import__("json").loads(text)
+        if isinstance(result, list):
+            return result
+    except Exception:
+        pass
+    # Markdown fence
+    fence = _re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    if fence:
+        try:
+            result = __import__("json").loads(fence.group(1).strip())
+            if isinstance(result, list):
+                return result
+        except Exception:
+            pass
+    # First [ ... ] block
+    m = _re.search(r"\[[\s\S]*\]", text)
+    if m:
+        result = __import__("json").loads(m.group(0))
+        if isinstance(result, list):
+            return result
+    raise ValueError(f"No JSON array found in LLM response: {text[:200]!r}")

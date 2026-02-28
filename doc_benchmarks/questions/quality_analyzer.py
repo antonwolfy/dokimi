@@ -73,12 +73,8 @@ class QuestionQualityAnalyzer:
         prompt = CLASSIFY_PROMPT.format(library_name=library_name, question=question)
         try:
             raw = llm_call(prompt, model=self.model, provider=self.provider)
-            text = raw.strip()
-            if text.startswith("```"):
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-            data = json.loads(text.strip())
+            from doc_benchmarks.llm import extract_json_object
+            data = extract_json_object(raw)
             return QuestionClassification(
                 question=question,
                 difficulty=data.get("difficulty", "intermediate"),

@@ -151,13 +151,8 @@ class QuestionValidator:
             response = self.llm.invoke(prompt)
             raw = response.content if hasattr(response, "content") else str(response)
             
-            # Parse JSON
-            start = raw.find("{")
-            end = raw.rfind("}") + 1
-            if start == -1 or end == 0:
-                raise ValueError("No JSON object in response")
-            
-            score = json.loads(raw[start:end])
+            from doc_benchmarks.llm import extract_json_object
+            score = extract_json_object(raw)
             
             # Validate structure
             required = {"relevance", "answerability", "specificity", "aggregate"}

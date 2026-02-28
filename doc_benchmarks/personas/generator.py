@@ -154,10 +154,9 @@ class PersonaGenerator:
         try:
             # Call LLM
             response = self.llm.invoke(prompt)
-            response_text = response.content
-            
-            # Parse JSON response
-            personas_data = json.loads(response_text)
+            response_text = response.content or ""
+            from doc_benchmarks.llm import extract_json_object
+            personas_data = extract_json_object(response_text)
             
             # Validate structure
             if "personas" not in personas_data:

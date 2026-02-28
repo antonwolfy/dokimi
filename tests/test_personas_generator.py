@@ -185,7 +185,7 @@ class TestPersonaGenerator:
         with patch('doc_benchmarks.personas.generator.ChatOpenAI', mock_cls, create=True), \
              patch('doc_benchmarks.personas.generator.LANGCHAIN_AVAILABLE', True):
             generator = PersonaGenerator()
-            with pytest.raises(json.JSONDecodeError):
+            with pytest.raises((json.JSONDecodeError, ValueError)):
                 generator.generate_personas("oneTBB", sample_analysis)
     
     def test_generate_personas_missing_key(self, sample_analysis):

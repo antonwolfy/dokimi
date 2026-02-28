@@ -204,15 +204,8 @@ class QuestionGenerator:
         response = self.llm.invoke(prompt)
         raw = response.content if hasattr(response, "content") else str(response)
         
-        # Parse JSON array
-        start = raw.find("[")
-        end = raw.rfind("]") + 1
-        if start == -1 or end == 0:
-            raise ValueError("No JSON array in LLM response")
-        
-        questions = json.loads(raw[start:end])
-        if not isinstance(questions, list):
-            raise ValueError("LLM did not return a list")
+        from doc_benchmarks.llm import extract_json_array
+        questions = extract_json_array(raw)
         
         # Clean
         return [str(q).strip() for q in questions if q]
