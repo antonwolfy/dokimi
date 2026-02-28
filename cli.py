@@ -346,6 +346,49 @@ def cmd_personas_approve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_questions_analyze(args: argparse.Namespace) -> None:
+    """Analyze question quality: difficulty distribution and triviality detection."""
+    from doc_benchmarks.questions.quality_analyzer import QuestionQualityAnalyzer
+
+    questions_data = json.loads(Path(args.questions).read_text())
+    questions = questions_data.get("questions", questions_data)
+    if questions and isinstance(questions[0], dict):
+        questions = [q.get("question", q.get("text", str(q))) for q in questions]
+
+    print(f"Analyzing {len(questions)} questions for '{args.product}'...")
+    print(f"Model: {args.provider}/{args.model} | concurrency: {args.concurrency}\n")
+
+    analyzer = QuestionQualityAnalyzer(
+        model=args.model,
+        provider=args.provider,
+        concurrency=args.concurrency,
+    )
+    report = analyzer.analyze(questions, library_name=args.product)
+
+    # Print summary
+    dist = report.difficulty_distribution
+    print(f"─── Quality Report: {args.product} ───")
+    print(f"Total questions : {report.total}")
+    print(f"Difficulty      : beginner={dist.get('beginner',0)}  intermediate={dist.get('intermediate',0)}  advanced={dist.get('advanced',0)}")
+    print(f"Trivial         : {report.trivial_count} ({report.trivial_pct}%)")
+    print(f"Diversity score : {report.diversity_score:.3f}  (1.0 = perfectly balanced)")
+    print()
+    print("Recommendations:")
+    for rec in report.recommendations:
+        print(f"  • {rec}")
+
+    if report.trivial_questions:
+        print(f"\nTrivial questions ({len(report.trivial_questions)}):")
+        for q in report.trivial_questions[:5]:
+            print(f"  - {q}")
+        if len(report.trivial_questions) > 5:
+            print(f"  … and {len(report.trivial_questions) - 5} more (see report file)")
+
+    output_path = Path(args.output) if args.output else Path(f"reports/{args.product}_question_quality.json")
+    analyzer.save_report(report, output_path)
+    print(f"\n✅ Full report saved to {output_path}")
+
+
 def cmd_questions_generate(args: argparse.Namespace) -> None:
     """Generate questions from personas and seed topics."""
     import os
@@ -748,7 +791,17 @@ def build_parser() -> argparse.ArgumentParser:
     gen_q_p.add_argument("--context7-id", default=None, dest="context7_id",
                          help="Explicit Context7 library ID. Overrides auto-resolution.")
     gen_q_p.set_defaults(func=cmd_questions_generate)
-    
+
+    # questions analyze
+    analyze_q_p = questions_sub.add_parser("analyze", help="Analyze question quality (difficulty + triviality)")
+    analyze_q_p.add_argument("--questions", required=True, help="Path to questions JSON file")
+    analyze_q_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    analyze_q_p.add_argument("--output", default=None, help="Output report JSON (default: reports/{product}_question_quality.json)")
+    analyze_q_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for classification")
+    analyze_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    analyze_q_p.add_argument("--concurrency", type=int, default=5, help="Parallel classification requests")
+    analyze_q_p.set_defaults(func=cmd_questions_analyze)
+
     # Answers subcommand group
     answers_p = sub.add_parser("answers", help="Answer generation")
     answers_sub = answers_p.add_subparsers(dest="answers_cmd", required=True)
