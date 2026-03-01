@@ -19,6 +19,8 @@ class QuestionResult:
     with_docs_score: Optional[float]
     without_docs_score: Optional[float]
     delta: Optional[float]
+    question_source: str = "persona"   # "persona" | "chunk"
+    grounded: bool = False             # True if factual_grounding was scored
     # Per-dimension scores
     with_docs_dimensions: Dict[str, float] = field(default_factory=dict)
     without_docs_dimensions: Dict[str, float] = field(default_factory=dict)
@@ -37,6 +39,8 @@ class ProductSnapshot:
     avg_delta: Optional[float]
     questions: List[QuestionResult] = field(default_factory=list)
     source_file: Optional[str] = None
+    # Breakdown by question source
+    by_source: Dict[str, Dict] = field(default_factory=dict)  # {"persona": {...}, "chunk": {...}}
 
     @property
     def doc_score(self) -> Optional[float]:
@@ -159,17 +163,24 @@ class ResultsAggregator:
             if delta is not None:
                 deltas.append(delta)
 
+            q_source = ev.get("question_source", "persona")
+            grounded = bool((with_eval or {}).get("grounded") or (without_eval or {}).get("grounded"))
+
             questions.append(QuestionResult(
                 question_id=q_id,
                 question=q_text,
                 with_docs_score=with_score,
                 without_docs_score=without_score,
                 delta=delta,
+                question_source=q_source,
+                grounded=grounded,
                 with_docs_dimensions={k: v for k, v in with_eval.items()
                                       if isinstance(v, (int, float)) and k != "aggregate"},
                 without_docs_dimensions={k: v for k, v in without_eval.items()
                                          if isinstance(v, (int, float)) and k != "aggregate"},
             ))
+
+        by_source = _compute_by_source(questions)
 
         return ProductSnapshot(
             product=product,
@@ -182,4 +193,28 @@ class ResultsAggregator:
             avg_delta=round(sum(deltas) / len(deltas), 1) if deltas else None,
             questions=sorted(questions, key=lambda q: (q.with_docs_score or 0)),  # worst first
             source_file=str(path),
+            by_source=by_source,
         )
+
+
+def _compute_by_source(questions: "List[QuestionResult]") -> "Dict[str, Dict]":
+    """Compute per-source breakdown stats (persona vs chunk)."""
+    from typing import List as _L, Dict as _D
+    groups: _D[str, _L] = {}
+    for q in questions:
+        groups.setdefault(q.question_source, []).append(q)
+
+    result = {}
+    for source, qs in groups.items():
+        with_scores = [q.with_docs_score for q in qs if q.with_docs_score is not None]
+        without_scores = [q.without_docs_score for q in qs if q.without_docs_score is not None]
+        deltas = [q.delta for q in qs if q.delta is not None]
+        grounded_count = sum(1 for q in qs if q.grounded)
+        result[source] = {
+            "count": len(qs),
+            "grounded": grounded_count,
+            "avg_with_docs": round(sum(with_scores) / len(with_scores), 1) if with_scores else None,
+            "avg_without_docs": round(sum(without_scores) / len(without_scores), 1) if without_scores else None,
+            "avg_delta": round(sum(deltas) / len(deltas), 1) if deltas else None,
+        }
+    return result

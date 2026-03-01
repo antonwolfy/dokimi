@@ -88,17 +88,30 @@ def _render_product_section(p: ProductSnapshot, top_n: int) -> list[str]:
     lines.append(f"- **Judge model**: {p.judge_model}")
     lines.append(f"- **Evaluated**: {p.evaluated_at[:19] if p.evaluated_at else '—'}")
 
+    # By-source breakdown (if mixed persona + chunk questions)
+    if p.by_source and len(p.by_source) > 1:
+        lines.append("\n**Scores by question source:**\n")
+        lines.append("| Source | Count | With Docs | Without Docs | Delta | Grounded |")
+        lines.append("|--------|------:|----------:|-------------:|------:|---------:|")
+        for source, stats in sorted(p.by_source.items()):
+            w = f"{stats['avg_with_docs']:.1f}" if stats["avg_with_docs"] is not None else "—"
+            wo = f"{stats['avg_without_docs']:.1f}" if stats["avg_without_docs"] is not None else "—"
+            d = _fmt_delta(stats["avg_delta"])
+            grounded = f"{stats['grounded']}/{stats['count']}" if stats.get("grounded") is not None else "—"
+            lines.append(f"| `{source}` | {stats['count']} | {w} | {wo} | {d} | {grounded} |")
+
     # Worst questions
     bad = [q for q in p.questions if q.with_docs_score is not None][:top_n]
     if bad:
         lines.append(f"\n**Bottom {len(bad)} questions (needs improvement):**\n")
-        lines.append("| Score | Δ | Question |")
-        lines.append("|-------|---|---------|")
+        lines.append("| Score | Δ | Src | Question |")
+        lines.append("|-------|---|-----|---------|")
         for q in bad:
             score = f"{q.with_docs_score:.0f}" if q.with_docs_score is not None else "—"
             delta = _fmt_delta(round(q.delta, 0) if q.delta is not None else None).replace(".0", "")
-            question_short = _md_cell(q.question[:80] + ("…" if len(q.question) > 80 else ""))
-            lines.append(f"| {score} | {delta} | {question_short} |")
+            src = "🧩" if q.question_source == "chunk" else "👤"
+            question_short = _md_cell(q.question[:78] + ("…" if len(q.question) > 78 else ""))
+            lines.append(f"| {score} | {delta} | {src} | {question_short} |")
 
     lines.append("")
     return lines
