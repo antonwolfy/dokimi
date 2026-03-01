@@ -145,7 +145,7 @@ class Answerer:
                 with lock:
                     results[idx] = {
                         "question_id": q_id,
-                        "question_text": q["text"],
+                        "question_text": q.get("question") or q.get("text", ""),
                         "library_name": library_name,
                         "category": q.get("category"),
                         "difficulty": q.get("difficulty"),
@@ -187,7 +187,7 @@ class Answerer:
         max_tokens: int
     ) -> Dict[str, Any]:
         """Generate WITH and WITHOUT answers for a single question."""
-        question_text = question["text"]
+        question_text = question.get("question") or question.get("text", "")
         
         # WITH docs
         with_docs_answer = None
@@ -220,7 +220,7 @@ class Answerer:
         # WITHOUT docs
         without_docs_answer = self._generate_without_docs(question_text)
         
-        return {
+        result = {
             "question_id": question["id"],
             "question_text": question_text,
             "library_name": library_name,
@@ -228,8 +228,13 @@ class Answerer:
             "difficulty": question.get("difficulty"),
             "persona": question.get("persona"),
             "with_docs": with_docs_answer,
-            "without_docs": without_docs_answer
+            "without_docs": without_docs_answer,
         }
+        # Preserve ground truth chunk for chunk-grounded questions
+        if question.get("ground_truth_chunk"):
+            result["ground_truth_chunk"] = question["ground_truth_chunk"]
+            result["question_source"] = question.get("question_source", "chunk")
+        return result
     
     def _retrieve_docs(
         self,

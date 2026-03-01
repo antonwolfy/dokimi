@@ -235,6 +235,7 @@ class TestSaveLoadEvaluations:
 
 class TestPromptTemplate:
     def test_has_placeholders(self):
-        required = ["{question}", "{answer}", "{context}", "{library_name}"]
+        # Prompt now uses __PLACEHOLDER__ style
+        required = ["__QUESTION__", "__ANSWER__", "__CONTEXT__", "__LIBRARY_NAME__"]
         for placeholder in required:
             assert placeholder in JUDGE_PROMPT

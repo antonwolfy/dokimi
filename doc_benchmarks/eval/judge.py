@@ -17,18 +17,18 @@ from doc_benchmarks.eval.diagnoser import diagnose
 
 JUDGE_PROMPT = """You are evaluating the quality of an answer to a technical question.
 
-**Question:** {question}
+**Question:** __QUESTION__
 
-**Answer:** {answer}
+**Answer:** __ANSWER__
 
-**Context (if available):**
-{context}
+**Context (retrieved from docs, if available):**
+__CONTEXT__
 
 **Evaluation criteria:**
 
 1. **Correctness (0-100):** Is the answer factually accurate?
 2. **Completeness (0-100):** Does it fully address the question?
-3. **Specificity (0-100):** Is it specific to {library_name} (not generic)?
+3. **Specificity (0-100):** Is it specific to __LIBRARY_NAME__ (not generic)?
 4. **Code Quality (0-100):** If code is included, is it correct and runnable?
 5. **Actionability (0-100):** Can the user apply this immediately?
 
@@ -38,21 +38,77 @@ JUDGE_PROMPT = """You are evaluating the quality of an answer to a technical que
 - Provide brief reasoning for each score
 
 **Output format (JSON only, no other text):**
-{{
+{
   "correctness": 85,
   "completeness": 90,
   "specificity": 80,
   "code_quality": 85,
   "actionability": 90,
   "aggregate": 86,
-  "reasoning": {{
+  "reasoning": {
     "correctness": "Answer is accurate according to docs",
     "completeness": "Covers main aspects",
-    "specificity": "Uses {library_name}-specific APIs",
+    "specificity": "Uses __LIBRARY_NAME__-specific APIs",
     "code_quality": "Code compiles and follows best practices",
     "actionability": "Clear steps provided"
-  }}
-}}"""
+  }
+}"""
+
+# Extended prompt used when a ground-truth chunk is available.
+# Adds a factual_grounding dimension that checks alignment with doc text.
+JUDGE_PROMPT_GROUNDED = """You are evaluating the quality of an answer to a technical question.
+The question was generated from the documentation excerpt below — use it as ground truth.
+
+**Question:** __QUESTION__
+
+**Answer:** __ANSWER__
+
+**Ground-truth documentation excerpt (source of truth):**
+```
+__GROUND_TRUTH__
+```
+
+**Context (retrieved from docs, if available):**
+__CONTEXT__
+
+**Evaluation criteria:**
+
+1. **Correctness (0-100):** Is the answer factually accurate compared to the ground-truth excerpt?
+2. **Completeness (0-100):** Does it fully address the question using information from the excerpt?
+3. **Specificity (0-100):** Is it specific to __LIBRARY_NAME__ (not generic)?
+4. **Code Quality (0-100):** If code is included, is it correct and consistent with the excerpt?
+5. **Actionability (0-100):** Can the user apply this immediately?
+6. **Factual Grounding (0-100):** Does the answer stay faithful to the ground-truth excerpt?
+   - 100: All facts match the excerpt exactly
+   - 80: Minor omissions, no contradictions
+   - 60: Some facts correct, some missing or vague
+   - 40: Answer contradicts or ignores key information from excerpt
+   - 0: Answer is completely inconsistent with the excerpt
+
+**Instructions:**
+- Score each dimension 0-100
+- Aggregate = weighted mean: (correctness×2 + completeness + specificity + code_quality + actionability + factual_grounding×2) / 8
+- Python computes the aggregate — do NOT compute it yourself, set aggregate=0
+- Provide brief reasoning per dimension
+
+**Output format (JSON only, no other text):**
+{
+  "correctness": 85,
+  "completeness": 90,
+  "specificity": 80,
+  "code_quality": 85,
+  "actionability": 90,
+  "factual_grounding": 88,
+  "aggregate": 0,
+  "reasoning": {
+    "correctness": "...",
+    "completeness": "...",
+    "specificity": "...",
+    "code_quality": "...",
+    "actionability": "...",
+    "factual_grounding": "..."
+  }
+}"""
 
 
 class Judge:
@@ -184,7 +240,8 @@ class Judge:
     ) -> Dict[str, Any]:
         """Evaluate a single answer pair (WITH and WITHOUT)."""
         question_text = answer["question_text"]
-        
+        ground_truth = answer.get("ground_truth_chunk")  # present for chunk-grounded questions
+
         # Evaluate WITH docs
         with_docs_eval = None
         if answer.get("with_docs") and answer["with_docs"].get("answer"):
@@ -193,9 +250,10 @@ class Judge:
                 library_name=library_name,
                 question=question_text,
                 answer=answer["with_docs"]["answer"],
-                context=context
+                context=context,
+                ground_truth=ground_truth,
             )
-        
+
         # Evaluate WITHOUT docs
         without_docs_eval = None
         if answer.get("without_docs") and answer["without_docs"].get("answer"):
@@ -203,7 +261,8 @@ class Judge:
                 library_name=library_name,
                 question=question_text,
                 answer=answer["without_docs"]["answer"],
-                context="(No documentation provided)"
+                context="(No documentation provided)",
+                ground_truth=ground_truth,
             )
         
         # Calculate delta
@@ -226,31 +285,66 @@ class Judge:
         result["diagnosis"] = diagnose(answer, result)
         return result
     
+    # Dimensions for standard (no ground truth) evaluation
+    _STANDARD_DIMS = {"correctness", "completeness", "specificity", "code_quality", "actionability", "aggregate"}
+    # Dimensions for grounded evaluation (adds factual_grounding)
+    _GROUNDED_DIMS = _STANDARD_DIMS | {"factual_grounding"}
+
     def _judge_answer(
         self,
         library_name: str,
         question: str,
         answer: str,
-        context: str
+        context: str,
+        ground_truth: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Judge a single answer."""
-        prompt = JUDGE_PROMPT.format(
-            question=question,
-            answer=answer,
-            context=context,
-            library_name=library_name
-        )
-        
+        """Judge a single answer, optionally using a ground-truth doc chunk."""
+        import textwrap
+        from doc_benchmarks.llm import extract_json_object
+
+        grounded = bool(ground_truth)
+
+        if grounded:
+            prompt = (
+                JUDGE_PROMPT_GROUNDED
+                .replace("__QUESTION__", question)
+                .replace("__ANSWER__", answer)
+                .replace("__CONTEXT__", context)
+                .replace("__LIBRARY_NAME__", library_name)
+                .replace("__GROUND_TRUTH__", textwrap.shorten(ground_truth, width=1500, placeholder="…"))
+            )
+        else:
+            prompt = (
+                JUDGE_PROMPT
+                .replace("__QUESTION__", question)
+                .replace("__ANSWER__", answer)
+                .replace("__CONTEXT__", context)
+                .replace("__LIBRARY_NAME__", library_name)
+            )
+
         response = self.llm.invoke(prompt)
         raw = response.content if hasattr(response, "content") else str(response)
-        
-        from doc_benchmarks.llm import extract_json_object
+
         scores = extract_json_object(raw)
-        
-        # Validate structure
-        required = {"correctness", "completeness", "specificity", "code_quality", "actionability", "aggregate"}
-        if not required.issubset(scores.keys()):
-            raise ValueError(f"Missing keys in judge response: {required - scores.keys()}")
+
+        # Validate required fields
+        required = self._GROUNDED_DIMS if grounded else self._STANDARD_DIMS
+        missing = required - scores.keys()
+        if missing:
+            raise ValueError(f"Missing keys in judge response: {missing}")
+
+        # Python computes aggregate for grounded eval
+        # (LLM sets aggregate=0 per instructions)
+        if grounded:
+            c = float(scores.get("correctness", 0))
+            comp = float(scores.get("completeness", 0))
+            sp = float(scores.get("specificity", 0))
+            cq = float(scores.get("code_quality", 0))
+            ac = float(scores.get("actionability", 0))
+            fg = float(scores.get("factual_grounding", 0))
+            # Weighted: correctness×2, factual_grounding×2, others×1 → /8
+            scores["aggregate"] = round((c * 2 + comp + sp + cq + ac + fg * 2) / 8, 1)
+            scores["grounded"] = True
         
         return scores
     
