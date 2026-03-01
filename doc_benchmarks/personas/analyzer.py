@@ -36,7 +36,7 @@ class PersonaAnalyzer:
         self._github_client = None
         
         if not GITHUB_AVAILABLE:
-            logger.warning("PyGithub not available. GitHub analysis will be limited.")
+            logger.debug("PyGithub not available. GitHub analysis will be limited.")
     
     @property
     def github_client(self):
