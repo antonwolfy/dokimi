@@ -401,14 +401,63 @@ def cmd_questions_panel_review(args: argparse.Namespace) -> None:
     print(f"\n✅ Full report: {output_path}")
 
 
+def cmd_questions_refine(args: argparse.Namespace) -> None:
+    """Refine a question set: normalise schema, deduplicate, filter trivial, report gaps."""
+    from doc_benchmarks.questions.refiner import QuestionRefiner, GapFiller
+
+    questions_data = json.loads(Path(args.questions).read_text())
+    raw = questions_data.get("questions", questions_data)
+
+    target = {
+        "beginner":     args.target_beginner,
+        "intermediate": args.target_intermediate,
+        "advanced":     args.target_advanced,
+    }
+    gap_filler = None
+    if getattr(args, "fill_gaps", False):
+        gap_filler = GapFiller(
+            library_name=args.product,
+            model=args.fill_model,
+            provider=args.fill_provider,
+        )
+        print(f"Gap fill enabled: {args.fill_provider}/{args.fill_model}")
+    refiner = QuestionRefiner(
+        library_name=args.product,
+        target_distribution=target,
+        sim_threshold=args.sim_threshold,
+        gap_filler=gap_filler,
+    )
+    report = refiner.refine(raw)
+    print(report.summary())
+
+    if not args.dry_run:
+        import json as _json
+        out = Path(args.output) if args.output else Path(f"questions/{args.product}_refined.json")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "library": args.product,
+            "total": len(report.questions),
+            "difficulty_distribution": report.difficulty_after,
+            "questions": report.questions,
+        }
+        out.write_text(_json.dumps(payload, indent=2, ensure_ascii=False))
+        print(f"\n✅ Refined questions saved to {out}")
+    else:
+        print("\n(dry-run: no file written)")
+
+
 def cmd_questions_analyze(args: argparse.Namespace) -> None:
     """Analyze question quality: difficulty distribution and triviality detection."""
     from doc_benchmarks.questions.quality_analyzer import QuestionQualityAnalyzer
+    from doc_benchmarks.questions.normalizer import normalize_questions
 
     questions_data = json.loads(Path(args.questions).read_text())
-    questions = questions_data.get("questions", questions_data)
-    if questions and isinstance(questions[0], dict):
-        questions = [q.get("question", q.get("text", str(q))) for q in questions]
+    raw = questions_data.get("questions", questions_data)
+    if raw and isinstance(raw[0], dict):
+        normalized = normalize_questions(raw)
+        questions = [q["question"] for q in normalized]
+    else:
+        questions = [str(q) for q in raw]
 
     print(f"Analyzing {len(questions)} questions for '{args.product}'...")
     print(f"Model: {args.provider}/{args.model} | concurrency: {args.concurrency}\n")
@@ -594,13 +643,31 @@ def cmd_eval_panel_score(args: argparse.Namespace) -> None:
     """Score answers using a multi-judge panel (parallel, role-diverse judges)."""
     from doc_benchmarks.eval.panel import JudgePanel, JudgeConfig, DEFAULT_PANEL, JUDGE_ROLES
 
-    roles = [r.strip() for r in args.roles.split(",")] if args.roles else DEFAULT_PANEL
-    unknown = [r for r in roles if r not in JUDGE_ROLES]
-    if unknown:
-        print(f"Error: unknown roles: {unknown}. Valid: {list(JUDGE_ROLES)}", file=sys.stderr)
-        sys.exit(1)
+    # --judge-configs takes priority over --model/--provider/--roles
+    # Format: "technical_expert:gpt-4o:openai,developer_advocate:claude-sonnet-4:anthropic,doc_reviewer:gemini-2.0-flash:google"
+    if getattr(args, "judge_configs", None):
+        judges = []
+        for entry in args.judge_configs.split(","):
+            parts = entry.strip().split(":")
+            if len(parts) != 3:
+                print(
+                    f"Error: --judge-configs entry '{entry}' must be 'role:model:provider'.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            role, model, provider = parts
+            if role not in JUDGE_ROLES:
+                print(f"Error: unknown role '{role}'. Valid: {list(JUDGE_ROLES)}", file=sys.stderr)
+                sys.exit(1)
+            judges.append(JudgeConfig(role=role.strip(), model=model.strip(), provider=provider.strip()))
+    else:
+        roles = [r.strip() for r in args.roles.split(",")] if args.roles else DEFAULT_PANEL
+        unknown = [r for r in roles if r not in JUDGE_ROLES]
+        if unknown:
+            print(f"Error: unknown roles: {unknown}. Valid: {list(JUDGE_ROLES)}", file=sys.stderr)
+            sys.exit(1)
+        judges = [JudgeConfig(role=r, model=args.model, provider=args.provider) for r in roles]
 
-    judges = [JudgeConfig(role=r, model=args.model, provider=args.provider) for r in roles]
     panel = JudgePanel(judges=judges, concurrency=args.concurrency)
 
     try:
@@ -902,6 +969,25 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_q_p.add_argument("--concurrency", type=int, default=5, help="Parallel classification requests")
     analyze_q_p.set_defaults(func=cmd_questions_analyze)
 
+    # questions refine
+    refine_q_p = questions_sub.add_parser("refine", help="Refine question set: normalise, deduplicate, filter trivial, report gaps")
+    refine_q_p.add_argument("--questions", required=True, help="Path to questions JSON file")
+    refine_q_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    refine_q_p.add_argument("--output", default=None, help="Output refined JSON (default: questions/{product}_refined.json)")
+    refine_q_p.add_argument("--target-beginner", type=int, default=10, dest="target_beginner")
+    refine_q_p.add_argument("--target-intermediate", type=int, default=10, dest="target_intermediate")
+    refine_q_p.add_argument("--target-advanced", type=int, default=10, dest="target_advanced")
+    refine_q_p.add_argument("--sim-threshold", type=float, default=0.82, dest="sim_threshold",
+                             help="Edit-distance similarity threshold for deduplication (default: 0.82, range 0-1)")
+    refine_q_p.add_argument("--dry-run", action="store_true", dest="dry_run",
+                             help="Print report only, do not write output file")
+    refine_q_p.add_argument("--fill-gaps", action="store_true", dest="fill_gaps",
+                             help="Use LLM to generate questions for under-represented difficulty levels")
+    refine_q_p.add_argument("--fill-model", default="gpt-4o-mini", dest="fill_model")
+    refine_q_p.add_argument("--fill-provider", default="openai", dest="fill_provider",
+                             choices=["openai", "anthropic", "google"])
+    refine_q_p.set_defaults(func=cmd_questions_refine)
+
     # questions panel-review
     panel_q_p = questions_sub.add_parser("panel-review",
                                           help="Multi-agent panel review of question quality")
@@ -963,6 +1049,16 @@ def build_parser() -> argparse.ArgumentParser:
     panel_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
     panel_p.add_argument("--roles", default=None,
                          help="Comma-separated judge roles (default: technical_expert,developer_advocate,doc_reviewer)")
+    panel_p.add_argument(
+        "--judge-configs", default=None, dest="judge_configs",
+        help=(
+            "Per-role model config (overrides --model/--provider/--roles). "
+            "Format: 'role:model:provider,...' "
+            "e.g. 'technical_expert:gpt-4o:openai,"
+            "developer_advocate:claude-sonnet-4:anthropic,"
+            "doc_reviewer:gemini-2.0-flash:google'"
+        ),
+    )
     panel_p.add_argument("--concurrency", type=positive_int, default=6,
                          help="Parallel judge API calls (default: 6)")
     panel_p.add_argument("--limit", type=positive_int, default=None,

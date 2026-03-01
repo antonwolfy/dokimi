@@ -198,9 +198,10 @@ class TestSaveQuestions:
 
 class TestPromptTemplate:
     def test_has_required_placeholders(self):
+        # Prompt now uses __PLACEHOLDER__ style (safe from .format() conflicts)
         required = [
-            "{library_name}", "{persona_name}", "{skill_level}",
-            "{persona_description}", "{concerns}", "{topic}", "{count}"
+            "__LIBRARY_NAME__", "__PERSONA_NAME__", "__SKILL_LEVEL__",
+            "__PERSONA_DESCRIPTION__", "__CONCERNS__", "__TOPIC__", "__COUNT__"
         ]
         for placeholder in required:
             assert placeholder in QUESTION_GENERATION_PROMPT

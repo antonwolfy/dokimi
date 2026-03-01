@@ -84,18 +84,22 @@ def llm_call(
     # Resolve api_key from env if not provided
     if not api_key:
         env_map = {
-            "anthropic": "ANTHROPIC_API_KEY",
-            "openai":    "OPENAI_API_KEY",
+            "anthropic":  "ANTHROPIC_API_KEY",
+            "openai":     "OPENAI_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
-            "bedrock":   "AWS_ACCESS_KEY_ID",
+            "bedrock":    "AWS_ACCESS_KEY_ID",
+            "google":     "GEMINI_API_KEY",
+            "gemini":     "GEMINI_API_KEY",
         }
         api_key = os.environ.get(env_map.get(provider, "OPENAI_API_KEY"), "")
 
     # Build litellm model string
     if "/" in model:
-        litellm_model = model           # already prefixed
+        litellm_model = model           # already prefixed (e.g. "gemini/gemini-2.0-flash")
     elif provider == "openai":
         litellm_model = model           # openai models work as-is
+    elif provider in ("google", "gemini"):
+        litellm_model = f"gemini/{model}"
     else:
         litellm_model = f"{provider}/{model}"
 

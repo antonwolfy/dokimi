@@ -266,8 +266,8 @@ class JudgePanel:
         results = []
         n = len(answers)
         for i, answer in enumerate(answers, 1):
-            q_id = answer.get("question_id", f"q{i}")
-            question = answer.get("question", "")
+            q_id = answer.get("question_id", answer.get("id", f"q{i}"))
+            question = answer.get("question") or answer.get("text", "")
             print(f"[{i}/{n}] Panel: {q_id}…", flush=True)
             with_v = self._score_answer_entry(answer.get("with_docs"), question, library_name)
             without_v = self._score_answer_entry(answer.get("without_docs"), question, library_name)
