@@ -384,7 +384,19 @@ class EvaluationPipeline:
         # Evaluate
         judge = Judge(
             model=self.judge_model,
-            provider=self.judge_provider
+            provider=self.judge_provider,
+            run_metadata={
+                "question_model": self.model,
+                "question_provider": self.provider,
+                "answer_model": self.model,
+                "answer_provider": self.provider,
+                "judge_model": self.judge_model,
+                "judge_provider": self.judge_provider,
+                "evaluator_independence_warning": (
+                    str(self.model).strip().lower() == str(self.judge_model).strip().lower()
+                    and str(self.provider).strip().lower() == str(self.judge_provider).strip().lower()
+                ),
+            },
         )
         
         evaluations = judge.evaluate_answers(self.product, answers_list)

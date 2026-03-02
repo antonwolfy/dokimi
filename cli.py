@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from doc_benchmarks.utils import normalize_model_ref
 from pathlib import Path
 from typing import Any, Dict
 
@@ -15,6 +16,25 @@ from doc_benchmarks.runner.compare import compare_snapshots
 from doc_benchmarks.runner.run import run_benchmark, save_snapshot
 from doc_benchmarks.personas.analyzer import PersonaAnalyzer
 from doc_benchmarks.personas.generator import PersonaGenerator
+
+
+def _warn_judge_independence(
+    answer_provider: str,
+    answer_model: str,
+    judge_provider: str,
+    judge_model: str,
+    context: str = "run",
+) -> bool:
+    """Emit a non-fatal warning when answer and judge use the same model/provider."""
+    same = normalize_model_ref(answer_provider, answer_model) == normalize_model_ref(judge_provider, judge_model)
+    if same:
+        print(
+            "⚠ Evaluator independence warning "
+            f"({context}): answer model equals judge model "
+            f"[{answer_provider}/{answer_model}] — potential self-referential bias.",
+            file=sys.stderr,
+        )
+    return same
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -660,6 +680,7 @@ def cmd_eval_panel_score(args: argparse.Namespace) -> None:
                 print(f"Error: unknown role '{role}'. Valid: {list(JUDGE_ROLES)}", file=sys.stderr)
                 sys.exit(1)
             judges.append(JudgeConfig(role=role.strip(), model=model.strip(), provider=provider.strip()))
+        roles = [j.role for j in judges]
     else:
         roles = [r.strip() for r in args.roles.split(",")] if args.roles else DEFAULT_PANEL
         unknown = [r for r in roles if r not in JUDGE_ROLES]
@@ -679,6 +700,19 @@ def cmd_eval_panel_score(args: argparse.Namespace) -> None:
     if not isinstance(answers, list):
         print(f"Error: expected a list of answers in {args.answers}", file=sys.stderr)
         sys.exit(1)
+
+    answer_model = answers_data.get("model", "unknown") if isinstance(answers_data, dict) else "unknown"
+    answer_provider = answers_data.get("provider", "unknown") if isinstance(answers_data, dict) else "unknown"
+    if answer_model != "unknown" and answer_provider != "unknown":
+        for cfg in judges:
+            _warn_judge_independence(
+                answer_provider=answer_provider,
+                answer_model=answer_model,
+                judge_provider=cfg.provider,
+                judge_model=cfg.model,
+                context="panel-score",
+            )
+
     n_effective = min(len(answers), args.limit) if args.limit else len(answers)
     print(f"Panel evaluation: {n_effective} answers × {len(judges)} judges → {n_effective * len(judges)} LLM calls")
     print(f"Roles: {', '.join(roles)}\nModel: {args.provider}/{args.model}\n")
@@ -710,13 +744,34 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
     answers_data = json.loads(Path(args.answers).read_text())
     answers = answers_data.get("answers", answers_data)
     print(f"Loaded {len(answers)} answers from {args.answers}")
-    
+
+    answer_model = answers_data.get("model", "unknown") if isinstance(answers_data, dict) else "unknown"
+    answer_provider = answers_data.get("provider", "unknown") if isinstance(answers_data, dict) else "unknown"
+    same_model_warning = False
+    if answer_model != "unknown" and answer_provider != "unknown":
+        same_model_warning = _warn_judge_independence(
+            answer_provider=answer_provider,
+            answer_model=answer_model,
+            judge_provider=args.judge_provider,
+            judge_model=args.judge_model,
+            context="eval-score",
+        )
+
     print(f"Evaluating with judge: {args.judge_provider}/{args.judge_model}")
-    
+
     # Evaluate
     judge = Judge(
         model=args.judge_model,
-        provider=args.judge_provider
+        provider=args.judge_provider,
+        run_metadata={
+            "question_model": answers_data.get("question_model", "unknown") if isinstance(answers_data, dict) else "unknown",
+            "question_provider": answers_data.get("question_provider", "unknown") if isinstance(answers_data, dict) else "unknown",
+            "answer_model": answer_model,
+            "answer_provider": answer_provider,
+            "judge_model": args.judge_model,
+            "judge_provider": args.judge_provider,
+            "evaluator_independence_warning": same_model_warning,
+        },
     )
     
     output_path = Path(args.output) if args.output else Path(f"eval/{args.product}.json")
@@ -776,6 +831,14 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
     if args.custom_questions:
         print(f"Custom questions: {args.custom_questions}")
     print()
+
+    _warn_judge_independence(
+        answer_provider=args.provider,
+        answer_model=args.model,
+        judge_provider=args.judge_provider,
+        judge_model=args.judge_model,
+        context="evaluate",
+    )
 
     # Create pipeline
     pipeline = EvaluationPipeline(
@@ -1223,6 +1286,14 @@ def _run_single_library(entry, output_dir: str, model: str, provider: str, judge
     print(f"  Source  : {doc_source}")
     print(f"  Output  : {out}")
     print(f"{'='*60}")
+
+    _warn_judge_independence(
+        answer_provider=provider,
+        answer_model=model,
+        judge_provider=judge_provider,
+        judge_model=judge_model,
+        context=f"benchmark:{entry.key}",
+    )
 
     pipeline = EvaluationPipeline(
         product=entry.name,

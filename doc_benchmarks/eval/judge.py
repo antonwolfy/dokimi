@@ -127,7 +127,8 @@ class Judge:
         self,
         model: str = "claude-sonnet-4",
         provider: str = "anthropic",
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        run_metadata: Optional[Dict[str, Any]] = None,
     ):
         """
         Args:
@@ -144,6 +145,7 @@ class Judge:
         self.model = model
         self.provider = provider
         self.api_key = api_key
+        self.run_metadata = dict(run_metadata) if run_metadata else {}
 
         if provider == "openai":
             self.llm = ChatOpenAI(model=model, api_key=api_key)
@@ -363,13 +365,16 @@ class Judge:
     
     def _build_evaluation_output(self, evaluations: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Build the serialisable output structure for a set of evaluations."""
-        return {
+        output = {
             "evaluated_at": self._get_timestamp(),
             "judge_model": self.model,
             "judge_provider": self.provider,
             "total_evaluations": len(evaluations),
             "evaluations": evaluations,
         }
+        if self.run_metadata:
+            output["run_metadata"] = self.run_metadata
+        return output
 
     def _save_incremental(self, evaluations: List[Dict[str, Any]], output_path: Path) -> None:
         """Write current evaluations to disk atomically (called after each question)."""

@@ -1,0 +1,509 @@
+{
+  "library": "oneMKL",
+  "library_id": "intel/onemkl",
+  "description": "Golden regression set for oneMKL",
+  "version_or_doc_snapshot": "Snapshot accessed 2026-03-01 (America/Los_Angeles): oneMKL Data Parallel C++ Developer Reference (Intel Software Documentation Library, document ID 772045; version selector shows 2025.2 as latest), Get Started Guide (document ID 766875; version selector shows 2025.2 as latest), oneAPI Programming Guide section 'oneMKL Usage' (document ID 771723; version selector shows 2025.1 as latest), and oneMKL Release Notes (document ID 765830; updated 2026-01-23; version 2025.3.0).",
+  "questions": [
+    {
+      "id": "onemkl-Q001",
+      "text": "You have matrices A, B, and C stored in conventional C/C++ row-major order (contiguous rows). You call the DPC++ BLAS API oneapi::mkl::blas::gemm and the results look transposed/incorrect. Without changing how you store the matrices, what specific oneMKL namespace/API should you call instead, and what layout limitation should you keep in mind if you try to switch the computation to a oneMKL LAPACK DPC++ API?",
+      "category": "api_usage",
+      "difficulty": "easy",
+      "expected_topics": [
+        "Explain that oneapi::mkl::blas namespace assumes column-major layout by default, and row-major storage must use the oneapi::mkl::blas::row_major namespace variants (or equivalently choose the explicit column_major namespace when using column-major).",
+        "Name a concrete example fix: call oneapi::mkl::blas::row_major::gemm when matrices are row-major, rather than oneapi::mkl::blas::gemm.",
+        "State the key limitation: LAPACK DPC++ APIs do not support row-major layout, so LAPACK DPC++ expects column-major (row-major LAPACK DPC++ is not available)."
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/introduction-to-the-intel-oneapi-math-kernel.html"
+        ],
+        "why_it_matters": "Row/column-major mismatches are a high-frequency source of silent numerical errors during migration to SYCL-based BLAS/LAPACK APIs.",
+        "is_static_golden": false,
+        "original_id": "Q001"
+      }
+    },
+    {
+      "id": "onemkl-Q002",
+      "text": "Your team is adopting oneMKL SYCL interfaces for the first time. Based only on the official docs, write a short 'how to start' checklist that answers: (a) which compiler/toolchain requirement is stated for SYCL interfaces, (b) what the docs say about USM pointers vs sycl::buffer support for data, and (c) which two-level namespaces/domains exist (BLAS, LAPACK, RNG, FFT/DFT, VM, stats, sparse) so a developer knows where to look for APIs.",
+      "category": "concepts",
+      "difficulty": "easy",
+      "expected_topics": [
+        "Identify the stated build requirement for SYCL interfaces (built with the Intel oneAPI DPC++/C++ compiler toolchain and linked appropriately for DPC++).",
+        "State that SYCL interfaces use device-accessible USM pointers for input data, and that many SYCL interfaces also support sycl::buffer objects in place of USM pointers.",
+        "List the two-level namespace structure and domains described in the docs (oneapi::mkl plus domain namespaces such as oneapi::mkl::blas, ::lapack, ::rng, ::stats, ::vm, ::dft, ::sparse)."
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/oneapi/programming-guide/2025-0/onemkl-usage.html"
+        ],
+        "why_it_matters": "Many documentation failures show up as developer onboarding friction: unclear headers, namespaces, and required memory model for SYCL calls.",
+        "is_static_golden": false,
+        "original_id": "Q002"
+      }
+    },
+    {
+      "id": "onemkl-Q003",
+      "text": "You are calling oneapi::mkl::blas::gemv with USM pointers. Suppose m=128, n=64, trans=transpose::trans, and you set incx=-2 to traverse x backwards. Using the documentation rules for GEMV vector length and stride sizing, what is (a) the logical length len of vector x for this call, and (b) the minimum number of elements that must be addressable in the x allocation to avoid out-of-bounds based on incx?",
+      "category": "memory",
+      "difficulty": "easy",
+      "expected_topics": [
+        "Determine len correctly from the GEMV contract: len is m when A is transposed, otherwise len is n.",
+        "Apply the documented sizing rule: x must be sized to at least 1 + (len - 1) * abs(incx) elements.",
+        "Compute the concrete minimum for the given numbers: len=128 and min size=1 + 127*2 = 255 elements."
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/gemv.html",
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2023-0/matrix-storage.html"
+        ],
+        "why_it_matters": "Incorrect stride/length reasoning causes memory corruption and incorrect results; good docs make these constraints unambiguous and discoverable.",
+        "is_static_golden": true,
+        "original_id": "Q003"
+      }
+    },
+    {
+      "id": "onemkl-Q004",
+      "text": "A unit test occasionally fails because a BLAS call throws an exception when you pass incx=0 (or otherwise violate a documented argument constraint). Using the docs, which exception class best matches 'arguments rejected/invalid', and what is one example of a BLAS routine that explicitly documents an 'incx must not be zero' requirement?",
+      "category": "troubleshooting",
+      "difficulty": "easy",
+      "expected_topics": [
+        "Map 'arguments rejected' to the oneMKL exception class intended for invalid routine arguments (oneapi::mkl::invalid_argument).",
+        "Cite a concrete routine contract that states incx must not be zero (for example, SYR or GEMV documents incx constraints).",
+        "Describe the minimal corrective action: validate arguments before calling and fix the stride/inputs to meet the documented preconditions."
+      ],
+      "metadata": {
+        "persona": "maintainer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2023-1/syr.html",
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-0/error-handling.html"
+        ],
+        "why_it_matters": "A real documentation quality test is whether developers can quickly identify the precise contract violation and the corresponding exception semantics.",
+        "is_static_golden": false,
+        "original_id": "Q004"
+      }
+    },
+    {
+      "id": "onemkl-Q005",
+      "text": "You want to use oneMKL Vector Math to add two half-precision vectors on a CPU device queue. You choose sycl::half as T and call oneapi::mkl::vm::add. Based on the function documentation, is sycl::half supported on CPU for this routine, and what type(s) does the doc indicate for CPU vs GPU support?",
+      "category": "device_backend",
+      "difficulty": "easy",
+      "expected_topics": [
+        "State the documented device/type support table for add, including that sycl::half is listed as supported on GPU (not CPU) for this routine.",
+        "Point out the CPU-listed half-precision alternative in the table (_Float16) and the generally supported alternatives (float/double/complex on CPU and GPU).",
+        "Conclude what to change for a CPU queue: use a CPU-supported type for this API (e.g., _Float16 or float) rather than sycl::half."
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/add.html"
+        ],
+        "why_it_matters": "Device/type matrices are a common source of 'works on GPU but not CPU' surprises; high-quality docs clearly expose these constraints per routine.",
+        "is_static_golden": true,
+        "original_id": "Q005"
+      }
+    },
+    {
+      "id": "onemkl-Q006",
+      "text": "A legacy SYCL-FFT wrapper includes the header oneapi/mkl/dfti.hpp and queries oneapi::mkl::dft::config_param::VERSION. You are preparing for a future major upgrade. According to the official oneMKL release notes, what migrations are required for (a) the header include and (b) VERSION querying, and by which release are these removals expected?",
+      "category": "migration",
+      "difficulty": "easy",
+      "expected_topics": [
+        "Identify the deprecation/removal guidance: oneapi/mkl/dfti.hpp is deprecated and slated for removal; migrate includes to oneapi/mkl/dft.hpp.",
+        "Identify the deprecation/removal guidance for config_param::VERSION: it is deprecated and slated for removal; use MKL_Get_Version_String instead.",
+        "State the timeline called out in the release notes (removal in oneMKL 2026.0)."
+      ],
+      "metadata": {
+        "persona": "maintainer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/developer/articles/release-notes/onemkl-release-notes.html",
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/configuring-and-computing-a-dft-in-dpc.html"
+        ],
+        "why_it_matters": "Good migration notes prevent 'surprise breakage' at upgrade time and reduce the chance that developers rely on soon-to-be-removed headers or config options.",
+        "is_static_golden": false,
+        "original_id": "Q006"
+      }
+    },
+    {
+      "id": "onemkl-Q007",
+      "text": "You need quick visibility into which oneMKL routines are called and approximate time spent, especially on GPU. Based on the official docs, how do you enable oneMKL Verbose mode, what are the different modes for GPU vs CPU (including timing), and what performance and correctness caveats do the docs warn about?",
+      "category": "performance",
+      "difficulty": "easy",
+      "expected_topics": [
+        "Explain how to enable/disable verbose mode using MKL_VERBOSE and/or the mkl_verbose API, including the meaning of values 0/1/2 as described for CPU vs GPU applications.",
+        "Highlight the GPU timing caveat: enabling verbose mode with synchronous timing can make executions synchronous and affect performance/ordering.",
+        "Include the doc warning that verbose mode is a global state (not thread-local) and that performance may degrade when verbose is enabled due to per-call output."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-guide-linux/2024-0/using-onemkl-verbose-mode.html"
+        ],
+        "why_it_matters": "Performance diagnostics are only useful if docs clearly describe how to enable them and how they perturb execution and measurements.",
+        "is_static_golden": false,
+        "original_id": "Q007"
+      }
+    },
+    {
+      "id": "onemkl-Q008",
+      "text": "A maintainer enables SYCL queue property discard_events to reduce overhead, and separately experiments with the SYCL Graph extension to record a computation graph containing oneMKL calls. The application now throws unexpected exceptions or behaves unpredictably. What do the oneMKL DPC++ 'Known Limitations' docs state about these two SYCL features, and what is the recommended immediate workaround for correctness?",
+      "category": "concepts",
+      "difficulty": "easy",
+      "expected_topics": [
+        "State the limitation for discard_events queues: using oneMKL DPC++ routines with discard_events is not supported and may lead to unexpected exceptions.",
+        "State the limitation for SYCL Graph: recording oneMKL DPC++ routines with the SYCL Graph extension is not supported and may cause unexpected behavior.",
+        "Recommend the direct workaround: avoid these queue/extension features for oneMKL calls and use standard queues with conventional dependency management (events/in-order queue) instead."
+      ],
+      "metadata": {
+        "persona": "maintainer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/known-limitations.html"
+        ],
+        "why_it_matters": "Compatibility constraints with evolving SYCL features are a critical part of the execution model documentation and directly impact application architecture decisions.",
+        "is_static_golden": false,
+        "original_id": "Q008"
+      }
+    },
+    {
+      "id": "onemkl-Q009",
+      "text": "You have a custom SYCL kernel that produces A and B matrices, then you immediately call oneapi::mkl::blas::gemm (USM API). To avoid an explicit queue.wait() and to keep GPU execution asynchronous, how should you connect the kernel completion to GEMM using the 'dependencies' mechanism, and what does the doc say about whether you must specify compute_mode in order to pass dependencies?",
+      "category": "api_usage",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Describe passing a std::vector<sycl::event> containing prior kernel events into the GEMM dependencies parameter so GEMM waits on those events before starting.",
+        "Explain the relationship between compute_mode and dependencies as documented: they can be omitted independently; you do not need to specify compute_mode just to provide dependencies.",
+        "State how to propagate completion forward: use the returned sycl::event from GEMM as a dependency for subsequent USM operations (or wait on it at a boundary)."
+      ],
+      "metadata": {
+        "persona": "hpc_dev",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/gemm.html"
+        ],
+        "why_it_matters": "Real user documentation quality is revealed by whether it supports correct, fully-asynchronous SYCL pipelines without forcing unnecessary synchronization.",
+        "is_static_golden": false,
+        "original_id": "Q009"
+      }
+    },
+    {
+      "id": "onemkl-Q010",
+      "text": "You want to use the oneMKL Vector Math strided API, but a teammate accidentally creates a slice that would produce negative indices or go out of bounds. Using the docs, explain: (a) what slice(0, 5, 0) means, (b) what makes a slice invalid, and (c) what the doc says about behavior if a slice may cause out-of-bounds accesses.",
+      "category": "memory",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Interpret slice(0, 5, 0) per docs: it selects the single element at index 0 repeated five times.",
+        "State the invalidity rule: a slice is invalid if it produces negative indices; also clarify how size-0 slices are treated.",
+        "State the safety rule: if a slice may cause out-of-bounds memory accesses, the behavior is undefined (so callers must prevent it)."
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2023-0/data-types.html"
+        ],
+        "why_it_matters": "Strided/sliced APIs are powerful but easy to misuse; documentation should clearly define validity and failure/undefined-behavior boundaries.",
+        "is_static_golden": false,
+        "original_id": "Q010"
+      }
+    },
+    {
+      "id": "onemkl-Q011",
+      "text": "You plan to run a double-precision DFT on a GPU using oneapi::mkl::dft::descriptor<precision::DOUBLE, ...>. Under what circumstances do the docs warn this may not work on some GPU devices, and how should you handle failure using only the documented descriptor/commit error model?",
+      "category": "device_backend",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Quote the documented warning conceptually: some GPU devices do not support double-precision descriptors, and the docs recommend verifying double-precision floating-point support before using such descriptors on that device.",
+        "Explain that the descriptor must be committed to a sycl::queue (which defines the target device), and commit may fail if the configuration is unsupported or inconsistent.",
+        "Describe handling based on documented exceptions for commit: be prepared to catch oneapi::mkl::unimplemented (unsupported configuration) and/or std::runtime_error (inconsistency), then fall back to a supported configuration/device."
+      ],
+      "metadata": {
+        "persona": "hpc_dev",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/the-descriptor-class-template.html",
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/configuration-and-queue-committing-member-function.html"
+        ],
+        "why_it_matters": "Device capability gaps are common in heterogeneous computing; strong docs enable predictable, debuggable fallbacks without undefined behavior.",
+        "is_static_golden": false,
+        "original_id": "Q011"
+      }
+    },
+    {
+      "id": "onemkl-Q012",
+      "text": "A maintainer committed a DFT descriptor to a queue and later calls set_value to change parameters, then calls compute_forward without re-committing. Based on the oneMKL DFT docs, what is the correct lifecycle ordering for set_value, commit, and compute, and what does the commit API say about what it does and what exceptions it may throw?",
+      "category": "concepts",
+      "difficulty": "medium",
+      "expected_topics": [
+        "State the documented ordering rule: configuration (set_value) is done before commit; committed descriptors are required for compute functions.",
+        "Explain what commit does per docs: it finalizes configuration and triggers initialization work (e.g., precomputation/algorithm selection) for the provided queue/device.",
+        "Explain the post-commit rule and consequence: changing configuration after commit leaves the descriptor uncommitted, so you should avoid set_value after commit and re-commit after any change.",
+        "List the documented exception types from commit: oneapi::mkl::unimplemented for unsupported configurations and std::runtime_error for inconsistent configurations."
+      ],
+      "metadata": {
+        "persona": "maintainer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/descriptor-precision-domain-set-value.html",
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/configuration-and-queue-committing-member-function.html"
+        ],
+        "why_it_matters": "Many production bugs come from mismanaging descriptor state transitions; docs must make the lifecycle rules and failure modes explicit.",
+        "is_static_golden": false,
+        "original_id": "Q012"
+      }
+    },
+    {
+      "id": "onemkl-Q013",
+      "text": "For GPU-committed DFT descriptors, you want to reduce runtime allocation jitter by providing your own workspace buffer/USM allocation. Using the docs, describe the correct procedure to (a) choose internal vs external workspace, (b) determine how many bytes you must allocate, (c) ensure the workspace container type matches your compute data container type, and (d) diagnose the specific error cases the docs describe (sub-buffer workspace, too-small buffer, not committed, nullptr, USM not accessible by device).",
+      "category": "memory",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Explain internal vs external workspace modes and that internal workspace allocation happens at commit by default.",
+        "Explain how to determine required workspace bytes: use WORKSPACE_BYTES/WORKSPACE_EXTERNAL_BYTES on committed objects, or WORKSPACE_ESTIMATE_BYTES on uncommitted objects for an estimate.",
+        "State the container-type matching requirement: if you compute using SYCL buffers, workspace must be provided as a buffer; if you compute using USM, workspace must be USM, matching the compute functions used.",
+        "Enumerate the documented exception triggers for set_workspace, including invalid_argument for sub-buffer workspaces and runtime_error conditions (not committed, too-small buffer, nullptr when size nonzero, USM not accessible by device).",
+        "Note the documented scope limitation: externally allocated workspaces are supported on GPU devices only."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-1/providing-an-externally-allocated-workspace.html"
+        ],
+        "why_it_matters": "This tests deep documentation quality: correct memory sizing, lifecycle constraints, and precise failure modes for a performance-critical feature.",
+        "is_static_golden": false,
+        "original_id": "Q013"
+      }
+    },
+    {
+      "id": "onemkl-Q014",
+      "text": "You need to evaluate performance trade-offs of alternate BLAS compute modes (speed vs numerical properties) for GEMM on GPU. Using only the official oneMKL 'Compute Modes' documentation: explain how to set allowed modes via (a) MKL_BLAS_COMPUTE_MODE environment variable, (b) per-source-file macro, and (c) per-call argument; describe precedence among those mechanisms; and explain what happens when no allowed alternate mode is usable (including the documented behavior of force_alternate).",
+      "category": "performance",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Describe how to configure modes at runtime (environment variable), per source file (define MKL_BLAS_COMPUTE_MODE before including oneMKL headers), and per call (compute_mode parameter at end of routine parameter list, with placement relative to dependencies for USM).",
+        "Explain how multiple modes are specified: OR-ing compute_mode values for per-call/per-source-file; comma-separated values for the environment variable.",
+        "Explain precedence: per-call and per-source-file settings override the environment variable, and defining standard at compile time can effectively disable the environment variable.",
+        "Explain fallback/force behavior: by default oneMKL can fall back to standard when alternates are unsupported or not beneficial; with force_alternate, an exception is thrown if no allowed alternate implementation is available."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-2/compute-modes.html"
+        ],
+        "why_it_matters": "This probes whether docs enable realistic performance-tuning workflows without forcing users to guess precedence or error behaviors.",
+        "is_static_golden": false,
+        "original_id": "Q014"
+      }
+    },
+    {
+      "id": "onemkl-Q015",
+      "text": "Your regression tests require deterministic, bitwise-reproducible results across repeated runs, but you also want GPU acceleration where possible. Using the official oneMKL Numerical Reproducibility docs: explain why BLAS results can vary run-to-run, what 'conditional numerical reproducibility (CNR)' provides, and on which devices/API subsets CNR is available according to the docs.",
+      "category": "performance",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Explain the root cause described: floating-point addition is not associative, so different internal operation orderings can lead to small numeric differences between runs.",
+        "Explain what CNR provides per docs: bitwise reproducibility guarantees under certain circumstances (conditional guarantees, not universal).",
+        "State the availability as documented: CNR mode is available on CPU for all BLAS DPC++ APIs, and on GPU for level-3 routines and level-3 extensions."
+      ],
+      "metadata": {
+        "persona": "hpc_dev",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/numerical-reproducibility.html"
+        ],
+        "why_it_matters": "Performance engineers and HPC developers routinely trade off determinism vs throughput; docs should clearly define the scope and limits of reproducibility features.",
+        "is_static_golden": false,
+        "original_id": "Q015"
+      }
+    },
+    {
+      "id": "onemkl-Q016",
+      "text": "A developer installed oneMKL on Linux via a pip 'mkl-devel' package and tries to dynamically link using typical -L${MKLROOT}/lib -lmkl_* flags. The linker fails because expected .so symlinks are missing. Using only the official Get Started Guide, what is the documented cause and what is the documented fix pattern for the link line (in principle)?",
+      "category": "troubleshooting",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Identify the documented cause: the oneMKL devel package for pip distribution on Linux does not provide dynamic library symlinks.",
+        "Describe the documented fix approach: when dynamically linking with the pip devel package, modify the link line to use full library names including versions (explicit libmkl_*.so.<version> paths), rather than relying on symlinks.",
+        "Point to the official guidance mechanism for full linking configuration (Link Line Advisor) as referenced by the guide."
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/get-started-guide/2025-1/overview.html"
+        ],
+        "why_it_matters": "Linking is a common real-world failure point; strong docs should anticipate packaging differences and provide actionable fixes.",
+        "is_static_golden": false,
+        "original_id": "Q016"
+      }
+    },
+    {
+      "id": "onemkl-Q017",
+      "text": "You are migrating CUDA BLAS calls to SYCL and want official guidance and runnable examples, not just API reference text. Using the official 'cuBLAS Migration' sample documentation, explain (a) what the two source folders represent (dpct output vs manually fixed migrated code), (b) what the sample warns about common migration pitfalls (e.g., code that 'does not work as supplied'), and (c) how a user is expected to run on CPU vs GPU according to the sample instructions.",
+      "category": "migration",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Describe the two code sets: one folder contains the Intel DPC++ Compatibility Tool output that may include incorrect/unmigrated code requiring manual fixes; the other contains a manually corrected migrated version intended to be functional.",
+        "Call out the documented warning that the dpct output code may be non-functional as supplied and requires manual correction, making it a deliberate teaching artifact for common mistakes.",
+        "Summarize the run guidance: the sample runs on CPU by default, and the user must adjust device selection in code to target a compatible GPU (as described by the sample).",
+        "Connect the purpose to oneMKL: the sample demonstrates mapping cuBLAS routines to equivalent oneMKL routines in SYCL."
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://raw.githubusercontent.com/oneapi-src/oneAPI-samples/master/Libraries/oneMKL/guided_cuBLAS_examples_SYCL_Migration/README.md",
+          "https://www.intel.com/content/www/us/en/developer/tools/oneapi/onemkl-documentation.html"
+        ],
+        "why_it_matters": "Migration quality depends heavily on examples that explicitly surface real pitfalls; this question tests whether docs provide usable, realistic migration scaffolding.",
+        "is_static_golden": false,
+        "original_id": "Q017"
+      }
+    },
+    {
+      "id": "onemkl-Q018",
+      "text": "A codebase configures oneMKL DFT layouts using the deprecated parameters INPUT_STRIDES and OUTPUT_STRIDES, and it also uses the deprecated variadic set_value/get_value APIs. The team sees deprecation warnings and occasional wrong results when switching between forward and backward transforms. Using the official docs: explain what the recommended replacement parameters are, why mixing deprecated and newer stride configuration parameters is not supported, and what the docs say about direction-dependent configuration and undefined behavior when the layout doesn't match the compute direction.",
+      "category": "migration",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Identify the recommended migration target: use FWD_STRIDES and BWD_STRIDES instead of INPUT_STRIDES and OUTPUT_STRIDES; use non-variadic set_value/get_value instead of the deprecated variadic forms.",
+        "Explain the documented 'no mix-and-match' rule: setting INPUT_STRIDES/OUTPUT_STRIDES resets FWD_STRIDES/BWD_STRIDES (and vice versa), preventing simultaneous use; invalid mixed configurations can cause commit-time exceptions.",
+        "Explain the documented direction-dependence risk: if deprecated stride parameters lead to a layout that satisfies only one compute direction, using the descriptor for the opposite direction leads to undefined behavior; the docs show that you may need to reconfigure and re-commit when reversing directions if forward/backward strides differ.",
+        "Include the documented removal timing and rationale from the release notes (removal in 2026.0; migrate now)."
+      ],
+      "metadata": {
+        "persona": "maintainer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/configuring-data-layouts.html",
+          "https://www.intel.com/content/www/us/en/developer/articles/release-notes/onemkl-release-notes.html"
+        ],
+        "why_it_matters": "This tests whether the docs explain a subtle but critical correctness issue (stride semantics across directions) and provide a clear, modern migration path.",
+        "is_static_golden": true,
+        "original_id": "Q018"
+      }
+    },
+    {
+      "id": "onemkl-Q019",
+      "text": "You need to perform batch_size=128 independent GEMMs per iteration where each GEMM is the same fixed shape. You currently submit 128 separate oneapi::mkl::blas::gemm calls on USM pointers, which adds overhead. Using the oneMKL gemm_batch documentation, propose how to rewrite this using the strided batch API while keeping A, B, and C stored contiguously. Explain how to compute stridea/strideb/stridec from lda/ldb/ldc and m/n/k for both column-major and row-major layouts, and note any documented optimization hint about beta=0.",
+      "category": "api_usage",
+      "difficulty": "hard",
+      "expected_topics": [
+        "Explain when gemm_batch is appropriate: same operation repeated many times with contiguous strided storage, enabling fewer submissions and potential batching efficiency compared to a loop of gemm calls.",
+        "Provide the documented stride constraints: for strided batch, buffers/arrays must be at least stride*batch_size; stridea/strideb depend on layout and transposition as documented; stridec depends on layout (e.g., ldc*n in column-major, ldc*m in row-major for the non-transposed C storage case).",
+        "Explain that for row-major storage you must use the row_major namespace variant (consistent with BLAS layout rules).",
+        "Include the documented note: if beta=0, C matrices do not need to be initialized before calling gemm_batch (useful for performance and simpler memory setup)."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/gemm-batch.html",
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2023-0/matrix-storage.html"
+        ],
+        "why_it_matters": "High-quality docs should enable users to move from 'works' to 'fast' by selecting the right batch API and correctly reasoning about strides and buffer sizing.",
+        "is_static_golden": false,
+        "original_id": "Q019"
+      }
+    },
+    {
+      "id": "onemkl-Q020",
+      "text": "You implement SYCL Sparse BLAS and choose the newly introduced BSR sparse matrix format. Your target is a SYCL CPU device, and you store the BSR matrix arrays in sycl::buffer. At runtime you see unsupported behavior or exceptions. Using only official oneMKL documentation (release notes + reference), what limitation explains this, and what is the most direct fix to make BSR usable on a SYCL CPU device?",
+      "category": "device_backend",
+      "difficulty": "hard",
+      "expected_topics": [
+        "Identify the release-notes limitation: SYCL Sparse BLAS BSR format support on CPU requires USM matrix data; sycl::buffer is not supported on SYCL CPU for this BSR functionality.",
+        "Propose the direct fix: switch the matrix data containers for BSR arrays to device-accessible USM allocations when using a SYCL CPU device, or choose a different supported sparse format/APIs that match buffer support and device constraints.",
+        "Explain that this is a device/backend + memory-model interaction: the same format may have different container requirements depending on device support, and docs must be consulted per feature."
+      ],
+      "metadata": {
+        "persona": "maintainer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/developer/articles/release-notes/onemkl-release-notes.html"
+        ],
+        "why_it_matters": "Sparse formats and device support matrices are a classic source of 'works on one platform' failures; this tests whether docs make the constraints and remedy discoverable.",
+        "is_static_golden": false,
+        "original_id": "Q020"
+      }
+    },
+    {
+      "id": "onemkl-Q021",
+      "text": "Your GPU microbenchmark shows the first oneMKL GEMM call is much slower than subsequent calls, and you suspect initialization overhead and kernel caching. Using the official 'oneMKL Initialization on GPU' documentation and the official verbose-mode documentation, design a benchmarking procedure that isolates steady-state GEMM performance. Your answer must explicitly account for (a) what the docs list as first-call service routines, and (b) how verbose mode with timing can distort GPU measurements.",
+      "category": "performance",
+      "difficulty": "hard",
+      "expected_topics": [
+        "Use the initialization-on-GPU breakdown from docs (verbose-mode check, GPU information detector, kernel creation/program cache, memory manager and caching) to justify doing warm-up iterations before timing steady-state.",
+        "Describe a concrete procedure: run one or more warm-up GEMM calls (and any required allocations) to populate caches and trigger initialization, then time only later iterations; report both first-call and steady-state if needed.",
+        "Explain the verbose-mode measurement caveat from docs: GPU verbose mode with synchronous timing can make execution synchronous and change performance characteristics, so either avoid verbose timing for final measurements or treat it as diagnostic-only.",
+        "Mention maintaining consistent queue/device setup between warm-up and measurement so the cache/initialization effects are representative."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2025-0/onemkl-initialization-on-gpu.html",
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-guide-linux/2024-0/using-onemkl-verbose-mode.html"
+        ],
+        "why_it_matters": "Performance guidance is only valuable if docs help users produce correct measurements; this tests whether docs enable accurate benchmarking around one-time overheads.",
+        "is_static_golden": false,
+        "original_id": "Q021"
+      }
+    },
+    {
+      "id": "onemkl-Q022",
+      "text": "You wrote a generic wrapper that always calls compute_backward(desc, in, out) with two data parameters, but sometimes desc is configured for in-place operation (PLACEMENT=INPLACE). A bug report claims 'undefined behavior' and intermittent wrong outputs. Using only the compute_backward documentation, explain: (a) how many data parameters are required for in-place vs out-of-place, (b) how this differs between SYCL buffer vs USM overloads, and (c) the documentation’s recommended ways to serialize repeated use of the same descriptor for correctness and performance (queue wait, in-order queue, buffer reuse, event dependencies, NUMBER_OF_TRANSFORMS).",
+      "category": "api_usage",
+      "difficulty": "hard",
+      "expected_topics": [
+        "State the central rule: the number of data parameters depends exclusively on PLACEMENT; in-place requires one inout parameter, out-of-place requires in and out, and behavior is undefined otherwise.",
+        "Differentiate overload behavior: buffer overloads are void and rely on buffer semantics; USM overloads return sycl::event and accept a dependencies vector for ordering.",
+        "Explain documented serialization guidance for repeated descriptor use: wait on commit queue or use an in-order queue, or rely on repeated buffer use to serialize buffer computations; for USM, serialize via returned events and input dependencies.",
+        "Include the documented performance hint: where possible, set NUMBER_OF_TRANSFORMS to perform multiple transforms simultaneously rather than serial successive computations."
+      ],
+      "metadata": {
+        "persona": "hpc_dev",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/compute-backward-typename-descriptor-type-typename.html"
+        ],
+        "why_it_matters": "This is a high-signal doc-quality test: it checks whether documentation prevents a subtle undefined-behavior pitfall and teaches correct, performant synchronization patterns.",
+        "is_static_golden": true,
+        "original_id": "Q022"
+      }
+    },
+    {
+      "id": "onemkl-Q023",
+      "text": "Your build system statically links the oneMKL SYCL library (Linux: libmkl_sycl.a; Windows: equivalent static linkage) for DPC++ APIs. You are planning for oneMKL 2026.0. Based on the official release notes and Get Started Guide, what linking migration is required due to deprecation/removal, and how should you choose between linking all SYCL domains vs linking only a specific SYCL domain (e.g., BLAS-only) in the dynamic-link model?",
+      "category": "migration",
+      "difficulty": "hard",
+      "expected_topics": [
+        "Identify the deprecation and removal requirement: the oneMKL static SYCL library is deprecated (starting 2025.2) and is planned to be removed in 2026.0; users should migrate to dynamic SYCL domain-specific libraries.",
+        "Use the Get Started Guide examples to describe how the dynamic link command is structured (SYCL domain library + interface/threading/core components + SYCL/OpenCL/system libs as shown) and that Windows examples include domain-specific SYCL libraries aligned with oneMKL domain namespaces (e.g., a BLAS-domain SYCL DLL import library).",
+        "Explain the decision rule for domain selection: link only the domain-specific SYCL library needed by your application (e.g., BLAS-only) to minimize dependencies, or link the broader SYCL library set when multiple domains are used, consistent with the guidance/examples and Link Line Advisor."
+      ],
+      "metadata": {
+        "persona": "maintainer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/developer/articles/release-notes/onemkl-release-notes.html",
+          "https://www.intel.com/content/www/us/en/docs/onemkl/get-started-guide/2025-1/overview.html"
+        ],
+        "why_it_matters": "Linking guidance and deprecation timelines are core to maintainability; this tests whether docs provide a clear, actionable upgrade path rather than leaving users to discover breakage.",
+        "is_static_golden": true,
+        "original_id": "Q023"
+      }
+    },
+    {
+      "id": "onemkl-Q024",
+      "text": "A sparse SYCL application has intermittent lifecycle bugs: sometimes a sparse matrix handle release appears to race, and in older versions you saw a segmentation fault when passing &handle where handle is a stack variable. You also have legacy code using the deprecated release_matrix_handle(p_spMat, deps) overload (without a queue). Using the oneMKL sparse::release_matrix_handle reference and the official release notes, explain the recommended correct usage model today, what safety change the API doc describes for 2023.2 and beyond, and which removed/deprecated API variants might break legacy code in newer releases.",
+      "category": "troubleshooting",
+      "difficulty": "hard",
+      "expected_topics": [
+        "Describe the recommended usage model from the reference: set handle to nullptr, initialize via init_matrix_handle(&handle), set matrix data with set_csr_data(queue, handle, ...), then call release_matrix_handle(queue, &handle, dependencies) and wait on or propagate the returned sycl::event to ensure cleanup completes.",
+        "Explain the safety change described: starting 2023.2 and beyond, the handle pointer is dereferenced and set to null synchronously before scheduling asynchronous destruction, addressing a prior risk of segfault when the pointer to a stack variable went out of scope before asynchronous dereference began.",
+        "Connect to removals/deprecations: identify that queue-less variants were deprecated and that release notes describe removal of certain queue-less sparse APIs in later releases (so code must migrate to queue-taking overloads to remain compatible).",
+        "Include the dependency-ordering implication: since modern release returns an event, correct code either waits on it at a boundary or threads it through dependencies to avoid use-after-free patterns."
+      ],
+      "metadata": {
+        "persona": "maintainer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-dpcpp/2024-2/oneapi-mkl-sparse-release-matrix-handle.html",
+          "https://www.intel.com/content/www/us/en/developer/articles/release-notes/onemkl-release-notes.html"
+        ],
+        "why_it_matters": "Correct handle lifetimes and async cleanup are hard in SYCL; documentation quality is measured by whether it prevents real crash classes (use-after-scope, async deallocation races).",
+        "is_static_golden": false,
+        "original_id": "Q024"
+      }
+    }
+  ]
+}

@@ -1,0 +1,501 @@
+{
+  "library": "oneDAL",
+  "library_id": "intel/onedal",
+  "description": "Golden regression set for oneDAL",
+  "version_or_doc_snapshot": "Intel oneAPI Data Analytics Library (oneDAL) Developer Guide and Reference (HTML: versions 2024.2 and 2025.0 as cited per-question) and Intel oneDAL Release Notes (intel.com article updated 2026-01-23). Snapshot assembled on 2026-03-02 (America/Los_Angeles).",
+  "questions": [
+    {
+      "id": "onedal-Q001",
+      "text": "In oneDAL documentation, how are the three computational modes (batch, online, distributed) defined, and what differentiates the data availability/memory assumptions of each mode?",
+      "category": "api_flow",
+      "difficulty": "easy",
+      "expected_topics": [
+        "Batch mode: the algorithm works with the entire dataset to produce the final result; a noted complication is when the full dataset is not available yet or does not fit device memory.",
+        "Online mode: the algorithm processes the dataset in blocks streamed into device memory; partial results are updated incrementally and finalized after the last block is processed.",
+        "Distributed mode: the dataset is split across multiple devices/compute nodes; each node produces partial results that are merged into a final result on the main node."
+      ],
+      "metadata": {
+        "persona": "beginner_ml",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-2/computational-modes.html"
+        ],
+        "why_it_matters": "Choosing the wrong computation mode is a common cause of out-of-memory failures, incorrect control flow, and poor scaling. Clear mode definitions reduce integration errors early.",
+        "is_static_golden": false,
+        "original_id": "Q001"
+      }
+    },
+    {
+      "id": "onedal-Q002",
+      "text": "When wrapping an existing contiguous in-memory data buffer into a oneDAL homogeneous table (homogen_table), what is the default data layout, and what are the ownership/lifetime implications of wrapping raw pointers vs wrapping a oneDAL array?",
+      "category": "data_repr",
+      "difficulty": "easy",
+      "expected_topics": [
+        "homogen_table::wrap(...) defaults the data layout parameter to data_layout::row_major; callers can pass data_layout::column_major explicitly if needed.",
+        "Wrapping a raw pointer creates a table that references external memory but does not own it; the user remains responsible for freeing the memory.",
+        "Wrapping a dal::array shares data ownership with the array (the table and array share lifetime/ownership semantics as described)."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-2/homogen.html"
+        ],
+        "why_it_matters": "Incorrect layout assumptions silently corrupt results, while ownership mistakes cause crashes or use-after-free. This question tests whether documentation makes safe wrapping semantics obvious.",
+        "is_static_golden": false,
+        "original_id": "Q002"
+      }
+    },
+    {
+      "id": "onedal-Q003",
+      "text": "oneDAL’s data management docs state that table objects are immutable. Why is that design choice made, and what documented mechanism is provided for reading a subset of table rows as a contiguous homogeneous block?",
+      "category": "data_repr",
+      "difficulty": "easy",
+      "expected_topics": [
+        "The table provides read-only access (immutability) for thread-safety reasons and better integration with external entities.",
+        "row_accessor is documented as providing read-only access to rows of a table as a contiguous homogeneous array.",
+        "The usage example shows pulling a row range using row_accessor::pull(queue, {start_row, end_row}) to obtain a contiguous block for a specific row interval."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2023-2/data-management-002.html",
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-0/row-accessor-001.html"
+        ],
+        "why_it_matters": "Immutability and accessors affect how developers integrate oneDAL into existing memory ownership and threading models; misunderstanding this leads to unsafe mutation patterns and performance regressions.",
+        "is_static_golden": false,
+        "original_id": "Q003"
+      }
+    },
+    {
+      "id": "onedal-Q004",
+      "text": "In oneDAL’s Data Sources documentation, what predefined feature modifiers are available for CSV/SQL feature managers, and how does each modifier influence parsing and resulting feature representation?",
+      "category": "api_flow",
+      "difficulty": "easy",
+      "expected_topics": [
+        "continuous: parses input values as real numbers; the number of output features equals the number of input features.",
+        "categorical: parses input values as categorical features; the number of output features equals the number of input features (as described in the documentation).",
+        "automatic: automatically selects an appropriate parsing scheme (continuous or categorical)."
+      ],
+      "metadata": {
+        "persona": "beginner_ml",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/data-sources-1.html"
+        ],
+        "why_it_matters": "Data ingestion choices (continuous vs categorical parsing) strongly affect downstream model correctness and usability; docs must make these defaults and trade-offs explicit for ML practitioners.",
+        "is_static_golden": false,
+        "original_id": "Q004"
+      }
+    },
+    {
+      "id": "onedal-Q005",
+      "text": "For oneDAL’s CSR table representation, what do the three arrays (values, columns_indices, row_offsets) encode, and does documentation state support for both zero-based and one-based indexing? Also, what is the default indexing used by the CSR table wrap API?",
+      "category": "data_repr",
+      "difficulty": "easy",
+      "expected_topics": [
+        "values stores the non-zero matrix elements row-by-row.",
+        "columns_indices stores the column index for each corresponding element in values.",
+        "row_offsets stores, for each row i, the index in values of the first non-zero element in rows indexed i or greater; the last element encodes the number of non-zero elements.",
+        "Documentation states oneDAL supports both zero-based and one-based indexing for CSR.",
+        "The CSR table API reference shows wrap(..., sparse_indexing indexing=sparse_indexing::one_based), indicating one-based is the documented default for that overload."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-2/csr-2.html",
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2023-2/compressed-sparse-rows-csr-table-001.html"
+        ],
+        "why_it_matters": "CSR indexing mismatches are a frequent source of silent correctness bugs and memory corruption. This question tests whether docs make CSR semantics and defaults unambiguous.",
+        "is_static_golden": true,
+        "original_id": "Q005"
+      }
+    },
+    {
+      "id": "onedal-Q006",
+      "text": "Scenario: You need to cluster a high-dimensional sparse dataset without densifying it. According to the oneDAL K-Means API reference, which computational method tag is intended for sparse data, and what invariants/constraints are documented for core stopping/size parameters (cluster_count, max_iteration_count, accuracy_threshold)?",
+      "category": "algo_config",
+      "difficulty": "easy",
+      "expected_topics": [
+        "The K-Means API documents method tags for Lloyd’s method including a tag-type for sparse data: lloyd_csr.",
+        "cluster_count is documented with an invariant cluster_count > 0.",
+        "max_iteration_count is documented with an invariant max_iteration_count >= 0.",
+        "accuracy_threshold is documented with an invariant accuracy_threshold >= 0.0."
+      ],
+      "metadata": {
+        "persona": "prod_ml",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/kmeans.html"
+        ],
+        "why_it_matters": "Sparse clustering is a common production constraint; selecting the wrong method/table pairing can force densification or break performance. Clear parameter invariants prevent misconfiguration.",
+        "is_static_golden": false,
+        "original_id": "Q006"
+      }
+    },
+    {
+      "id": "onedal-Q007",
+      "text": "Scenario: You are implementing binary logistic regression using oneDAL oneAPI interfaces. From the logistic regression API reference, what are the documented preconditions for calling train(...) regarding input table shapes and descriptor settings, and what are the documented postconditions for the shapes of coefficients, intercept, and packed_coefficients in the training result?",
+      "category": "train_infer",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Training preconditions include: input.data.has_data == true and input.responses.data.has_data == true.",
+        "Training preconditions include: input.data.row_count == input.responses.row_count and input.responses.column_count == 1.",
+        "Training preconditions include descriptor constraints: desc.inverse_regularization > 0.0 and desc.class_count == 2.",
+        "Training postconditions specify result shape expectations: coefficients is 1 x input.data.column_count; intercept is 1 x 1; packed_coefficients is 1 x (input.data.column_count + 1)."
+      ],
+      "metadata": {
+        "persona": "prod_ml",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/logistic-regression.html"
+        ],
+        "why_it_matters": "These constraints determine whether a pipeline is set up correctly (especially response shape and binary-class limitation). Good docs here directly prevent incorrect training calls and downstream mismatches.",
+        "is_static_golden": false,
+        "original_id": "Q007"
+      }
+    },
+    {
+      "id": "onedal-Q008",
+      "text": "Scenario: You want cluster assignments for both training data and new incoming data. Using the K-Means API reference, what are the documented differences between train_input vs infer_input, and between train_result vs infer_result (including which outputs are available, and how initial centroids can be supplied)?",
+      "category": "train_infer",
+      "difficulty": "medium",
+      "expected_topics": [
+        "train_input can be constructed with (data) or with (data, initial_centroids); initial centroids are represented as a table where each row is one centroid.",
+        "The train(...) preconditions describe constraints on initial centroids when provided (row_count must match desc.cluster_count and column_count must match input.data.column_count).",
+        "train_result includes outputs such as the trained model, labels/responses for the input data, objective_function_value, and iteration_count (as documented properties).",
+        "infer_input is constructed with (trained_model, data) for inference on new data; infer_result provides assignment outputs (responses/labels) for the inference dataset as documented."
+      ],
+      "metadata": {
+        "persona": "prod_ml",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/kmeans.html"
+        ],
+        "why_it_matters": "Users routinely confuse training-time assignments with inference-time scoring. This checks whether documentation clearly separates training vs inference inputs/outputs and validates centroids shape requirements.",
+        "is_static_golden": false,
+        "original_id": "Q008"
+      }
+    },
+    {
+      "id": "onedal-Q009",
+      "text": "In oneDAL’s Distributed SPMD model documentation, what are the three core components of the SPMD distributed model, and which communicator backends are explicitly listed as available? Also, what calling requirement is stated for distributed train/infer/compute methods across ranks?",
+      "category": "distributed",
+      "difficulty": "medium",
+      "expected_topics": [
+        "The SPMD model is described as consisting of: (1) additional train/infer/compute methods that accept a communicator object as the first parameter, (2) a communicator class supporting collective operations among ranks, and (3) free functions to create a communicator using a specified backend.",
+        "The available communicator backends are explicitly listed as ccl and mpi.",
+        "Distributed train/infer/compute methods that accept the communicator are documented as expected to be called on all ranks to start distributed computations."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-2/overview-0.html"
+        ],
+        "why_it_matters": "Distributed correctness often fails due to mismatched rank participation or incorrect communicator setup; the documentation must make the SPMD contract explicit and actionable.",
+        "is_static_golden": false,
+        "original_id": "Q009"
+      }
+    },
+    {
+      "id": "onedal-Q010",
+      "text": "Scenario: Your distributed pipeline uses an Allgatherv-style collective with arbitrary displacements and you also rely on asynchronous collectives for overlap with compute. Based on oneDAL’s backend-specific restrictions for SPMD, what limitations are documented for oneCCL and oneMPI that would affect these design choices?",
+      "category": "troubleshooting_performance",
+      "difficulty": "medium",
+      "expected_topics": [
+        "For oneCCL: Allgetherv does not support arbitrary displacements and expects the result to be closely packed without gaps.",
+        "For oneMPI: collective operations do not support asynchronous executions and block the process until completion."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/index-53.html"
+        ],
+        "why_it_matters": "Distributed performance engineering depends on whether collectives support displacement patterns and async overlap. This question checks whether the docs surface critical backend constraints before users ship a design that cannot work.",
+        "is_static_golden": true,
+        "original_id": "Q010"
+      }
+    },
+    {
+      "id": "onedal-Q011",
+      "text": "For compiling and linking a C++ program with oneDAL using pkg-config (as shown in the Get Started guide), what is the documented name of the oneDAL pkg-config metadata file used in the example, and how does the guide illustrate passing pkg-config flags into the compiler command?",
+      "category": "api_flow",
+      "difficulty": "easy",
+      "expected_topics": [
+        "The guide’s example uses the pkg-config metadata file named dal-dynamic-threading-host.",
+        "The guide illustrates using pkg-config to provide compile and link flags (via pkg-config --cflags --libs <metadata-file>) as part of the compiler invocation (with example commands shown for Linux/macOS and Windows)."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/get-started-guide/2021-6/overview.html"
+        ],
+        "why_it_matters": "Documentation usability is often judged by whether users can build a minimal program quickly. This tests whether build instructions are concrete enough to reproduce.",
+        "is_static_golden": false,
+        "original_id": "Q011"
+      }
+    },
+    {
+      "id": "onedal-Q012",
+      "text": "Scenario: You want to offload workloads to GPU. According to oneDAL’s CPU/GPU support documentation, what general caveat is stated about feature parity between CPU and GPU, what hardware/runtime expectation is stated about GPUs, and which algorithms are explicitly listed as GPU-supported targets?",
+      "category": "algo_config",
+      "difficulty": "medium",
+      "expected_topics": [
+        "The documentation explicitly warns that not all computation modes, methods, and parameters are supported on both CPU and GPU.",
+        "It states oneDAL is designed to work with Intel GPUs specifically, but could potentially run on other hardware platforms if a SYCL runtime is available.",
+        "The GPU-supported targets list includes (as documented): K-Means, Covariance, PCA, Logistic Regression, Linear Regression, Decision Forest, Extra Trees, kNN, SVM, DBSCAN, and Basic Statistics."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/gpu-support.html"
+        ],
+        "why_it_matters": "GPU planning is a real-world decision point: a team must know whether an algorithm/mode is available on GPU and whether parameter parity exists. Unclear docs here cause expensive architecture rework.",
+        "is_static_golden": false,
+        "original_id": "Q012"
+      }
+    },
+    {
+      "id": "onedal-Q013",
+      "text": "Scenario: Your PCA dataset does not fit into device memory and you need an incremental workflow. Which PCA operations in the oneDAL API are explicitly provided for partial/finalized training, how does the documentation describe online mode in terms of partial results, and what PCA computational method tags and matrix choices are documented (including default correlation vs covariance guidance and the use of precomputed method)?",
+      "category": "train_infer",
+      "difficulty": "medium",
+      "expected_topics": [
+        "The PCA API reference explicitly provides partial_train(...) and finalize_train(...) in addition to train(...) and infer(...), indicating a partial-results workflow for training.",
+        "The computational modes documentation defines online mode as processing the dataset in blocks streamed into device memory, updating partial results incrementally and finalizing once the last block is processed.",
+        "The PCA API reference documents method tags that include cov, svd, and precomputed (as method tags).",
+        "The PCA developer guide states that by default oneDAL uses the correlation matrix to compute principal components, and discusses that correlation vs covariance depends on the application (with correlation being more appropriate when feature scaling matters); it also states covariance can be used by passing precomputed as method and providing a covariance matrix as input (and mentions using the Covariance algorithm to compute it)."
+      ],
+      "metadata": {
+        "persona": "prod_ml",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/pca.html",
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/pca-1.html",
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-2/computational-modes.html"
+        ],
+        "why_it_matters": "Incremental PCA is a common production requirement (streaming/blocked data). This tests whether docs connect API surface (partial_train/finalize_train) to the conceptual online workflow and the correct matrix/method selection.",
+        "is_static_golden": false,
+        "original_id": "Q013"
+      }
+    },
+    {
+      "id": "onedal-Q014",
+      "text": "In oneDAL communicator documentation for SPMD, how do you choose between USM and non-USM memory access for collective operations, what special requirement is stated when using USM pointers, and which reduction operations are explicitly listed as supported?",
+      "category": "distributed",
+      "difficulty": "medium",
+      "expected_topics": [
+        "The communicator documentation distinguishes USM memory access vs host (non-USM) memory access and provides tags to select the memory access type: device_memory_access::none and device_memory_access::usm.",
+        "device_memory_access::none assumes only non-USM pointers are used; device_memory_access::usm allows both USM and non-USM pointers.",
+        "When using USM pointers, the documentation states that using a sycl::queue object as the first parameter for collective operations is obligatory (and controls pointer type).",
+        "Supported reduction operations are explicitly listed as Max, Min, and Sum."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/communicator.html"
+        ],
+        "why_it_matters": "USM vs non-USM handling is a high-risk integration point for SYCL/DPC++ applications. Clear documentation prevents subtle runtime failures and ensures distributed operations are correctly offloaded/queued.",
+        "is_static_golden": false,
+        "original_id": "Q014"
+      }
+    },
+    {
+      "id": "onedal-Q015",
+      "text": "Scenario: You are configuring SVM for non-linear classification. According to oneDAL’s SVM API reference, what training methods are available, how is the kernel function selected/configured via the descriptor, and which kernel descriptor types are explicitly listed as supported by the kernel property?",
+      "category": "algo_config",
+      "difficulty": "medium",
+      "expected_topics": [
+        "The SVM API reference lists training methods corresponding to method tags, including method::thunder and method::smo.",
+        "Kernel selection is controlled via the descriptor’s Kernel template parameter and/or the kernel property (get_kernel()/set_kernel()).",
+        "The kernel property is documented as accepting kernel descriptors including linear_kernel::descriptor, polynomial_kernel::descriptor, rbf_kernel::descriptor, and sigmoid_kernel::descriptor."
+      ],
+      "metadata": {
+        "persona": "prod_ml",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-0/support-vector-machine-classifier-svm.html"
+        ],
+        "why_it_matters": "Kernel and method choice determines both accuracy and feasibility (performance/memory). This checks whether docs make SVM configuration explicit enough for real-world model selection.",
+        "is_static_golden": false,
+        "original_id": "Q015"
+      }
+    },
+    {
+      "id": "onedal-Q016",
+      "text": "When creating a CSR table via the oneDAL C++ API reference, what is the default sparse_indexing setting for csr_table::wrap(...), how can a developer specify zero-based indexing instead, and which header file is required for csr_table?",
+      "category": "data_repr",
+      "difficulty": "medium",
+      "expected_topics": [
+        "The CSR API reference shows csr_table::wrap(...) with a default argument indexing=sparse_indexing::one_based.",
+        "The same signature documents that developers can pass sparse_indexing::zero_based to request zero-based indexing.",
+        "The CSR API reference states csr_table is available via inclusion of the oneapi/dal/table/csr.hpp header file."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2023-2/compressed-sparse-rows-csr-table-001.html"
+        ],
+        "why_it_matters": "Indexing conventions differ across ecosystems. This verifies whether documentation clearly prevents subtle off-by-one errors when integrating CSR data from external libraries.",
+        "is_static_golden": false,
+        "original_id": "Q016"
+      }
+    },
+    {
+      "id": "onedal-Q017",
+      "text": "Scenario: You maintain a Python scikit-learn pipeline and want to use oneDAL acceleration without rewriting your whole stack. Based on Intel’s oneDAL documentation/resources pages, what Python integration options are highlighted, and what categories of code samples are explicitly promoted (including at least one distributed example)?",
+      "category": "interop_migration",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Intel’s oneDAL resources highlight Python integration routes including Intel Extension for Scikit-learn and daal4py (a Python API for oneDAL).",
+        "The oneDAL resources page explicitly promotes code samples such as a daal4py Hello World example.",
+        "The resources page explicitly lists distributed sample categories such as Distributed Linear Regression Training and Prediction and Distributed K-means Training and Prediction."
+      ],
+      "metadata": {
+        "persona": "prod_ml",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/developer/tools/oneapi/onedal.html",
+          "https://www.intel.com/content/www/us/en/developer/tools/oneapi/onedal-documentation.html"
+        ],
+        "why_it_matters": "Interoperability is a practical adoption barrier. This tests whether documentation makes the ‘path of least resistance’ for Python ML engineers discoverable and grounded in concrete sample entry points.",
+        "is_static_golden": false,
+        "original_id": "Q017"
+      }
+    },
+    {
+      "id": "onedal-Q018",
+      "text": "Scenario: You are tuning a Decision Forest classifier and need both model quality diagnostics and performance control. From the Decision Forest API reference, which settings control (a) out-of-bag error computation, (b) variable importance computation, and (c) histogram binning cost trade-offs? Provide documented enum names/values where applicable.",
+      "category": "algo_config",
+      "difficulty": "medium",
+      "expected_topics": [
+        "Out-of-bag error computation is controlled via error_metric_mode, with documented modes including error_metric_mode::none, error_metric_mode::out_of_bag_error, and error_metric_mode::out_of_bag_error_per_observation (with documented output shapes).",
+        "Variable importance is controlled via variable_importance_mode, with documented modes including variable_importance_mode::none, variable_importance_mode::mdi, variable_importance_mode::mda_raw, and variable_importance_mode::mda_scaled.",
+        "For method::hist, the API reference documents max_bins and states that increasing the number of bins results in higher computation costs; it also provides a default value (256) and an invariant (max_bins > 1)."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2023-2/decision-forest-classification-and-regression-df.html"
+        ],
+        "why_it_matters": "Production teams must trade off explainability/validation signals (OOB error, importance) against performance. This checks whether docs clearly connect configuration knobs to outputs and costs.",
+        "is_static_golden": false,
+        "original_id": "Q018"
+      }
+    },
+    {
+      "id": "onedal-Q019",
+      "text": "Scenario: You are implementing distributed K-Means with the oneDAL SPMD model. In the documented usage example, what compile-time macro is defined for data-parallel builds, which headers are included to use the MPI backend vs the CCL backend, and how is the communicator passed into the distributed train call?",
+      "category": "distributed",
+      "difficulty": "hard",
+      "expected_topics": [
+        "The SPMD usage example shows defining ONEDAL_DATA_PARALLEL for data-parallel builds.",
+        "For MPI backend, the example includes oneapi/dal/spmd/mpi/communicator.hpp; for CCL backend, it includes oneapi/dal/spmd/ccl/communicator.hpp.",
+        "The example shows distributed training invoked with the communicator as the first argument to a distributed train call (e.g., dal::preview::train(comm, kmeans_desc, local_input)), consistent with the SPMD model design."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-2/overview-0.html"
+        ],
+        "why_it_matters": "Distributed integration is brittle: the correct headers/macros and call signatures must match the chosen backend. This evaluates whether the docs are specific enough to prevent common build/runtime integration failures.",
+        "is_static_golden": false,
+        "original_id": "Q019"
+      }
+    },
+    {
+      "id": "onedal-Q020",
+      "text": "For migration planning, what do the Intel oneDAL Release Notes state (in the 2025.0 section) about removed functionality and ABI compatibility changes, including the stated reason/effect of the major version increment? Provide the exact categories of functionality mentioned.",
+      "category": "interop_migration",
+      "difficulty": "hard",
+      "expected_topics": [
+        "The 2025.0 release notes state that starting with the 2025.0 release, openCL kernels and Intel Data Analytics Acceleration Library (Intel DAAL) functionality are removed from oneDAL.",
+        "The 2025.0 release notes state ABI compatibility is to be broken as part of the 2026.0 release of oneDAL, and that the library’s major version is to be incremented to four to enforce relinking of existing applications.",
+        "The release notes also include related ABI/deprecation notices in the version history context (e.g., major version increments for previous ABI breaks), which informs integrators that relinking expectations are part of documented upgrade guidance."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/developer/articles/release-notes/oneapi-dal-release-notes.html"
+        ],
+        "why_it_matters": "ABI and feature removals are major production risks. This question assesses whether documentation provides actionable, unambiguous upgrade guidance that allows teams to schedule rebuild/relink and refactors.",
+        "is_static_golden": true,
+        "original_id": "Q020"
+      }
+    },
+    {
+      "id": "onedal-Q021",
+      "text": "Scenario: You want to overlap communication and computation in distributed SPMD. The communicator docs describe a request object for asynchronous communication, but backend restrictions note differences across backends. What is request documented to control, and what backend-specific limitation is documented for oneMPI regarding asynchronous collectives?",
+      "category": "troubleshooting_performance",
+      "difficulty": "hard",
+      "expected_topics": [
+        "The communicator documentation defines Request as an object to control asynchronous communication.",
+        "Backend-specific restrictions for oneMPI state that collective operations do not support asynchronous executions and block the process until completion.",
+        "Taken together, the documented limitation implies that designs relying on asynchronous collectives for overlap must account for oneMPI’s blocking behavior as documented."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/communicator.html",
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2025-0/index-53.html"
+        ],
+        "why_it_matters": "Many distributed performance strategies depend on async overlap. This evaluates whether the docs clearly reconcile API concepts (request/async control) with backend reality (blocking oneMPI collectives).",
+        "is_static_golden": true,
+        "original_id": "Q021"
+      }
+    },
+    {
+      "id": "onedal-Q022",
+      "text": "Scenario: You trained a linear regression model outside oneDAL and want to deploy precomputed coefficients into oneDAL without rerunning training. Using the Linear Regression “Training Alternative” (Model Builder) documentation, what steps are required to construct the model, how is interceptFlag determined, and what side effects are documented if setBeta is called after getModel?",
+      "category": "interop_migration",
+      "difficulty": "hard",
+      "expected_topics": [
+        "The documented steps include: create a Linear Regression model builder with the required number of responses and features; use setBeta to provide pre-calculated coefficients using iterators; use getModel to obtain the trained model; and use getStatus to check builder status.",
+        "Documentation notes interceptFlag is automatically set based on whether the provided coefficients include an intercept (False if not, True otherwise).",
+        "Documentation notes that if setBeta is called to update coefficients after calling getModel, the initial model is automatically updated with the new coefficients.",
+        "Documentation notes that when DAAL_NOTHROW_EXCEPTIONS is defined, the status report includes a list of errors describing runtime problems encountered."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-2/linear-regression-1.html"
+        ],
+        "why_it_matters": "Model deployment often requires importing externally trained parameters. This tests whether docs make the model-builder pathway safe and predictable (intercept handling, update semantics, and error reporting).",
+        "is_static_golden": false,
+        "original_id": "Q022"
+      }
+    },
+    {
+      "id": "onedal-Q023",
+      "text": "Scenario: A legacy SYCL-based pipeline using Intel DAAL SYCL interfaces hangs when running with a Level Zero (L0) backend. According to Intel oneDAL release notes, what specific known issue is documented, and what alternatives/workarounds are explicitly recommended?",
+      "category": "troubleshooting_performance",
+      "difficulty": "hard",
+      "expected_topics": [
+        "Release notes document a known issue: in certain conditions, the Intel DAAL SYCL interface might hang with the L0 backend.",
+        "The release notes explicitly recommend using oneDAL DPC interfaces instead.",
+        "The release notes state that if older interfaces are required, the OpenCL backend can be used as a workaround."
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/developer/articles/release-notes/oneapi-dal-release-notes.html"
+        ],
+        "why_it_matters": "This is a realistic production failure mode that can stall deployments. The question checks whether docs provide a clear escape hatch and migration direction when a backend issue occurs.",
+        "is_static_golden": false,
+        "original_id": "Q023"
+      }
+    },
+    {
+      "id": "onedal-Q024",
+      "text": "Scenario: You want robust error handling that avoids exceptions in a C++ application. Based on oneDAL’s “Handling Errors” documentation, what is the role of Status and Error, what does documentation say about the default exception behavior of compute(), and which alternative method is documented to prevent exceptions?",
+      "category": "troubleshooting_performance",
+      "difficulty": "hard",
+      "expected_topics": [
+        "The documentation describes Status as the base class for error handling and as a container that can hold errors/warnings and provide methods such as ok() and getDescription().",
+        "The documentation describes an Error class containing an error message and details, with methods for ID/description and adding typed details.",
+        "The documentation states that by default, the compute() method of library algorithms throws a runtime exception when an error is detected.",
+        "The documentation states that to prevent throwing exceptions, computeNoThrow() should be called instead of compute()."
+      ],
+      "metadata": {
+        "persona": "cpp_integrator",
+        "must_cite": [
+          "https://www.intel.com/content/www/us/en/docs/onedal/developer-guide-reference/2024-2/handling-errors.html"
+        ],
+        "why_it_matters": "Error handling style affects system reliability and integration with production runtimes. This tests whether docs clearly describe the exception-vs-status contract and the correct non-throwing alternative.",
+        "is_static_golden": false,
+        "original_id": "Q024"
+      }
+    }
+  ]
+}

@@ -1,0 +1,507 @@
+{
+  "library": "oneTBB",
+  "library_id": "intel/onetbb",
+  "description": "Golden regression set for oneTBB",
+  "version_or_doc_snapshot": "UXL Foundation oneTBB Documentation (main branch, accessed 2026-03-01) + oneAPI Specification oneTBB element (oneAPI 1.4 rev 1; released 2024-12-18)",
+  "questions": [
+    {
+      "id": "onetbb-Q001",
+      "text": "Scenario: In oneapi::tbb::parallel_for over blocked_range<size_t>, your body functor increments a member counter (e.g., my_calls++) inside operator() to report progress, but the counter ends up wrong or inconsistent. According to the oneTBB docs, why is this behavior expected, and what is the correct pattern to collect such metrics safely?",
+      "category": "algorithms",
+      "difficulty": "easy",
+      "expected_topics": [
+        "parallel_for may copy the body object (one or more copies) so mutations to the body may apply to a copy, not the original; therefore changes may or may not be visible after parallel_for returns",
+        "the developer guide explicitly warns that because the body might be copied, operator() should not modify the body; parallel_for requires operator() to be declared const to reinforce this",
+        "to collect metrics safely, move the state outside the body and make it concurrency-safe (e.g., use an atomic counter) or use a documented per-thread aggregation mechanism and then combine"
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/parallel_for_os.html",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.3-rev-1/elements/onetbb/source/thread_local_storage/combinable_cls"
+        ],
+        "why_it_matters": "Misunderstanding body copying leads to silent logical bugs (wrong counters, corrupted state) and false confidence when validating parallel correctness.",
+        "is_static_golden": true,
+        "original_id": "Q001"
+      }
+    },
+    {
+      "id": "onetbb-Q002",
+      "text": "Scenario: You have a simple loop that runs about 100 microseconds on a 2 GHz CPU (~200,000 cycles) and you are considering replacing it with oneapi::tbb::parallel_for using default settings. What rule-of-thumb does the oneTBB documentation give for when parallel_for is typically worth using, and what overhead tradeoff is it describing?",
+      "category": "performance",
+      "difficulty": "easy",
+      "expected_topics": [
+        "the guide notes that a parallel loop incurs scheduling overhead per chunk and that oneTBB chooses chunk sizes to balance overhead vs load balancing opportunities",
+        "the developer guide cautions that a loop typically needs at least about a million clock cycles to be worth using parallel_for (example: ~500 microseconds on a 2 GHz processor)",
+        "default automatic chunking is recommended for most uses, but manual chunk control can help in special cases"
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Automatic_Chunking.html"
+        ],
+        "why_it_matters": "Applying parallel_for to too-small kernels often makes performance worse; a benchmark should test whether documentation helps engineers avoid this common pitfall.",
+        "is_static_golden": false,
+        "original_id": "Q002"
+      }
+    },
+    {
+      "id": "onetbb-Q003",
+      "text": "Scenario: You are converting a producer/consumer queue from std::queue to oneapi::tbb::concurrent_queue. The original code used empty(), front(), and pop() as three separate calls. Why is that composition not thread-safe under concurrent popping, and which oneTBB operation replaces it?",
+      "category": "containers",
+      "difficulty": "easy",
+      "expected_topics": [
+        "even if each operation were individually thread-safe, composing empty() and pop operations is not atomic; another thread can remove the last item after empty() but before pop",
+        "oneTBB provides try_pop(item) so the availability check and pop occur as one thread-safe operation",
+        "for concurrent_queue, pop is non-blocking (try_pop); blocking behavior belongs to concurrent_bounded_queue instead"
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Concurrent_Queue_Classes.html"
+        ],
+        "why_it_matters": "This is a classic concurrency anti-pattern that causes rare data races and crashes; the benchmark should detect whether docs prevent a dangerous, realistic mistake.",
+        "is_static_golden": false,
+        "original_id": "Q003"
+      }
+    },
+    {
+      "id": "onetbb-Q004",
+      "text": "Scenario: A teammate proposes iterating over oneapi::tbb::concurrent_queue in production to periodically compute statistics or to search for a specific item. What do the oneTBB docs say about iterator support for concurrent_queue/concurrent_bounded_queue, and what makes unsafe_begin()/unsafe_end() unsafe?",
+      "category": "troubleshooting",
+      "difficulty": "easy",
+      "expected_topics": [
+        "STL-style iteration is intended only for debugging (e.g., dumping the queue), and is too slow to be useful in production code",
+        "if a queue is modified, all iterators become invalid and unsafe to use",
+        "the unsafe_ prefix is explicitly a reminder that the iteration methods are not concurrency safe"
+      ],
+      "metadata": {
+        "persona": "senior_cpp",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Iterating_Over_a_Concurrent_Queue_for_Debugging.html"
+        ],
+        "why_it_matters": "Using unsafe iteration in production can create heisenbugs and data races that are extremely hard to reproduce; docs should clearly gate this feature as debug-only.",
+        "is_static_golden": false,
+        "original_id": "Q004"
+      }
+    },
+    {
+      "id": "onetbb-Q005",
+      "text": "Scenario: You have a shared read-mostly data structure with frequent readers and rare writers. In oneTBB reader-writer mutex types (e.g., spin_rw_mutex or queuing_rw_mutex), how do you request a reader lock vs a writer lock using scoped_lock, and what is the default if you omit the flag?",
+      "category": "sync_correctness",
+      "difficulty": "easy",
+      "expected_topics": [
+        "reader vs writer is selected via an extra boolean parameter in the scoped_lock constructor: false requests a reader lock and true requests a writer lock",
+        "the boolean defaults to true, so omitting it requests a writer lock",
+        "multiple reader locks can coexist on the same mutex, while writer locks must exclude others"
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Reader_Writer_Mutexes.html"
+        ],
+        "why_it_matters": "Incorrectly taking writer locks when reads would suffice can destroy scalability; incorrectly taking reader locks when writes occur can create data races.",
+        "is_static_golden": false,
+        "original_id": "Q005"
+      }
+    },
+    {
+      "id": "onetbb-Q006",
+      "text": "Migration scenario: Legacy TBB code used tbb::task_scheduler_init both to query the 'default thread count' and to cap parallelism for the app. According to the oneTBB migration guide, which oneTBB APIs should you use to (a) query default concurrency and (b) limit concurrency, and what is the difference between limiting within a task_arena vs limiting total worker threads?",
+      "category": "migration",
+      "difficulty": "easy",
+      "expected_topics": [
+        "query default concurrency using oneapi::tbb::info::default_concurrency() and/or oneapi::tbb::this_task_arena::max_concurrency(), depending on whether an arena context is active",
+        "limit concurrency within a region by running work inside a task_arena that is constructed/initialized with a max_concurrency limit",
+        "limit the total number of oneTBB worker threads process-wide using oneapi::tbb::global_control(oneapi::tbb::global_control::max_allowed_parallelism, N), with effect scoped to the control object lifetime"
+      ],
+      "metadata": {
+        "persona": "legacy_maintainer",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Migration_Guide/Task_Scheduler_Init.html",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/info_namespace",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.4-rev-1/elements/onetbb/source/task_scheduler/task_arena/this_task_arena_ns",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.3-rev-1/elements/onetbb/source/task_scheduler/task_arena/task_arena_cls",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.3-rev-1/elements/onetbb/source/task_scheduler/scheduling_controls/global_control_cls"
+        ],
+        "why_it_matters": "Capping parallelism correctly is central to avoiding oversubscription and preserving composability; migration guidance must be accurate to prevent regressions.",
+        "is_static_golden": false,
+        "original_id": "Q006"
+      }
+    },
+    {
+      "id": "onetbb-Q007",
+      "text": "Debugging scenario: You suspect misuse of oneTBB API contracts and want the library to fail fast with diagnostic information. How does the oneAPI spec recommend enabling oneTBB's header-file error checking, and what happens when it detects an error (including how to break in a debugger)?",
+      "category": "troubleshooting",
+      "difficulty": "easy",
+      "expected_topics": [
+        "enable error checking by defining the TBB_USE_ASSERT macro as 1",
+        "on detected errors, oneTBB prints a message to stderr and calls abort",
+        "the spec recommends placing a debugger breakpoint on oneapi::tbb::assertion_failure to stop when internal checks fail"
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.4-rev-1/elements/onetbb/source/configuration/enabling_debugging_features"
+        ],
+        "why_it_matters": "Benchmarks should verify documentation enables practical debugging workflows, not just API descriptions; fail-fast guidance reduces time-to-fix for concurrency bugs.",
+        "is_static_golden": false,
+        "original_id": "Q007"
+      }
+    },
+    {
+      "id": "onetbb-Q008",
+      "text": "Migration scenario: Legacy TBB code relied on tbb::task_scheduler_init to configure worker thread stack size. In oneTBB, which API controls thread stack size, and how does its RAII lifetime/scoping model determine when the setting applies and when it ends?",
+      "category": "migration",
+      "difficulty": "easy",
+      "expected_topics": [
+        "use oneapi::tbb::global_control with the thread_stack_size parameter to control stack size behavior",
+        "a global_control object affects a process-wide parameter and the impact ends when the object is destroyed (scope/lifetime-based)",
+        "multiple control objects can overlap; at any time each parameter has a single active value that applies to the whole process"
+      ],
+      "metadata": {
+        "persona": "legacy_maintainer",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Migration_Guide/Task_Scheduler_Init.html",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.3-rev-1/elements/onetbb/source/task_scheduler/scheduling_controls/global_control_cls"
+        ],
+        "why_it_matters": "Stack sizing and concurrency limits are common reasons legacy code touched task_scheduler_init; poor migration docs can cause crashes, stack overflows, or performance regressions.",
+        "is_static_golden": false,
+        "original_id": "Q008"
+      }
+    },
+    {
+      "id": "onetbb-Q009",
+      "text": "Scenario: Your loop body allocates a temporary buffer proportional to the subrange size, so you need an upper bound on chunk size and want to tune scheduling overhead. According to the docs, how do grainsize and simple_partitioner interact for parallel_for, and what rule-of-thumb does the guide suggest for choosing grainsize (in clock cycles)?",
+      "category": "performance",
+      "difficulty": "medium",
+      "expected_topics": [
+        "to gain the most control, specify both a grainsize on the blocked_range(begin,end,grainsize) and pass simple_partitioner() to parallel_for to turn off automatic chunking",
+        "with simple_partitioner, chunk sizes are bounded: g/2 <= chunksize <= g (in iterations)",
+        "the guide suggests a rule of thumb: grainsize iterations of operator() should take at least about 100,000 clock cycles; it also suggests experimentally halving grainsize to see performance changes"
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Controlling_Chunking_os.html",
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Partitioner_Summary.html"
+        ],
+        "why_it_matters": "Grain size and partitioner choice directly affect scalability and overhead; this is a core tuning decision that documentation must support with actionable guidance.",
+        "is_static_golden": false,
+        "original_id": "Q009"
+      }
+    },
+    {
+      "id": "onetbb-Q010",
+      "text": "Scenario: You are diagnosing cache-locality issues and surprising interleavings in a fork-join algorithm implemented with oneapi::tbb::parallel_for. According to the oneTBB 'How Task Scheduler Works' documentation, how do threads select tasks (local deque vs stealing), which deque end is used for local execution vs stealing, and why does this mix depth-first and breadth-first behavior?",
+      "category": "scheduler_concepts",
+      "difficulty": "medium",
+      "expected_topics": [
+        "each worker thread maintains a deque of ready tasks; newly spawned tasks are pushed onto the bottom",
+        "a thread typically executes young tasks from the bottom of its own deque (depth-first tendency for locality) and steals old tasks from the top of another thread's deque (breadth-first tendency to expose parallelism)",
+        "the documented ruleset includes: prefer a task returned by bypass if present, else take from bottom, else steal from top of another random deque"
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/How_Task_Scheduler_Works.html"
+        ],
+        "why_it_matters": "Engineers often misattribute behavior to OS scheduling; understanding oneTBB's work-stealing model is essential for correct mental models and for performance diagnosis.",
+        "is_static_golden": false,
+        "original_id": "Q010"
+      }
+    },
+    {
+      "id": "onetbb-Q011",
+      "text": "Scenario: A oneTBB parallel algorithm body throws an exception while other iterations are still pending. What sequence of steps does the oneTBB documentation describe (capture, cancellation, propagation), and what warning does it give about which exception type might be thrown in future versions?",
+      "category": "sync_correctness",
+      "difficulty": "medium",
+      "expected_topics": [
+        "the exception is captured and further exceptions inside the same algorithm are ignored",
+        "the algorithm is cancelled so pending iterations are not executed, and nested oneTBB parallelism may also be cancelled",
+        "after all parts of the algorithm stop, an exception is thrown on the thread that invoked the algorithm; the docs warn that future versions might throw the original exception, so code should be prepared to catch either type"
+      ],
+      "metadata": {
+        "persona": "senior_cpp",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Exceptions_and_Cancellation.html"
+        ],
+        "why_it_matters": "Exception-and-cancellation semantics determine which work actually runs and where failures surface; misunderstanding this causes correctness bugs and incomplete cleanup in real systems.",
+        "is_static_golden": false,
+        "original_id": "Q011"
+      }
+    },
+    {
+      "id": "onetbb-Q012",
+      "text": "Scenario: Your concurrent_hash_map-based cache intermittently stalls under load. An engineer suspects accessors are being held too long. According to the oneTBB docs, how do accessor and const_accessor affect concurrency for a key, what operations block, and how can you shorten lock hold time explicitly?",
+      "category": "containers",
+      "difficulty": "medium",
+      "expected_topics": [
+        "accessor represents update/write access; while it points to an element, other attempts to look up the same key block until the accessor is done",
+        "const_accessor represents read-only access; multiple const_accessors can point to the same element concurrently, improving read-heavy concurrency",
+        "access lasts until the accessor/const_accessor is destroyed; docs recommend declaring accessors in the innermost scope and using release() to end access sooner; erase(key) implicitly requests write access and waits on any extant accesses for that key"
+      ],
+      "metadata": {
+        "persona": "senior_cpp",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/concurrent_hash_map.html"
+        ],
+        "why_it_matters": "Lock-hold time is a dominant scalability factor; good documentation should help engineers diagnose and prevent accidental serialization in concurrent containers.",
+        "is_static_golden": false,
+        "original_id": "Q012"
+      }
+    },
+    {
+      "id": "onetbb-Q013",
+      "text": "Scenario: Multiple threads append records to a shared oneapi::tbb::concurrent_vector and other threads iterate over it immediately. What caveats do the docs give about (a) element contiguity, (b) size()/end() during concurrent construction, and (c) calling clear() while other operations are in flight?",
+      "category": "containers",
+      "difficulty": "medium",
+      "expected_topics": [
+        "elements in concurrent_vector might not reside at consecutive addresses, so the docs recommend using iterators rather than pointer-based assumptions",
+        "size() can include elements that are still undergoing concurrent construction by push_back/grow_by/grow_to_at_least; an iterator may reference an element under construction, so construction and access must be synchronized",
+        "operations are concurrency-safe with respect to growing, not clearing/destroying; the docs explicitly caution never to call clear() if other operations are in flight"
+      ],
+      "metadata": {
+        "persona": "new_adopter",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/concurrent_vector_ug.html"
+        ],
+        "why_it_matters": "Concurrent growth plus immediate consumption is a common pattern; documentation must clearly define what is safe to read and when, or users will introduce data races.",
+        "is_static_golden": true,
+        "original_id": "Q013"
+      }
+    },
+    {
+      "id": "onetbb-Q014",
+      "text": "Scenario: A teammate implements parallel_reduce with a SumFoo-like body but initializes the local accumulator to 0 inside operator() each time, and occasionally sees the result equal to only the last processed subrange. What does the oneTBB developer guide say about why this bug happens, and what other thread-safety obligation exists for the splitting constructor?",
+      "category": "sync_correctness",
+      "difficulty": "medium",
+      "expected_topics": [
+        "parallel_reduce can reuse the same body to reduce multiple subranges when workers are unavailable; therefore operator() must not discard earlier accumulations and should start from the existing accumulation (e.g., my_sum) rather than resetting to 0",
+        "the guide warns split/join are not used if workers are unavailable and parallel_reduce does not necessarily do recursive splitting",
+        "the splitting constructor may run concurrently while the original body is in use; actions needed to create the new body must be thread-safe with respect to the original (e.g., atomic refcount increments if shared state is touched)"
+      ],
+      "metadata": {
+        "persona": "senior_cpp",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/parallel_reduce.html"
+        ],
+        "why_it_matters": "Reduction bodies are a frequent source of subtle wrong-results bugs; this question tests whether documentation clearly communicates the non-obvious execution modes.",
+        "is_static_golden": false,
+        "original_id": "Q014"
+      }
+    },
+    {
+      "id": "onetbb-Q015",
+      "text": "Scenario: You want to use oneapi::tbb::parallel_for(first, last, step, f) where some iterations wait on results from other iterations (e.g., i waits for i+1). What does the oneAPI spec say about execution order guarantees and deadlock risk for this overload, and what constraints exist on step?",
+      "category": "algorithms",
+      "difficulty": "medium",
+      "expected_topics": [
+        "step must be positive and the loop must not wrap around",
+        "there is no guarantee that iterations run in parallel and execution order is not guaranteed; the spec warns that a deadlock may occur if a lesser iteration waits for a greater iteration",
+        "the spec also cautions against relying on any particular iteration order for correctness (non-deterministic order)"
+      ],
+      "metadata": {
+        "persona": "senior_cpp",
+        "must_cite": [
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.3-rev-1/elements/onetbb/source/algorithms/functions/parallel_for_func"
+        ],
+        "why_it_matters": "Many engineers unconsciously assume loop iterations are ordered; this misconception can become a deadlock in task parallel runtimes and must be explicitly addressed.",
+        "is_static_golden": false,
+        "original_id": "Q015"
+      }
+    },
+    {
+      "id": "onetbb-Q016",
+      "text": "Scenario: You want to stop a long-running parallel_for early when a condition is met, without throwing an exception. According to oneTBB docs, what function cancels the current task_group_context, what does its return value mean, and how do task_group::cancel() and is_current_task_group_canceling() support cooperative cancellation?",
+      "category": "troubleshooting",
+      "difficulty": "medium",
+      "expected_topics": [
+        "use current_context()->cancel_group_execution() to cancel an algorithm without throwing; it returns true if it actually triggers cancellation and false if the context was already cancelled",
+        "task_group exposes cancel() to cancel its associated context, and is_current_task_group_canceling() lets tasks observe cancellation and exit early",
+        "tasks already started are not interrupted; the docs state they should check cancellation state and stop cooperatively"
+      ],
+      "metadata": {
+        "persona": "senior_cpp",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Cancellation_Without_An_Exception.html"
+        ],
+        "why_it_matters": "Cooperative cancellation is common in real systems (search, timeouts, early-exit analytics); incorrect understanding causes wasted CPU and inconsistent partial writes.",
+        "is_static_golden": false,
+        "original_id": "Q016"
+      }
+    },
+    {
+      "id": "onetbb-Q017",
+      "text": "Migration scenario: Legacy code uses the removed low-level task API (deriving from tbb::task, using allocate_root/allocate_child, spawn, and wait_for_all). According to the oneTBB migration guide, why was this API removed, and what are the recommended oneTBB replacements for spawning independent tasks and waiting for them?",
+      "category": "migration",
+      "difficulty": "medium",
+      "expected_topics": [
+        "the migration guide states the low-level task API was considered complex and therefore error-prone, which is cited as the primary reason it was removed from oneTBB",
+        "recommended replacements for many use cases are oneapi::tbb::task_group (run + wait) or oneapi::tbb::parallel_invoke for a known set of tasks",
+        "the guide shows how to rewrite task spawning/waiting in terms of functors or lambdas rather than inheriting from tbb::task"
+      ],
+      "metadata": {
+        "persona": "legacy_maintainer",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Migration_Guide/Task_API.html",
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/creating_tasks_with_task_group.html",
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/creating_tasks_with_parallel_invoke.html"
+        ],
+        "why_it_matters": "Many production codebases embedded low-level task patterns; migration docs must prevent correctness regressions and preserve performance with safer abstractions.",
+        "is_static_golden": false,
+        "original_id": "Q017"
+      }
+    },
+    {
+      "id": "onetbb-Q018",
+      "text": "Scenario: You set blocked_range(begin, end, g=1000) and assume no task will receive more than 1000 iterations. In oneTBB, you use the default partitioner. According to the spec and user guide, why is that assumption invalid with auto_partitioner/affinity_partitioner, and which partitioner is documented as providing an upper bound on chunk size?",
+      "category": "performance",
+      "difficulty": "hard",
+      "expected_topics": [
+        "the spec explicitly notes that with auto_partitioner and blocked_range, the body may receive a subrange larger than the grain size; grain size is not an upper bound under auto_partitioner",
+        "the developer guide similarly states that auto_partitioner/affinity_partitioner may create chunks larger than the specified grainsize but still avoid chunks smaller than about g/2",
+        "to enforce an upper bound on subrange size, the spec recommends using simple_partitioner"
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.4-rev-1/elements/onetbb/source/algorithms/partitioners/auto_partitioner",
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Controlling_Chunking_os.html",
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Partitioner_Summary.html"
+        ],
+        "why_it_matters": "Engineers often allocate per-chunk buffers and assume bounded chunk sizes; misunderstanding partitioners can cause memory blowups, cache thrash, and unpredictable performance.",
+        "is_static_golden": false,
+        "original_id": "Q018"
+      }
+    },
+    {
+      "id": "onetbb-Q019",
+      "text": "Scenario: You need reproducible results across runs and thread counts for a reduction, and the parallel_reduce execution (splits/joins) introduces nondeterminism. Which oneTBB algorithm provides deterministic splits/joins, what partitioners does it rely on to achieve determinism, and what tuning caveat does the spec give about grain size?",
+      "category": "algorithms",
+      "difficulty": "hard",
+      "expected_topics": [
+        "use oneapi::tbb::parallel_deterministic_reduce, which the spec describes as deterministic with respect to range/body splits and join order for given arguments",
+        "it relies on simple_partitioner or static_partitioner because other partitioners react to random work stealing and would break determinism",
+        "the spec cautions that simple_partitioner does not automatically coarsen ranges, so the user should specify an appropriate grain size to avoid excessive splitting overhead"
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/algorithms/functions/parallel_deterministic_reduce_func",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.4-rev-1/elements/onetbb/source/algorithms/partitioners/static_partitioner",
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Controlling_Chunking_os.html"
+        ],
+        "why_it_matters": "Real applications often need reproducibility (tests, finance, simulations); documentation must help users choose the right algorithm and understand the performance costs.",
+        "is_static_golden": false,
+        "original_id": "Q019"
+      }
+    },
+    {
+      "id": "onetbb-Q020",
+      "text": "Scenario: A nested parallel_for unexpectedly breaks an invariant stored in oneapi::tbb::enumerable_thread_specific (ETS), because the current thread executes other outer tasks while waiting for inner tasks. What concrete behavior does the oneTBB 'Work Isolation' guide describe, and what are the documented remedies (including their trade-offs)?",
+      "category": "sync_correctness",
+      "difficulty": "hard",
+      "expected_topics": [
+        "oneTBB may let a thread waiting for inner tasks execute other available tasks, including tasks from an outer parallel construct; therefore multiple outer iterations can be assigned to the same thread and execution can be unsequenced even within a single thread",
+        "this can cause thread-local values (e.g., ETS.local()) to change unexpectedly or contribute to deadlocks in some designs",
+        "remedies include running inner work in a separate task_arena to prevent the thread from taking outer tasks (but this may be inconvenient and can add overhead), or using oneapi::tbb::this_task_arena::isolate to restrict the calling thread to tasks in the isolation region; isolate only restricts the calling thread unless other threads also enter isolation"
+      ],
+      "metadata": {
+        "persona": "senior_cpp",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/work_isolation.html",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.4-rev-1/elements/onetbb/source/task_scheduler/task_arena/this_task_arena_ns"
+        ],
+        "why_it_matters": "This tests a high-impact correctness hazard: assuming thread-local state is stable across nested parallel constructs in a work-stealing scheduler.",
+        "is_static_golden": false,
+        "original_id": "Q020"
+      }
+    },
+    {
+      "id": "onetbb-Q021",
+      "text": "Performance tuning scenario (NUMA/hybrid CPUs): You want to improve locality by preferring execution on a particular NUMA node and/or a core type, and you also want to limit the number of SMT threads per core for oneTBB work. According to the oneTBB guide, which API surface is used (task_arena::constraints and tbb::info), what kinds of restrictions can be expressed, and what composability warning is given?",
+      "category": "performance",
+      "difficulty": "hard",
+      "expected_topics": [
+        "oneTBB provides task_arena-based controls via task_arena::constraints to guide tasks execution by setting preferred computation units or restricting resources",
+        "constraints can specify preferred NUMA node, preferred core type, maximum number of threads scheduled per core, and task_arena concurrency level; the guide notes tbb::info interfaces can help construct constraints and respect the process affinity mask",
+        "the guide warns that guiding task scheduler execution may cause composability issues"
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Guiding_Task_Scheduler_Execution.html",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/info_namespace",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.3-rev-1/elements/onetbb/source/task_scheduler/task_arena/task_arena_cls"
+        ],
+        "why_it_matters": "NUMA and hybrid-core tuning is a practical performance requirement in modern servers; documentation quality is measured by whether it provides safe, composable guidance.",
+        "is_static_golden": false,
+        "original_id": "Q021"
+      }
+    },
+    {
+      "id": "onetbb-Q022",
+      "text": "Scenario: In a fine-grained recursive task algorithm, you observe heavy deque traffic and tasks being stolen even though there is little additional parallelism to gain. According to the oneTBB documentation, what is 'task scheduler bypass', which standard scheduling steps does it avoid, and what locality/parallelism trade-off is it trying to improve?",
+      "category": "scheduler_concepts",
+      "difficulty": "hard",
+      "expected_topics": [
+        "task scheduler bypass is an optimization that lets you directly specify the next task to run, rather than spawning it and later taking it from the deque",
+        "the documentation explains it avoids unnecessary deque operations (push then later pop) and reduces the opportunity for stealing that hurts locality without adding meaningful parallelism",
+        "the bypassed task becomes the first candidate for the next task to be executed by the thread under the scheduler's documented selection rules"
+      ],
+      "metadata": {
+        "persona": "perf_engineer",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Task_Scheduler_Bypass.html",
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/How_Task_Scheduler_Works.html"
+        ],
+        "why_it_matters": "This probes whether documentation supports advanced but practical optimization techniques, which is critical for performance engineers and library maintainers.",
+        "is_static_golden": false,
+        "original_id": "Q022"
+      }
+    },
+    {
+      "id": "onetbb-Q023",
+      "text": "Compatibility/performance scenario: Your app depends on a third-party library that still links legacy TBB, while your app links oneTBB. According to the oneTBB migration guide, can both runtimes be loaded safely, what performance risk does this create, and how can you detect at runtime that both are present?",
+      "category": "migration",
+      "difficulty": "hard",
+      "expected_topics": [
+        "the migration guide states TBB and oneTBB can be used safely in the same process because the runtimes are named differently and their ABI versioning prevents symbol conflicts",
+        "it warns about oversubscription if both runtimes are loaded because each uses its own pool of threads, which can increase context switches and reduce performance",
+        "to detect both runtimes, the guide instructs exporting TBB_VERSION=1 before running; if both are loaded, two blocks of version output appear (one for oneTBB and one for TBB)"
+      ],
+      "metadata": {
+        "persona": "legacy_maintainer",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Migration_Guide/Mixing_Two_Runtimes.html",
+          "https://oneapi-spec.uxlfoundation.org/specifications/oneapi/v1.4-rev-1/elements/onetbb/source/configuration/version_information"
+        ],
+        "why_it_matters": "Mixed-runtime deployments are common in large ecosystems; the ability to detect and mitigate oversubscription is decisive for real-world performance and stability.",
+        "is_static_golden": false,
+        "original_id": "Q023"
+      }
+    },
+    {
+      "id": "onetbb-Q024",
+      "text": "Scenario: In a complex service, multiple application threads share a single oneapi::tbb::task_group. Some threads call run(); others call wait(); sometimes they also call cancel() or tasks throw exceptions. According to the oneTBB thread-safety guide, what completion guarantees exist for concurrent run/wait in the no-exception/no-cancellation case, what is explicitly NOT synchronized without external ordering, and why do cancellation/exception paths make semantics harder to reason about?",
+      "category": "sync_correctness",
+      "difficulty": "hard",
+      "expected_topics": [
+        "without exceptions/cancellation: tasks created by run calls that occur before a wait on the same thread are guaranteed complete when that wait returns, and any run that inter-thread happens-before another thread's wait is guaranteed complete when that wait returns",
+        "without externally enforced ordering between threads, submissions and waits across threads are not synchronized; it is unknown whether a task will be complete when another thread's wait returns",
+        "cancellation/exceptions complicate semantics because task_group::wait resets the associated task_group_context; concurrent waits combined with cancel or exception propagation can lead to unexpected outcomes (e.g., apparent 'uncanceling' or exceptions propagating to a different thread's wait)"
+      ],
+      "metadata": {
+        "persona": "senior_cpp",
+        "must_cite": [
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/task_group_thread_safety.html",
+          "https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Cancellation_Without_An_Exception.html"
+        ],
+        "why_it_matters": "This is a realistic correctness trap in server-style architectures; documentation must clearly define cross-thread semantics or users will ship latent concurrency bugs.",
+        "is_static_golden": false,
+        "original_id": "Q024"
+      }
+    }
+  ]
+}

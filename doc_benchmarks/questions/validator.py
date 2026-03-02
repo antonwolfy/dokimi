@@ -39,6 +39,10 @@ Aggregate score is the average of the three dimensions."""
 
 
 class QuestionValidator:
+    @staticmethod
+    def _q_text(q: dict) -> str:
+        return q.get("text") or q.get("question_text") or q.get("question") or ""
+
     """
     Validate questions for relevance/answerability and deduplicate.
     """
@@ -110,7 +114,7 @@ class QuestionValidator:
         # Step 1: Validate each question (LLM scoring)
         validated = []
         for q in questions:
-            score = self._validate_question(library_name, q.get("text") or q.get("question_text") or q.get("question") or "")
+            score = self._validate_question(library_name, self._q_text(q))
             if score is not None:
                 q["validation_score"] = score["aggregate"]
                 q["validation_details"] = score
@@ -181,11 +185,7 @@ class QuestionValidator:
         if len(questions) == 0:
             return [], []
         
-        # Compute embeddings — support both "text" and "question" field names
-        def _q_text(q):
-            return q.get("text") or q.get("question_text") or q.get("question") or ""
-
-        texts = [_q_text(q) for q in questions]
+        texts = [self._q_text(q) for q in questions]
         embeddings = self._get_embeddings(texts)
         
         # Build similarity matrix and find duplicates
@@ -230,9 +230,8 @@ class QuestionValidator:
             
             if len(similar) > 1:
                 # Duplicate group found
-                duplicate_groups.append([_q_text(questions[j]) for j in similar])
-                # Keep the most specific (longest text as heuristic)
-                best_idx = max(similar, key=lambda j: len(_q_text(questions[j])))
+                duplicate_groups.append([self._q_text(questions[j]) for j in similar])
+                best_idx = max(similar, key=lambda j: len(self._q_text(questions[j])))
                 unique_indices.append(best_idx)
                 persona_merge_map[best_idx] = similar  # Save for merging later
                 seen.update(similar)
@@ -253,7 +252,7 @@ class QuestionValidator:
             
             # Update in unique_questions
             for q in unique_questions:
-                if q.get("id") == kept_q.get("id") or _q_text(q) == _q_text(kept_q):
+                if q.get("id") == kept_q.get("id") or self._q_text(q) == self._q_text(kept_q):
                     q["personas"] = list(all_personas)
                     break
         
