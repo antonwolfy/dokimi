@@ -6,6 +6,12 @@ from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
+try:
+    from sentence_transformers import SentenceTransformer, util
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except Exception:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+
 
 class SimpleReranker:
     """
@@ -113,47 +119,45 @@ class SimpleReranker:
         return re.findall(r'\b[a-zA-Z_][a-zA-Z0-9_]{2,}\b', text.lower())
 
 
-# Optional: Semantic reranker using sentence-transformers
-# Uncomment and install sentence-transformers if needed
+class SentenceTransformerReranker:
+    """
+    Semantic reranker using sentence-transformers cosine similarity.
 
-# try:
-#     from sentence_transformers import SentenceTransformer, util
-#     SENTENCE_TRANSFORMERS_AVAILABLE = True
-# except ImportError:
-#     SENTENCE_TRANSFORMERS_AVAILABLE = False
-#
-#
-# class SentenceTransformerReranker:
-#     """
-#     Rerank using semantic similarity (cosine distance in embedding space).
-#     Requires: pip install sentence-transformers
-#     """
-#     
-#     def __init__(self, model_name: str = "all-MiniLM-L6-v2", threshold: float = 0.5):
-#         if not SENTENCE_TRANSFORMERS_AVAILABLE:
-#             raise ImportError("sentence-transformers not installed")
-#         
-#         self.model = SentenceTransformer(model_name)
-#         self.threshold = threshold
-#         logger.info(f"Loaded semantic reranker: {model_name}")
-#     
-#     def rerank(self, question: str, docs: List[Dict]) -> List[Dict]:
-#         """Rerank docs by semantic similarity to question."""
-#         if not docs:
-#             return []
-#         
-#         q_emb = self.model.encode(question, convert_to_tensor=True)
-#         doc_texts = [d.get('content', '') for d in docs]
-#         d_embs = self.model.encode(doc_texts, convert_to_tensor=True)
-#         
-#         scores = util.cos_sim(q_emb, d_embs)[0].cpu().tolist()
-#         
-#         ranked = []
-#         for score, doc in zip(scores, docs):
-#             if score >= self.threshold:
-#                 doc_copy = doc.copy()
-#                 doc_copy['relevance_score'] = round(float(score), 3)
-#                 ranked.append((score, doc_copy))
-#         
-#         ranked.sort(reverse=True, key=lambda x: x[0])
-#         return [doc for _, doc in ranked]
+    Much more robust than lexical overlap when docs share generic keywords
+    (e.g. "tbb::", "parallel") but are semantically off-topic.
+    """
+
+    def __init__(self, model_name: str = "all-MiniLM-L6-v2", threshold: float = 0.35):
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            raise ImportError("sentence-transformers not installed")
+
+        self.model_name = model_name
+        self.model = SentenceTransformer(model_name)
+        self.threshold = threshold
+        logger.info(f"Semantic reranker loaded: {model_name}, threshold={threshold:.2f}")
+
+    def rerank(self, question: str, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Rerank docs by semantic similarity to question."""
+        if not docs:
+            return []
+
+        doc_texts = [d.get("content", "") for d in docs]
+        q_emb = self.model.encode(question, convert_to_tensor=True)
+        d_embs = self.model.encode(doc_texts, convert_to_tensor=True)
+        scores = util.cos_sim(q_emb, d_embs)[0].cpu().tolist()
+
+        ranked = []
+        for score, doc in zip(scores, docs):
+            s = float(score)
+            if s >= self.threshold:
+                doc_copy = doc.copy()
+                doc_copy["relevance_score"] = round(s, 3)
+                ranked.append((s, doc_copy))
+
+        ranked.sort(reverse=True, key=lambda x: x[0])
+        result = [doc for _, doc in ranked]
+        logger.info(
+            f"Semantic reranked {len(docs)} docs → kept {len(result)} "
+            f"(threshold={self.threshold:.2f}, model={self.model_name})"
+        )
+        return result

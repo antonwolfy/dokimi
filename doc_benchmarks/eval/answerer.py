@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
-from .reranker import SimpleReranker
+from .reranker import SimpleReranker, SentenceTransformerReranker, SENTENCE_TRANSFORMERS_AVAILABLE
 
 
 ANSWER_PROMPT_WITH_DOCS = """You are a technical documentation expert answering a user question.
@@ -84,13 +84,22 @@ class Answerer:
         elif provider == "anthropic":
             self.llm = ChatAnthropic(model=model, api_key=api_key)
         else:
-            raise ValueError(f"Unsupported provider: {provider}")
+            from doc_benchmarks.utils import get_llm
+            self.llm = get_llm(provider, model, api_key)
         self.top_k = top_k
         self.debug_retrieval = debug_retrieval
         
-        # Initialize reranker
-        self.reranker = SimpleReranker(threshold=rerank_threshold)
-        logger.info(f"Reranker initialized with threshold={rerank_threshold:.2f}")
+        # Initialize reranker (prefer semantic, fallback to lexical)
+        if SENTENCE_TRANSFORMERS_AVAILABLE:
+            try:
+                self.reranker = SentenceTransformerReranker(threshold=rerank_threshold)
+                logger.info(f"Semantic reranker initialized with threshold={rerank_threshold:.2f}")
+            except Exception as e:
+                logger.warning(f"Semantic reranker failed ({e}); fallback to lexical reranker")
+                self.reranker = SimpleReranker(threshold=rerank_threshold)
+        else:
+            self.reranker = SimpleReranker(threshold=rerank_threshold)
+            logger.info(f"Lexical reranker initialized with threshold={rerank_threshold:.2f}")
         
         logger.info(f"Answerer initialized: {provider}/{model}, MCP={'yes' if mcp_client else 'no'}")
     

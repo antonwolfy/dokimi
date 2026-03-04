@@ -42,6 +42,8 @@ class EvaluationPipeline:
         debug_retrieval: bool = False,
         doc_source: str = "context7",
         context7_id: Optional[str] = None,
+        max_tokens_per_question: int = 4000,
+        force_regen: bool = False,
     ):
         """
         Initialize pipeline.
@@ -95,6 +97,8 @@ class EvaluationPipeline:
         self.debug_retrieval = debug_retrieval
         self.doc_source = doc_source
         self.context7_id = context7_id
+        self.max_tokens_per_question = max_tokens_per_question
+        self.force_regen = force_regen
 
         # Output paths
         self.personas_path = self.output_dir / "personas" / f"{product}.json"
@@ -122,36 +126,49 @@ class EvaluationPipeline:
             "steps": {}
         }
         
-        # Step 1: Discover personas
+        # Step 1: Discover personas (cached if already exists)
         logger.info("Step 1/6: Discovering personas...")
-        personas = self._discover_personas()
+        if (not self.force_regen) and self.personas_path.exists():
+            personas = json.loads(self.personas_path.read_text())
+            print(f"✓ Loaded {len(personas.get('personas', []))} personas (cached)")
+        else:
+            personas = self._discover_personas()
+            print(f"✓ Discovered {len(personas.get('personas', []))} personas")
         results["steps"]["personas"] = {
             "count": len(personas.get("personas", [])),
             "path": str(self.personas_path)
         }
-        print(f"✓ Discovered {len(personas.get('personas', []))} personas")
-        
-        # Step 2: Generate questions
-        logger.info("Step 2/6: Generating questions...")
-        generated_questions = self._generate_questions(personas)
-        results["steps"]["questions_generated"] = {
-            "count": len(generated_questions),
-            "path": "temp"
-        }
-        print(f"✓ Generated {len(generated_questions)} questions from personas")
-        
-        # Step 3: Merge with custom questions + deduplicate
-        logger.info("Step 3/6: Merging and deduplicating questions...")
-        merged_questions = self._merge_questions(generated_questions)
-        results["steps"]["questions_merged"] = {
-            "total": len(merged_questions),
-            "generated": sum(1 for q in merged_questions if q.get("source_type") == "generated"),
-            "manual": sum(1 for q in merged_questions if q.get("source_type") == "manual"),
-            "path": str(self.questions_path)
-        }
-        print(f"✓ Merged to {len(merged_questions)} unique questions "
-              f"({results['steps']['questions_merged']['generated']} generated, "
-              f"{results['steps']['questions_merged']['manual']} manual)")
+
+        # Step 2+3: Generate & merge questions (cached if already exists)
+        if (not self.force_regen) and self.questions_path.exists():
+            logger.info("Step 2-3/6: Loading cached questions (skipping generation)...")
+            cached = json.loads(self.questions_path.read_text())
+            merged_questions = cached.get("questions", cached) if isinstance(cached, dict) else cached
+            print(f"✓ Loaded {len(merged_questions)} questions (cached — skipping generation)")
+            results["steps"]["questions_generated"] = {"count": len(merged_questions), "cached": True}
+            results["steps"]["questions_merged"] = {"total": len(merged_questions), "cached": True,
+                                                     "path": str(self.questions_path)}
+        else:
+            logger.info("Step 2/6: Generating questions...")
+            generated_questions = self._generate_questions(personas)
+            results["steps"]["questions_generated"] = {
+                "count": len(generated_questions),
+                "path": "temp"
+            }
+            print(f"✓ Generated {len(generated_questions)} questions from personas")
+
+            # Step 3: Merge with custom questions + deduplicate
+            logger.info("Step 3/6: Merging and deduplicating questions...")
+            merged_questions = self._merge_questions(generated_questions)
+            results["steps"]["questions_merged"] = {
+                "total": len(merged_questions),
+                "generated": sum(1 for q in merged_questions if q.get("source_type") == "generated"),
+                "manual": sum(1 for q in merged_questions if q.get("source_type") == "manual"),
+                "path": str(self.questions_path)
+            }
+            print(f"✓ Merged to {len(merged_questions)} unique questions "
+                  f"({results['steps']['questions_merged']['generated']} generated, "
+                  f"{results['steps']['questions_merged']['manual']} manual)")
         
         # Step 4: Generate answers
         logger.info("Step 4/6: Generating answers (WITH + WITHOUT docs)...")
@@ -365,7 +382,7 @@ class EvaluationPipeline:
             library_name=self.product,
             library_id=library_id,
             questions=questions,
-            max_tokens_per_question=4000
+            max_tokens_per_question=self.max_tokens_per_question
         )
         
         # Save answers

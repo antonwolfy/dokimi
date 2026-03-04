@@ -75,7 +75,8 @@ class QuestionValidator:
             elif llm_provider == "anthropic":
                 self.llm = ChatAnthropic(model=llm_model, api_key=api_key)
             else:
-                raise ValueError(f"Unsupported provider: {llm_provider}")
+                from doc_benchmarks.utils import get_llm
+                self.llm = get_llm(llm_provider, llm_model, api_key or os.environ.get("OPENROUTER_API_KEY"))
         else:
             self.llm = None
         self.embedding_model = embedding_model

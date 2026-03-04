@@ -922,9 +922,9 @@ def build_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--output-dir", default=".", help="Base output directory")
     eval_p.add_argument("--custom-questions", default=None, help="Optional: path to manual questions JSON")
     eval_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation/answering")
-    eval_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    eval_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     eval_p.add_argument("--judge-model", default="gpt-4o-mini", help="LLM model for evaluation")
-    eval_p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic"])
+    eval_p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     eval_p.add_argument("--personas-count", type=int, default=5, help="Target number of personas")
     eval_p.add_argument("--questions-per-topic", type=int, default=2, help="Questions per topic per persona")
     eval_p.add_argument("--top-k", type=int, default=5, help="Docs to retrieve before reranking")
@@ -992,7 +992,7 @@ def build_parser() -> argparse.ArgumentParser:
     discover_p.add_argument("--output", default=None, help="Output file (default: personas/{product}.json)")
     discover_p.add_argument("--count", type=int, default=5, help="Target number of personas (5-8)")
     discover_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
-    discover_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    discover_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     discover_p.add_argument("--github-token", default=None, help="GitHub token (or set GITHUB_TOKEN env)")
     discover_p.add_argument("--save-analysis", action="store_true", help="Save intermediate analysis JSON")
     discover_p.set_defaults(func=cmd_personas_discover)
@@ -1015,7 +1015,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen_q_p.add_argument("--count", type=int, default=2, help="Questions per topic per persona")
     gen_q_p.add_argument("--validate", action="store_true", help="Enable validation and deduplication")
     gen_q_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
-    gen_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    gen_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     gen_q_p.add_argument("--doc-source", default="context7",
                          help="Documentation source for topic extraction: 'context7', 'local:<path>', 'url:<url>'")
     gen_q_p.add_argument("--context7-id", default=None, dest="context7_id",
@@ -1028,7 +1028,7 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_q_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
     analyze_q_p.add_argument("--output", default=None, help="Output report JSON (default: reports/{product}_question_quality.json)")
     analyze_q_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for classification")
-    analyze_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    analyze_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     analyze_q_p.add_argument("--concurrency", type=int, default=5, help="Parallel classification requests")
     analyze_q_p.set_defaults(func=cmd_questions_analyze)
 
@@ -1059,7 +1059,7 @@ def build_parser() -> argparse.ArgumentParser:
     panel_q_p.add_argument("--output", default=None,
                             help="Output report JSON (default: reports/{product}_question_panel.json)")
     panel_q_p.add_argument("--model", default="gpt-4o-mini")
-    panel_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    panel_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     panel_q_p.add_argument("--reviewers", default=None,
                             help="Comma-separated reviewers (default: domain_expert,user_advocate,qa_engineer)")
     panel_q_p.add_argument("--concurrency", type=positive_int, default=6)
@@ -1077,7 +1077,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen_a_p.add_argument("--questions", required=True, help="Path to questions JSON file")
     gen_a_p.add_argument("--output", default=None, help="Output file (default: answers/{product}.json)")
     gen_a_p.add_argument("--model", default="gpt-4o", help="LLM model for answering")
-    gen_a_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    gen_a_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     gen_a_p.add_argument("--max-tokens", type=int, default=4000, help="Max tokens to retrieve per question")
     gen_a_p.add_argument("--top-k", type=int, default=5, help="Number of docs to retrieve before reranking")
     gen_a_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score (0-1) to keep docs")
@@ -1109,7 +1109,7 @@ def build_parser() -> argparse.ArgumentParser:
     panel_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
     panel_p.add_argument("--output", default=None, help="Output file (default: eval/{product}_panel.json)")
     panel_p.add_argument("--model", default="gpt-4o-mini", help="Default LLM model for all judges")
-    panel_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    panel_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     panel_p.add_argument("--roles", default=None,
                          help="Comma-separated judge roles (default: technical_expert,developer_advocate,doc_reviewer)")
     panel_p.add_argument(
@@ -1153,11 +1153,15 @@ def build_parser() -> argparse.ArgumentParser:
     bench_run_p.add_argument("--output-dir", default=None, dest="output_dir",
                              help="Output directory (default: results/{library})")
     bench_run_p.add_argument("--model", default="gpt-4o-mini")
-    bench_run_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    bench_run_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     bench_run_p.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
     bench_run_p.add_argument("--judge-provider", default="openai", dest="judge_provider",
-                             choices=["openai", "anthropic"])
+                             choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     bench_run_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
+    bench_run_p.add_argument("--max-tokens", type=int, default=4000, dest="max_tokens",
+                             help="Max tokens to retrieve per question from doc source (default: 4000)")
+    bench_run_p.add_argument("--force-regen", action="store_true", dest="force_regen",
+                             help="Regenerate personas/questions even if cached files exist")
     bench_run_p.set_defaults(func=cmd_benchmark_run)
 
     # benchmark batch — multiple libraries
@@ -1169,10 +1173,14 @@ def build_parser() -> argparse.ArgumentParser:
                                help="Run for all libraries in registry")
     bench_batch_p.add_argument("--output-dir", default="results", dest="output_dir")
     bench_batch_p.add_argument("--model", default="gpt-4o-mini")
-    bench_batch_p.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
+    bench_batch_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     bench_batch_p.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
     bench_batch_p.add_argument("--judge-provider", default="openai", dest="judge_provider",
-                               choices=["openai", "anthropic"])
+                               choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
+    bench_batch_p.add_argument("--max-tokens", type=int, default=4000, dest="max_tokens",
+                               help="Max tokens to retrieve per question from doc source (default: 4000)")
+    bench_batch_p.add_argument("--force-regen", action="store_true", dest="force_regen",
+                               help="Regenerate personas/questions even if cached files exist")
     bench_batch_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
     bench_batch_p.add_argument("--fail-fast", action="store_true", dest="fail_fast",
                                help="Stop on first failure (default: continue all)")
@@ -1273,7 +1281,7 @@ def cmd_library_show(args: argparse.Namespace) -> None:
     print(f"Description  :\n  {entry.description}")
 
 
-def _run_single_library(entry, output_dir: str, model: str, provider: str, judge_model: str, judge_provider: str = "openai", doc_source_override=None) -> dict:
+def _run_single_library(entry, output_dir: str, model: str, provider: str, judge_model: str, judge_provider: str = "openai", doc_source_override=None, max_tokens_per_question: int = 4000, force_regen: bool = False) -> dict:
     """Run full evaluation pipeline for one LibraryEntry. Returns result dict."""
     from doc_benchmarks.orchestrator import EvaluationPipeline
     from pathlib import Path as _Path
@@ -1306,6 +1314,8 @@ def _run_single_library(entry, output_dir: str, model: str, provider: str, judge
         judge_provider=judge_provider,
         context7_id=entry.context7_id,
         doc_source=doc_source,
+        max_tokens_per_question=max_tokens_per_question,
+        force_regen=force_regen,
     )
     result = pipeline.run()
     return {"library": entry.key, "name": entry.name, "status": "ok", "result": result}
@@ -1329,6 +1339,8 @@ def cmd_benchmark_run(args: argparse.Namespace) -> None:
         judge_model=args.judge_model,
         judge_provider=getattr(args, "judge_provider", "openai"),
         doc_source_override=getattr(args, "doc_source", None),
+        max_tokens_per_question=getattr(args, "max_tokens", 4000),
+        force_regen=getattr(args, "force_regen", False),
     )
     print(f"\n✅ Done: {entry.name}")
 
@@ -1365,6 +1377,8 @@ def cmd_benchmark_batch(args: argparse.Namespace) -> None:
                 provider=args.provider,
                 judge_model=args.judge_model,
                 judge_provider=getattr(args, "judge_provider", "openai"),
+                max_tokens_per_question=getattr(args, "max_tokens", 4000),
+                force_regen=getattr(args, "force_regen", False),
             )
             results.append(r)
         except Exception as exc:
