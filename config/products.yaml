@@ -72,3 +72,10 @@ evaluation:
     - actionability
   scale: 100  # 0-100 scoring
   gap_threshold: 70  # Scores below this indicate doc gaps
+
+# Retrieval / scan strategy
+# Decision (2026-03-04): single fixed configuration, no multi-config comparisons.
+retrieval:
+  strategy: semantic          # semantic only — no keyword or hybrid variants
+  top_k: 3                   # fixed; do not run comparative top_k experiments
+  comparison_axis: with_docs_vs_without_docs  # only valid comparison axis

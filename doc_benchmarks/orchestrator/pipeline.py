@@ -83,7 +83,24 @@ class EvaluationPipeline:
         self.repo = repo
         self.description = description
         self.output_dir = Path(output_dir)
-        self.custom_questions_path = Path(custom_questions_path) if custom_questions_path else None
+
+        # Auto-discover golden questions for this product if not explicitly provided.
+        # Convention: questions/<product_lower>_golden.json next to the project root (two levels
+        # up from this file: doc_benchmarks/orchestrator/pipeline.py → doc_benchmarks/ → project root)
+        _project_root = Path(__file__).resolve().parent.parent.parent
+        _auto_golden = _project_root / "questions" / f"{product.lower()}_golden.json"
+        if custom_questions_path:
+            _custom_path = Path(custom_questions_path)
+            if not _custom_path.exists():
+                raise FileNotFoundError(
+                    f"--custom-questions path does not exist: {_custom_path}"
+                )
+            self.custom_questions_path = _custom_path
+        elif _auto_golden.exists():
+            self.custom_questions_path = _auto_golden
+            logger.info(f"Auto-including golden questions: {_auto_golden}")
+        else:
+            self.custom_questions_path = None
 
         self.model = model
         self.provider = provider

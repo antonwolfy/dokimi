@@ -527,7 +527,10 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
         config = {}
     
     product_config = config.get("products", {}).get(args.product, {})
-    
+    _retrieval_cfg = config.get("retrieval", {})
+    if args.top_k is None:
+        args.top_k = _retrieval_cfg.get("top_k", 3)
+
     # Load personas
     personas_data = json.loads(Path(args.personas).read_text())
     personas = personas_data["personas"]
@@ -611,6 +614,9 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
         config = {}
 
     product_config = config.get("products", {}).get(args.product, {})
+    _retrieval_cfg = config.get("retrieval", {})
+    if args.top_k is None:
+        args.top_k = _retrieval_cfg.get("top_k", 3)
 
     # Load questions
     questions_data = json.loads(Path(args.questions).read_text())
@@ -927,7 +933,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     eval_p.add_argument("--personas-count", type=int, default=5, help="Target number of personas")
     eval_p.add_argument("--questions-per-topic", type=int, default=2, help="Questions per topic per persona")
-    eval_p.add_argument("--top-k", type=int, default=5, help="Docs to retrieve before reranking")
+    eval_p.add_argument("--top-k", type=int, default=None, help="Docs to retrieve before reranking (default from config/products.yaml retrieval.top_k)")
     eval_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score")
     eval_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata")
     eval_p.add_argument("--doc-source", default="context7",
@@ -1079,7 +1085,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen_a_p.add_argument("--model", default="gpt-4o", help="LLM model for answering")
     gen_a_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     gen_a_p.add_argument("--max-tokens", type=int, default=4000, help="Max tokens to retrieve per question")
-    gen_a_p.add_argument("--top-k", type=int, default=5, help="Number of docs to retrieve before reranking")
+    gen_a_p.add_argument("--top-k", type=int, default=None, help="Number of docs to retrieve before reranking (default from config/products.yaml retrieval.top_k)")
     gen_a_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score (0-1) to keep docs")
     gen_a_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata in output")
     gen_a_p.add_argument("--concurrency", type=positive_int, default=5, help="Parallel API calls (default: 5)")
