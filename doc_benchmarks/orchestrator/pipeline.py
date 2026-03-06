@@ -1,5 +1,6 @@
 """Pipeline orchestrator for end-to-end documentation evaluation."""
 
+import hashlib
 import logging
 import json
 from typing import List, Dict, Any, Optional
@@ -9,6 +10,16 @@ import tempfile
 from doc_benchmarks.mcp.factory import create_doc_source_client
 
 logger = logging.getLogger(__name__)
+
+
+def compute_question_set_hash(questions: List[Dict[str, Any]]) -> str:
+    """Return 12-char SHA-256 prefix over sorted question texts + ids."""
+    fingerprints = sorted(
+        f"{q.get('id', '')}:{q.get('question', q.get('question_text', q.get('text', '')))}"
+        for q in questions
+    )
+    raw = "\n".join(fingerprints).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:12]
 
 
 class EvaluationPipeline:
@@ -44,6 +55,7 @@ class EvaluationPipeline:
         context7_id: Optional[str] = None,
         max_tokens_per_question: int = 4000,
         force_regen: bool = False,
+        questions_from: Optional[Path] = None,
     ):
         """
         Initialize pipeline.
@@ -117,6 +129,21 @@ class EvaluationPipeline:
         self.max_tokens_per_question = max_tokens_per_question
         self.force_regen = force_regen
 
+        # External questions source (skip generation, load from this path/dir)
+        if questions_from is not None:
+            qf = Path(questions_from)
+            # Accept either a directory (auto-find <product>.json) or a file path
+            if qf.is_dir():
+                qf = qf / "questions" / f"{product}.json"
+            if not qf.exists():
+                raise FileNotFoundError(
+                    f"--questions-from: questions file not found: {qf}"
+                )
+            self.external_questions_path: Optional[Path] = qf
+            logger.info(f"Will reuse questions from: {qf}")
+        else:
+            self.external_questions_path = None
+
         # Output paths
         self.personas_path = self.output_dir / "personas" / f"{product}.json"
         self.questions_path = self.output_dir / "questions" / f"{product}.json"
@@ -128,7 +155,7 @@ class EvaluationPipeline:
         for path in [self.personas_path, self.questions_path, self.answers_path, self.eval_path, self.report_path]:
             path.parent.mkdir(parents=True, exist_ok=True)
     
-    def run(self) -> Dict[str, Any]:
+    def run(self, concurrency: int = 5) -> Dict[str, Any]:
         """
         Run full pipeline.
         
@@ -156,8 +183,26 @@ class EvaluationPipeline:
             "path": str(self.personas_path)
         }
 
-        # Step 2+3: Generate & merge questions (cached if already exists)
-        if (not self.force_regen) and self.questions_path.exists():
+        # Step 2+3: Generate & merge questions (external / cached / fresh)
+        if self.external_questions_path is not None:
+            # Reuse question set from another run — skip generation entirely
+            logger.info(f"Step 2-3/6: Loading external questions from {self.external_questions_path}...")
+            raw = json.loads(self.external_questions_path.read_text())
+            merged_questions = raw.get("questions", raw) if isinstance(raw, dict) else raw
+            # Copy to local questions_path so downstream steps find it normally
+            self.questions_path.parent.mkdir(parents=True, exist_ok=True)
+            self.questions_path.write_text(json.dumps(merged_questions, indent=2))
+            print(f"✓ Loaded {len(merged_questions)} questions (from --questions-from, skipping generation)")
+            results["steps"]["questions_generated"] = {
+                "count": len(merged_questions),
+                "external_source": str(self.external_questions_path),
+            }
+            results["steps"]["questions_merged"] = {
+                "total": len(merged_questions),
+                "external_source": str(self.external_questions_path),
+                "path": str(self.questions_path),
+            }
+        elif (not self.force_regen) and self.questions_path.exists():
             logger.info("Step 2-3/6: Loading cached questions (skipping generation)...")
             cached = json.loads(self.questions_path.read_text())
             merged_questions = cached.get("questions", cached) if isinstance(cached, dict) else cached
@@ -187,9 +232,15 @@ class EvaluationPipeline:
                   f"({results['steps']['questions_merged']['generated']} generated, "
                   f"{results['steps']['questions_merged']['manual']} manual)")
         
+        # Compute and record question_set_hash for reproducibility
+        question_set_hash = compute_question_set_hash(merged_questions)
+        results["question_set_hash"] = question_set_hash
+        print(f"  question_set_hash: {question_set_hash}")
+
         # Step 4: Generate answers
         logger.info("Step 4/6: Generating answers (WITH + WITHOUT docs)...")
-        answers = self._generate_answers(merged_questions)
+        answers = self._generate_answers(merged_questions, concurrency=concurrency,
+                                         question_set_hash=question_set_hash)
         results["steps"]["answers"] = {
             "count": len(answers),
             "path": str(self.answers_path)
@@ -198,7 +249,8 @@ class EvaluationPipeline:
         
         # Step 5: Evaluate answers
         logger.info("Step 5/6: Evaluating answers...")
-        evaluations = self._evaluate_answers(answers)
+        evaluations = self._evaluate_answers(answers, concurrency=concurrency,
+                                              question_set_hash=question_set_hash)
         results["steps"]["evaluation"] = {
             "count": len(evaluations),
             "path": str(self.eval_path)
@@ -377,7 +429,8 @@ class EvaluationPipeline:
         
         return unique_questions
     
-    def _generate_answers(self, questions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _generate_answers(self, questions: List[Dict[str, Any]], concurrency: int = 5,
+                          question_set_hash: Optional[str] = None) -> List[Dict[str, Any]]:
         """Generate answers WITH and WITHOUT docs."""
         from doc_benchmarks.eval import Answerer
 
@@ -399,21 +452,29 @@ class EvaluationPipeline:
             library_name=self.product,
             library_id=library_id,
             questions=questions,
-            max_tokens_per_question=self.max_tokens_per_question
+            max_tokens_per_question=self.max_tokens_per_question,
+            concurrency=concurrency,
         )
         
         # Save answers
-        answerer.save_answers(answers, self.answers_path)
+        answerer.save_answers(answers, self.answers_path, question_set_hash=question_set_hash)
         
         return answers
     
-    def _evaluate_answers(self, answers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _evaluate_answers(self, answers: List[Dict[str, Any]], concurrency: int = 5,
+                          question_set_hash: Optional[str] = None) -> List[Dict[str, Any]]:
         """Evaluate answers using LLM-as-judge."""
         from doc_benchmarks.eval import Judge
         
-        # Load answers data
-        answers_data = json.loads(self.answers_path.read_text())
-        answers_list = answers_data.get("answers", answers_data)
+        # Use in-memory answers from the previous step (avoid stale disk read)
+        if isinstance(answers, dict):
+            answers_list = answers.get("answers", answers)
+        elif answers:
+            answers_list = answers
+        else:
+            # Fallback: read from disk if not provided
+            answers_data = json.loads(self.answers_path.read_text())
+            answers_list = answers_data.get("answers", answers_data)
         
         # Evaluate
         judge = Judge(
@@ -426,6 +487,7 @@ class EvaluationPipeline:
                 "answer_provider": self.provider,
                 "judge_model": self.judge_model,
                 "judge_provider": self.judge_provider,
+                "question_set_hash": question_set_hash,
                 "evaluator_independence_warning": (
                     str(self.model).strip().lower() == str(self.judge_model).strip().lower()
                     and str(self.provider).strip().lower() == str(self.judge_provider).strip().lower()
@@ -433,7 +495,7 @@ class EvaluationPipeline:
             },
         )
         
-        evaluations = judge.evaluate_answers(self.product, answers_list)
+        evaluations = judge.evaluate_answers(self.product, answers_list, concurrency=concurrency)
         
         # Save evaluations
         judge.save_evaluations(evaluations, self.eval_path)

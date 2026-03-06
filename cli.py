@@ -647,7 +647,12 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
         debug_retrieval=args.debug_retrieval
     )
     
-    output_path = Path(args.output) if args.output else Path(f"answers/{args.product}.json")
+    if args.output:
+        output_path = Path(args.output)
+    elif getattr(args, "run_id", None):
+        output_path = Path(f"results/{args.product.lower()}_{args.run_id}/answers/{args.product}.json")
+    else:
+        output_path = Path(f"answers/{args.product}.json")
 
     answers = answerer.generate_answers(
         library_name=args.product,
@@ -780,12 +785,30 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
         },
     )
     
-    output_path = Path(args.output) if args.output else Path(f"eval/{args.product}.json")
+    if args.output:
+        output_path = Path(args.output)
+    elif getattr(args, "run_id", None):
+        output_path = Path(f"results/{args.product.lower()}_{args.run_id}/eval/{args.product}.json")
+    else:
+        output_path = Path(f"eval/{args.product}.json")
 
     evaluations = judge.evaluate_answers(args.product, answers, output_path=output_path, concurrency=args.concurrency)
 
     judge.save_evaluations(evaluations, output_path)
     print(f"\n✅ Saved evaluations to {output_path}")
+
+
+def cmd_report_eval(args: argparse.Namespace) -> None:
+    """Generate quality report from eval JSON (dynamic vs static breakdown)."""
+    from generate_report import generate_report
+
+    if args.out:
+        out = args.out
+    elif getattr(args, "run_id", None):
+        out = f"results/{args.product.lower()}_{args.run_id}/reports/{args.product}_full.md"
+    else:
+        out = f"results/{args.product}/reports/{args.product}_full.md"
+    generate_report(eval_path=args.eval, out_path=out)
 
 
 def cmd_report_generate(args: argparse.Namespace) -> None:
@@ -859,7 +882,8 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         judge_provider=args.judge_provider,
         personas_count=args.personas_count,
         questions_per_topic=args.questions_per_topic,
-        top_k=args.top_k,
+        # Only pass top_k when explicitly set; otherwise let pipeline use config default
+        **({"top_k": args.top_k} if args.top_k is not None else {}),
         rerank_threshold=args.rerank_threshold,
         debug_retrieval=args.debug_retrieval,
         doc_source=getattr(args, "doc_source", "context7"),
@@ -977,6 +1001,15 @@ def build_parser() -> argparse.ArgumentParser:
     report_p = sub.add_parser("report", help="Generate analysis reports")
     report_sub = report_p.add_subparsers(dest="report_cmd", required=True)
     
+    # report eval — lightweight, no questions needed
+    eval_r_p = report_sub.add_parser("eval", help="Generate quality report from eval JSON (dynamic vs static breakdown)")
+    eval_r_p.add_argument("--product", required=True, help="Product name (e.g., oneDAL)")
+    eval_r_p.add_argument("--eval", required=True, help="Path to eval JSON file")
+    eval_r_p.add_argument("--run-id", default=None, dest="run_id",
+                         help="Run tag (e.g. gpt4o). Auto-sets output path.")
+    eval_r_p.add_argument("--out", default=None, help="Output .md file (default: results/{product}/reports/{product}_full.md)")
+    eval_r_p.set_defaults(func=cmd_report_eval)
+
     # report generate
     gen_r_p = report_sub.add_parser("generate", help="Generate comprehensive report from eval results")
     gen_r_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
@@ -1018,6 +1051,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen_q_p.add_argument("--personas", required=True, help="Path to personas JSON file")
     gen_q_p.add_argument("--output", default=None, help="Output file (default: questions/{product}.json)")
     gen_q_p.add_argument("--topics", default=None, help="Optional: path to topics JSON (auto-extracted if not provided)")
+    gen_q_p.add_argument("--top-k", type=int, default=None, dest="top_k", help="Docs to retrieve per topic (default from config)")
     gen_q_p.add_argument("--count", type=int, default=2, help="Questions per topic per persona")
     gen_q_p.add_argument("--validate", action="store_true", help="Enable validation and deduplication")
     gen_q_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
@@ -1081,6 +1115,9 @@ def build_parser() -> argparse.ArgumentParser:
     gen_a_p = answers_sub.add_parser("generate", help="Generate answers (WITH and WITHOUT docs)")
     gen_a_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
     gen_a_p.add_argument("--questions", required=True, help="Path to questions JSON file")
+    gen_a_p.add_argument("--run-id", default=None, dest="run_id",
+                         help="Run tag for multi-model comparison (e.g. gpt4o). "
+                              "Sets output to results/{product}_{run_id}/answers/{product}.json")
     gen_a_p.add_argument("--output", default=None, help="Output file (default: answers/{product}.json)")
     gen_a_p.add_argument("--model", default="gpt-4o", help="LLM model for answering")
     gen_a_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
@@ -1103,6 +1140,8 @@ def build_parser() -> argparse.ArgumentParser:
     score_p = eval_sub.add_parser("score", help="Score answers using LLM-as-judge")
     score_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
     score_p.add_argument("--answers", required=True, help="Path to answers JSON file")
+    score_p.add_argument("--run-id", default=None, dest="run_id",
+                         help="Run tag (e.g. gpt4o). Sets output to results/{product}_{run_id}/eval/{product}.json")
     score_p.add_argument("--output", default=None, help="Output file (default: eval/{product}.json)")
     score_p.add_argument("--judge-model", default="gpt-4o-mini", help="LLM model for judging")
     score_p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic", "azure", "bedrock", "google"])

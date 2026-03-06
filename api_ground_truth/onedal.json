@@ -1,0 +1,762 @@
+{
+  "library_id": "/uxlfoundation/onedal",
+  "library_name": "oneDAL",
+  "extracted_at": "2026-03-06T04:34:39.458157+00:00",
+  "topics_queried": 15,
+  "total_text_chars": 103814,
+  "api_entities": {
+    "namespaces": [
+      "dal = oneapi::dal",
+      "df = dal::decision_forest",
+      "pca = dal::pca",
+      "pr = dal::backend::primitives",
+      "result_options = dal::linear_regression::result_options",
+      "svm = dal::svm"
+    ],
+    "classes": [
+      "dal::array",
+      "dal::backend::primitives",
+      "dal::column_accessor",
+      "dal::compute",
+      "dal::covariance::result_options::cov_matrix",
+      "dal::csr_accessor",
+      "dal::csv::data_source",
+      "dal::decision_forest",
+      "dal::homogen_table",
+      "dal::homogen_table::kind",
+      "dal::homogen_table::wrap",
+      "dal::linear_regression::result_options",
+      "dal::logistic_regression",
+      "dal::pca",
+      "dal::preview::ccl::backend",
+      "dal::preview::mpi::backend",
+      "dal::preview::spmd::backend::mpi",
+      "dal::preview::spmd::make_communicator",
+      "dal::read",
+      "dal::row_accessor",
+      "dal::spmd::preview",
+      "dal::svm",
+      "dal::table",
+      "oneapi::dal::array",
+      "oneapi::dal::backend::primitives",
+      "oneapi::dal::decision_forest::descriptor",
+      "oneapi::dal::decision_forest::train_input",
+      "oneapi::dal::decision_forest::train_result",
+      "oneapi::dal::logistic_regression",
+      "oneapi::dal::spmd::preview",
+      "oneapi::dal::table"
+    ],
+    "functions": [
+      "dal::covariance::descriptor",
+      "dal::decision_forest::descriptor",
+      "dal::decision_forest::train_input",
+      "dal::decision_forest::train_result",
+      "dal::infer",
+      "dal::kmeans::descriptor",
+      "dal::linear_kernel::descriptor",
+      "dal::linear_regression::descriptor",
+      "dal::pca::descriptor",
+      "dal::pca::train_result",
+      "dal::preview::train",
+      "dal::train",
+      "get_biases",
+      "get_bootstrap",
+      "get_centroids",
+      "get_coefficients",
+      "get_column_count",
+      "get_count",
+      "get_cov_matrix",
+      "get_data",
+      "get_decision_function",
+      "get_eigenvalues",
+      "get_eigenvectors",
+      "get_explained_variances_ratio",
+      "get_global_id",
+      "get_group",
+      "get_indices",
+      "get_intercept",
+      "get_iteration_count",
+      "get_kind",
+      "get_labels",
+      "get_local_id",
+      "get_means",
+      "get_model",
+      "get_mutable_data",
+      "get_objective_function_value",
+      "get_oob_err",
+      "get_platform",
+      "get_probabilities",
+      "get_rank",
+      "get_responses",
+      "get_row",
+      "get_row_count",
+      "get_singular_values",
+      "get_support_indices",
+      "get_transformed_data",
+      "get_values",
+      "get_var_importance",
+      "get_variable_importance_mode",
+      "get_variances",
+      "set_accuracy_threshold",
+      "set_c",
+      "set_cache_size",
+      "set_class_count",
+      "set_cluster_count",
+      "set_component_count",
+      "set_deterministic",
+      "set_error_metric_mode",
+      "set_features_per_node",
+      "set_indices",
+      "set_infer_mode",
+      "set_max_iteration_count",
+      "set_min_impurity_decrease_in_split_node",
+      "set_min_observations_in_leaf_node",
+      "set_min_observations_in_split_node",
+      "set_min_weight_fraction_in_leaf_node",
+      "set_normalization_mode",
+      "set_result_options",
+      "set_row_begin",
+      "set_scale",
+      "set_shift",
+      "set_tau",
+      "set_tree_count",
+      "set_values",
+      "set_variable_importance_mode",
+      "set_voting_mode",
+      "set_whiten"
+    ],
+    "includes": [
+      "cassert",
+      "daal.h",
+      "fstream",
+      "gradient_boosted_trees/gbt_reg_dense_batch.cpp",
+      "iostream",
+      "mpi.h",
+      "oneapi/dal.hpp",
+      "oneapi/dal/algo/covariance.hpp",
+      "oneapi/dal/algo/decision_forest.hpp",
+      "oneapi/dal/algo/kmeans.hpp",
+      "oneapi/dal/algo/linear_regression.hpp",
+      "oneapi/dal/algo/pca.hpp",
+      "oneapi/dal/algo/read.hpp",
+      "oneapi/dal/algo/svm.hpp",
+      "oneapi/dal/backend/primitives/ndarray.hpp",
+      "oneapi/dal/data/column_accessor.hpp",
+      "oneapi/dal/data/table.hpp",
+      "oneapi/dal/exceptions.hpp",
+      "oneapi/dal/io/csv.hpp",
+      "oneapi/dal/spmd/ccl/communicator.hpp",
+      "oneapi/dal/spmd/mpi/communicator.hpp",
+      "oneapi/dal/table/common.hpp",
+      "oneapi/dal/table/csr_accessor.hpp",
+      "oneapi/dal/table/csv.hpp",
+      "oneapi/dal/table/detail/table_builder.hpp",
+      "oneapi/dal/table/homogen.hpp",
+      "oneapi/dal/table/row_accessor.hpp",
+      "service.h",
+      "sycl/sycl.hpp"
+    ],
+    "enums": [
+      "dal::linear_kernel::descriptor",
+      "df::error_metric_mode::out_of_bag_error",
+      "df::infer_mode::class_probabilities",
+      "df::infer_mode::class_responses",
+      "df::variable_importance_mode::mdi",
+      "df::voting_mode::weighted",
+      "pca::method::cov"
+    ]
+  },
+  "code_examples": [
+    {
+      "language": "APIDOC",
+      "code": "## POST /api/gbt/classification/train\n\n### Description\nTrains a Gradient Boosted Trees classification model with specified parameters.\n\n### Method\nPOST\n\n### Endpoint\n/api/gbt/classification/train\n\n### Parameters\n#### Query Parameters\n- **algorithmFPType** (string) - Optional - The floating-point type for intermediate computations. Can be 'float' or 'double'.\n- **method** (string) - Optional - The computation method. Supported: 'defaultDense'.\n- **nClasses** (integer) - Required - The number of classes.\n- **loss** (string) - Optional - The loss function type. Default: 'crossEntropy'.\n\n### Request Body\n(No specific request body schema defined, parameters are expected as query parameters or within a configuration object)\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained Gradient Boosted Trees classification model.\n- **status** (string) - Indicates the success of the operation.\n\n#### Response Example"
+    },
+    {
+      "language": "cpp",
+      "code": "#include \"oneapi/dal/algo/decision_forest.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\nnamespace df = dal::decision_forest;\n\nint main() {\n    // Load training data and labels\n    const auto x_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_train_data.csv\" });\n    const auto y_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_train_label.csv\" });\n\n    // Configure decision forest with detailed parameters\n    const auto df_desc = df::descriptor<>{}\n        .set_class_count(5)                           // 5 classes\n        .set_tree_count(10)                           // 10 trees in forest\n        .set_features_per_node(1)                     // Features per split\n        .set_min_observations_in_leaf_node(8)         // Min samples in leaf\n        .set_min_observations_in_split_node(16)       // Min samples to split\n        .set_min_weight_fraction_in_leaf_node(0.0)    // Weight threshold\n        .set_min_impurity_decrease_in_split_node(0.0) // Impurity threshold\n        .set_variable_importance_mode(df::variable_importance_mode::mdi)\n        .set_error_metric_mode(df::error_metric_mode::out_of_bag_error)\n        .set_infer_mode(df::infer_mode::class_responses |\n                        df::infer_mode::class_probabilities)\n        .set_voting_mode(df::voting_mode::weighted);\n\n    // Train the model\n    const auto result_train = dal::train(df_desc, x_train, y_train);\n\n    // Access feature importance and training metrics\n    std::cout << \"Variable importance:\\n\"\n              << result_train.get_var_importance() << std::endl;\n    std::cout << \"OOB error: \" << result_train.get_oob_err() << std::endl;\n\n    // Perform inference on test set\n    const auto x_test = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_test_data.csv\" });\n    const auto result_infer = dal::infer(df_desc, result_train.get_model(), x_test);\n\n    // Get both class predictions and probabilities\n    std::cout << \"Predictions:\\n\" << result_infer.get_responses() << std::endl;\n    std::cout << \"Probabilities:\\n\" << result_infer.get_probabilities() << std::endl;\n\n    return 0;\n}"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## POST /knn/infer\n\n### Description\nPerforms k-NN classification inference on new data using a pre-trained k-NN model.\n\n### Method\nPOST\n\n### Endpoint\n/knn/infer\n\n### Parameters\n#### Path Parameters\nNone\n\n#### Query Parameters\nNone\n\n#### Request Body\n- **desc** (knn::descriptor) - Required - k-NN algorithm descriptor.\n- **model** (knn::model) - Required - The pre-trained k-NN model.\n- **input** (knn::infer_input) - Required - Input data for the inference operation.\n  - **data** (table) - Required - Feature vectors of the data to classify.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **labels** (table) - Predicted class labels for the input data.\n\n#### Response Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Postconditions\n- `result.labels.row_count == input.data.row_count`\n- `result.labels.column_count == 1`\n- `result.labels[i] >= 0`\n- `result.labels[i] < desc.class_count`"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## Multi-class Classifier Training API\n\n### Description\nThis section details the parameters used for multi-class classifier training.\n\n### Method\nPOST\n\n### Endpoint\n/train/multiclass/svm\n\n### Parameters\n#### Query Parameters\n- **nClasses** (integer) - Required - The number of classes in the dataset.\n- **trainingAlgorithm** (pointer) - Optional - Pointer to the training algorithm. Defaults to the SVM two-class classifier.\n\n#### Request Body\n- **data** (NumericTable) - Required - Pointer to the training data.\n- **labels** (NumericTable) - Required - Pointer to the training data labels.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **model** (pointer) - Pointer to the trained multi-class classifier model.\n\n#### Response Example"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## Multi-class Classifier Prediction API\n\n### Description\nThis section details the parameters used for multi-class classifier prediction in batch processing mode.\n\n### Method\nPOST\n\n### Endpoint\n/predict/multiclass/svm\n\n### Parameters\n#### Query Parameters\n- **algorithmFPType** (string) - Optional - Specifies the floating-point type for intermediate computations. Can be 'float' or 'double'. Defaults to 'float'.\n- **pmethod** (string) - Optional - Specifies the prediction method. Available options are 'defaultDense' (Wu04 method) or 'voteBased' (based on two-class classifier votes). Defaults to 'defaultDense'.\n- **tmethod** (string) - Optional - Specifies the computation method used during training. Available options are 'defaultDense' or 'voteBased' (`training::oneAgainstOne`). Defaults to `training::oneAgainstOne`.\n- **nClasses** (integer) - Required - The number of classes in the dataset.\n- **resultsToEvaluate** (string) - Optional - A flag to specify which extra characteristics of the decision function to compute. Can be 'computeClassLabels', 'computeDecisionFunction', or a bitwise OR of these. Defaults to 'computeClassLabels'.\n\n#### Request Body\n- **model** (pointer) - Required - Pointer to the trained multi-class classifier model.\n- **data** (NumericTable) - Required - Pointer to the input data for prediction.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **prediction** (NumericTable) - A table containing the predicted class labels or values.\n- **decisionFunction** (NumericTable) - A table of size n x K(K-1)/2 containing decision function results if 'computeDecisionFunction' is enabled. This is NULL if 'computeDecisionFunction' is not enabled.\n\n#### Response Example"
+    },
+    {
+      "language": "cpp",
+      "code": "float data[nColumns * nRows];\nHomogenNumericTable<float> table(data, nColumns, nRows);"
+    },
+    {
+      "language": "cpp",
+      "code": "#include \"oneapi/dal/table/common.hpp\"\n#include \"oneapi/dal/table/homogen.hpp\"\n#include \"oneapi/dal/table/row_accessor.hpp\"\n\nnamespace dal = oneapi::dal;\n\ntemplate <typename Type = float>\ndal::table get_table(std::int64_t row_count, std::int64_t column_count) {\n    const std::int64_t elem_count = row_count * column_count;\n    auto* const raw_data = new Type[elem_count];\n\n    // Create array with custom deleter\n    auto data = dal::array<Type>(raw_data, elem_count,\n                                 [](Type* const ptr) -> void {\n                                     delete[] ptr;\n                                 });\n\n    // Fill with structured data\n    for (std::int64_t row = 0l; row < row_count; ++row) {\n        for (std::int64_t col = 0l; col < column_count; ++col) {\n            const std::int64_t idx = row * column_count + col;\n            raw_data[idx] = static_cast<Type>(row * col);\n        }\n    }\n\n    return dal::homogen_table::wrap(data, row_count, column_count);\n}\n\nint main() {\n    constexpr std::int64_t row_count = 4;\n    constexpr std::int64_t column_count = 3;\n\n    // Create table\n    const dal::table test_table = get_table(row_count, column_count);\n\n    // Query table properties\n    std::cout << \"Rows: \" << test_table.get_row_count() << '\\n';\n    std::cout << \"Columns: \" << test_table.get_column_count() << '\\n';\n\n    // Check table type\n    const bool is_homogen = test_table.get_kind() == dal::homogen_table::kind();\n    std::cout << \"Is homogeneous: \" << is_homogen << '\\n';\n\n    // Access data using row accessor\n    dal::row_accessor<const double> accessor{ test_table };\n    dal::array<double> slice = accessor.pull({ 1l, 3l });  // Rows 1-2\n\n    std::cout << \"Row slice: \" << slice << std::endl;\n\n    return 0;\n}"
+    },
+    {
+      "language": "cpp",
+      "code": "#include <sycl/sycl.hpp>\n#include <iostream>\n\n#include \"oneapi/dal/table/homogen.hpp\"\n#include \"oneapi/dal/table/row_accessor.hpp\"\n\nusing namespace oneapi;\n\nint main() {\n   sycl::queue queue { sycl::default_selector() };\n\n   constexpr float host_data[] = {\n      1.0f, 1.5f, 2.0f,\n      2.1f, 3.2f, 3.7f,\n      4.0f, 4.9f, 5.0f,\n      5.2f, 6.1f, 6.2f\n   };\n\n   constexpr std::int64_t row_count = 4;\n   constexpr std::int64_t column_count = 3;\n\n   auto shared_data = sycl::malloc_shared<float>(row_count * column_count, queue);\n   auto event = queue.memcpy(shared_data, host_data, sizeof(float) * row_count * column_count);\n   auto t = dal::homogen_table::wrap(queue, shared_data, row_count, column_count, { event });\n\n   // Accessing second and third rows of the table\n   dal::row_accessor<const float> acc { t };\n\n   auto block = acc.pull(queue, {1, 3});\n   for(std::int64_t i = 0; i < block.get_count(); i++) {\n      std::cout << block[i] << \", \";\n   }\n   std::cout << std::endl;\n\n   sycl::free(shared_data, queue);\n   return 0;\n}"
+    },
+    {
+      "language": "cpp",
+      "code": "#include \"oneapi/dal/table/homogen.hpp\"\n\n// Create table with type safety\nauto table = homogen_table::wrap(data, rows, cols);\n\n// Access data\nauto accessor = row_accessor<const float>(table);\nauto subset = accessor.pull({0, 10}); // Rows 0-9\nconst float * data_block subset.get_data();\n\n// Pull memory with device access\nauto subset_gpu = accessor.pull({0, 10}, sycl::usm::alloc::device);\n// SYCL USM pointer\nconst float * gpu_data_block subset_gpu.get_data();"
+    },
+    {
+      "language": "cpp",
+      "code": "HomogenNumericTable<float> table(nColumns, nRows, NumericTable::doNotAllocate);\n    float data[nColumns * nRows];\n    table.setArray(data, nRows);"
+    },
+    {
+      "language": "cpp",
+      "code": "HomogenNumericTable<float> table(nColumns, nRows, NumericTable::doAllocate, 0.0);"
+    },
+    {
+      "language": "cpp",
+      "code": "float data[nColumns * nRows];\n    HomogenNumericTable<float> table(data, nColumns, nRows);"
+    },
+    {
+      "language": "cpp",
+      "code": "#include \"oneapi/dal/algo/svm.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\nnamespace svm = dal::svm;\n\nint main() {\n    // Load training data\n    const auto x_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"svm_two_class_train_dense_data.csv\" });\n    const auto y_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"svm_two_class_train_dense_label.csv\" });\n\n    // Configure linear kernel\n    const auto kernel_desc = dal::linear_kernel::descriptor{},\n        .set_scale(1.0)\n        .set_shift(0.0);\n\n    // Configure SVM with kernel and parameters\n    const auto svm_desc = svm::descriptor{ kernel_desc }\n        .set_c(1.0)                      // Regularization parameter\n        .set_accuracy_threshold(0.001)   // Convergence threshold\n        .set_max_iteration_count(100)    // Max iterations\n        .set_cache_size(200.0)           // Cache size in MB\n        .set_tau(1e-6);                  // Stopping criterion\n\n    // Train SVM model\n    const auto result_train = dal::train(svm_desc, x_train, y_train);\n\n    std::cout << \"Biases:\\n\" << result_train.get_biases() << std::endl;\n    std::cout << \"Support indices:\\n\"\n              << result_train.get_support_indices() << std::endl;\n\n    // Perform inference\n    const auto x_test = dal::read<dal::table>(\n        dal::csv::data_source{ \"svm_two_class_test_dense_data.csv\" });\n    const auto result_infer = dal::infer(svm_desc, result_train.get_model(), x_test);\n\n    std::cout << \"Decision function:\\n\"\n              << result_infer.get_decision_function() << std::endl;\n    std::cout << \"Predicted labels:\\n\"\n              << result_infer.get_responses() << std::endl;\n\n    return 0;\n}"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## SVM Inference\n\n### Description\nPerforms inference using a trained Support Vector Machine (SVM) model to predict labels for new data.\n\n### Method\n`svm::infer`\n\n### Endpoint\nN/A (This is a library API, not a REST endpoint)\n\n### Parameters\n#### Input\n- **desc** (svm::descriptor) - The SVM algorithm descriptor.\n- **input** (svm::infer_input) - The input data for the inference operation, typically containing the features of the data points to classify.\n\n### Preconditions for Inference Input\n- `input.data.is_empty == false`\n\n### Result\n- **infer_result** (svm::infer_result) - The result of the inference operation, containing the predicted labels or scores.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **predictions** (svm::infer_result) - The result containing predictions for the input data.\n\n#### Response Example"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## SVM Training\n\n### Description\nTrains a Support Vector Machine (SVM) model using the provided descriptor and input data.\n\n### Method\n`svm::train`\n\n### Endpoint\nN/A (This is a library API, not a REST endpoint)\n\n### Parameters\n#### Input\n- **desc** (svm::descriptor) - The SVM algorithm descriptor.\n- **input** (svm::train_input) - The input data for the training operation, including features and labels.\n\n### Preconditions for Training Input\n- `input.data.is_empty == false`\n- `input.labels.is_empty == false`\n- `input.labels.column_count == 1`\n- `input.data.row_count == input.labels.row_count`\n\n### Result\n- **train_result** (svm::train_result) - The result of the training operation, typically containing the trained model.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **trained_model** (svm::model) - The trained SVM model.\n\n#### Response Example"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## POST /api/kmeans/train\n\n### Description\nTrains a K-Means model on the provided data.\n\n### Method\nPOST\n\n### Endpoint\n/api/kmeans/train\n\n### Parameters\n#### Request Body\n- **desc** (object) - Required - K-Means algorithm descriptor containing parameters like `cluster_count` and `max_iteration_count`.\n- **input** (object) - Required - Input data for the training operation, including `data` and optional `initial_centroids`.\n  - **data** (object) - Required - The input dataset.\n  - **initial_centroids** (object) - Optional - Initial centroids for the K-Means algorithm.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **labels** (array) - Array of cluster assignments for each data point.\n- **iteration_count** (integer) - The number of iterations performed.\n- **model** (object) - The trained K-Means model containing the final centroids.\n  - **centroids** (object) - The calculated centroids for each cluster.\n\n#### Response Example"
+    },
+    {
+      "language": "cpp",
+      "code": "// Copyright 2021 Intel Corporation\n//\n// Licensed under the Apache License, Version 2.0 (the \"License\");\n// you may not use this file except in compliance with the License.\n// You may obtain a copy of the License at\n//\n//     http://www.apache.org/licenses/LICENSE-2.0\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the License is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the License for the specific language governing permissions and\n// limitations under the License.\n\n#include \"oneapi/dal/algo/kmeans.hpp\"\n#include \"oneapi/dal/table/common.hpp\"\n#include <iostream>\n\n// Assuming 'table' and 'print_table', 'print_value' are defined elsewhere in the OneDAL library\n\nkmeans::model<> run_training(const table& data,\n                              const table& initial_centroids) {\n   const auto kmeans_desc = kmeans::descriptor<float>{} \\\n      .set_cluster_count(10) \\\n      .set_max_iteration_count(50) \\\n      .set_accuracy_threshold(1e-4);\n\n   const auto result = train(kmeans_desc, data, initial_centroids);\n\n   print_table(\"labels\", result.get_labels());\n   print_table(\"centroids\", result.get_model().get_centroids());\n   print_value(\"objective\", result.get_objective_function_value());\n\n   return result.get_model();\n}"
+    },
+    {
+      "language": "cpp",
+      "code": "template <typename Descriptor>\nkmeans::train_result train(const Descriptor& desc,\n                         const kmeans::train_input& input)\n\n:param desc: K-Means algorithm descriptor :expr:`kmeans::descriptor`\n:param input: Input data for the training operation\n\nPreconditions\n   | :expr:`input.data.has_data == true`\n   | :expr:`input.initial_centroids.row_count == desc.cluster_count`\n   | :expr:`input.initial_centroids.column_count == input.data.column_count`\nPostconditions\n   | :expr:`result.labels.row_count == input.data.row_count`\n   | :expr:`result.labels.column_count == 1`\n   | :expr:`result.labels[i] >= 0`\n   | :expr:`result.labels[i] < desc.cluster_count`\n   | :expr:`result.iteration_count <= desc.max_iteration_count`\n   | :expr:`result.model.centroids.row_count == desc.cluster_count`\n   | :expr:`result.model.centroids.column_count == input.data.column_count`"
+    },
+    {
+      "language": "cpp",
+      "code": "#include \"daal.h\"\n#include \"service.h\"\n\nusing namespace daal;\nusing namespace daal::algorithms;\nusing namespace daal::data_management;\n\nint main(int argc, char* argv[]) {\n    const std::string datasetFileName = \"../data/batch/kmeans_dense.csv\";\n\n    // Load data using FileDataSource\n    FileDataSource<CSVFeatureManager> dataSource(\n        datasetFileName,\n        DataSource::doAllocateNumericTable,\n        DataSource::doDictionaryFromContext);\n    dataSource.loadDataBlock();\n\n    // Initialize centroids\n    const size_t nClusters = 20;\n    kmeans::init::Batch<float,kmeans::init::randomDense> init(nClusters);\n    init.input.set(kmeans::init::data, dataSource.getNumericTable());\n    init.compute();\n    NumericTablePtr centroids = init.getResult()->get(kmeans::init::centroids);\n\n    // Create K-Means algorithm\n    const size_t nIterations = 5;\n    kmeans::Batch<> algorithm(nClusters, nIterations);\n    algorithm.input.set(kmeans::data, dataSource.getNumericTable());\n    algorithm.input.set(kmeans::inputCentroids, centroids);\n\n    // Configure results to compute\n    algorithm.parameter().resultsToEvaluate =\n        kmeans::computeCentroids |\n        kmeans::computeAssignments |\n        kmeans::computeExactObjectiveFunction;\n\n    // Execute\n    algorithm.compute();\n\n    // Print results\n    printNumericTable(algorithm.getResult()->get(kmeans::assignments), \"First 10 cluster assignments:\", 10);\n    printNumericTable(algorithm.getResult()->get(kmeans::centroids), \"First 10 dimensions of centroids:\", 20, 10);\n    printNumericTable(algorithm.getResult()->get(kmeans::objectiveFunction), \"Objective function value:\");\n\n    return 0;\n}"
+    },
+    {
+      "language": "cpp",
+      "code": "#include \"oneapi/dal/algo/pca.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\nnamespace pca = dal::pca;\n\nint main() {\n    // Load data\n    const auto x_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"pca_non_normalized.csv\" });\n\n    // Configure PCA with 5 components and mean centering\n    const auto pca_desc = pca::descriptor<float, pca::method::cov>()\n        .set_component_count(5)\n        .set_deterministic(true)\n        .set_normalization_mode(pca::normalization::mean_center)\n        .set_whiten(true);  // Apply whitening transformation\n\n    // Train PCA model\n    const auto result_train = dal::train(pca_desc, x_train);\n\n    // Access all PCA results\n    std::cout << \"Eigenvectors:\\n\" << result_train.get_eigenvectors() << std::endl;\n    std::cout << \"Eigenvalues:\\n\" << result_train.get_eigenvalues() << std::endl;\n    std::cout << \"Singular Values:\\n\" << result_train.get_singular_values() << std::endl;\n    std::cout << \"Variances:\\n\" << result_train.get_variances() << std::endl;\n    std::cout << \"Means:\\n\" << result_train.get_means() << std::endl;\n    std::cout << \"Explained variances ratio:\\n\"\n              << result_train.get_explained_variances_ratio() << std::endl;\n\n    // Transform data to principal components\n    const auto result_infer = dal::infer(pca_desc, result_train.get_model(), x_train);\n    std::cout << \"Transformed data:\\n\" << result_infer.get_transformed_data() << std::endl;\n\n    return 0;\n}"
+    },
+    {
+      "language": "cpp",
+      "code": "pca::model<> run_training(const table& data) {\n   const auto pca_desc = pca::descriptor<float>{} \n      .set_component_count(5)\n      .set_deterministic(true);\n\n   const auto result = train(pca_desc, data);\n\n   print_table(\"means\", result.get_means());\n   print_table(\"variances\", result.get_variances());\n   print_table(\"eigenvalues\", result.get_eigenvalues());\n   print_table(\"eigenvectors\", result.get_eigenvectors());\n\n   return result.get_model();\n}"
+    },
+    {
+      "language": "cpp",
+      "code": "const auto pca_desc = dal::pca::descriptor<float>\n   .set_component_count(3)\n   .set_deterministic(true);\n\nconst dal::pca::train_result train_res = dal::train(queue, pca_desc, data);"
+    },
+    {
+      "language": "cpp",
+      "code": "template <typename Descriptor>\n              pca::train_result train(const Descriptor& desc,\n                                         const pca::train_input& input)"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## POST /train\n\n### Description\nTrains a Decision Forest model based on the provided descriptor and input data. This function supports both classification and regression tasks.\n\n### Method\nPOST\n\n### Endpoint\n`/train`\n\n### Parameters\n\n#### Query Parameters\n- **desc** (`oneapi::dal::decision_forest::descriptor`) - Required - The descriptor for the Decision Forest algorithm configuration.\n- **input** (`oneapi::dal::decision_forest::train_input`) - Required - The input data and labels for the training operation.\n\n#### Request Body\n(Not applicable for this function signature, parameters are passed directly)\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n\n#### Success Response (200)\n- **result** (`oneapi::dal::decision_forest::train_result`) - The trained Decision Forest model.\n\n#### Response Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Preconditions\n- `input.data` must not be empty.\n- `input.labels` must not be empty.\n- `input.labels.column_count` must be 1.\n- `input.data.row_count` must equal `input.labels.row_count`.\n- If `desc.get_bootstrap() == true`, no additional constraints on `desc.get_variable_importance_mode()`.\n- If `desc.get_bootstrap() == false`, then `desc.get_variable_importance_mode()` must not be `variable_importance_mode::mda_raw` or `variable_importance_mode::mda_scaled`."
+    },
+    {
+      "language": "APIDOC",
+      "code": "## POST /decision-forest/train\n\n### Description\nTrains a decision forest model using batch processing. This endpoint allows configuration of various training parameters including data types, binning strategies, tree building methods, and feature importance calculation settings.\n\n### Method\nPOST\n\n### Endpoint\n/decision-forest/train\n\n### Parameters\n#### Query Parameters\n* **method** (string) - Optional - The computation method used by the decision forest classification. For CPU, options include `\"dense\"` and `\"hist\"`.\n\n#### Request Body\n**algorithmFPType** (string) - Optional - Default: `\"float\"` - The floating-point type for intermediate computations. Can be `\"float\"` or `\"double\"`.\n\n**binningStrategy** (string) - Optional - Default: `\"quantiles\"` - Used only with `method=\"hist\"` and CPU only. Selects the algorithm to calculate bin edges. `\"quantiles\"` results in bins with similar amounts of training data points. `\"averages\"` divides the range of values into equal-width bins.\n\n**bootstrap** (boolean) - Optional - Default: `true` - If true, the training set for a tree is a bootstrap sample. If false, the entire training set is used.\n\n**engine** (object) - Optional - Pointer to the random number generator engine. Used for bootstrap sampling, split feature selection, and MDA importance computation.\n\n**featuresPerNode** (integer) - Optional - Default: `0` - The number of features tried as possible splits per node. If `0`, the library uses \\(\\sqrt{p}\\) for classification and \\(p/3\\) for regression, where \\(p\\) is the number of features.\n\n**impurityThreshold** (number) - Optional - Default: `0` - The threshold for stopping criteria. If node impurity is smaller than this threshold, the node is not split.\n\n**maxBins** (integer) - Optional - Default: `256` - Used only with `method=\"hist\"`. Maximum number of discrete bins for continuous features. `0` disables bucketing.\n\n**maxLeafNodes** (integer) - Optional - Default: `0` - Maximum number of leaf nodes. If `0`, this parameter does not limit the number of leaf nodes, and trees grow in a depth-first fashion.\n\n**maxTreeDepth** (integer) - Optional - Default: `0` - Maximum tree depth. Default is `0` (unlimited).\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained decision forest model.\n- **training_report** (object) - Report containing metrics and information about the training process.\n\n#### Response Example"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## Decision Forest Parameters\n\n### Description\nConfiguration options for the Decision Forest algorithm.\n\n### Parameters\n\n#### Method Parameters\n- **method** (string) - Optional - Specifies the histogram computation method. Possible values: `defaultDense` (default, performance-oriented), `hist` (inexact histogram computation).\n\n#### GPU Specific Parameters\n- **hist** (string) - :ref:`inexact histogram computation method <df_inexact_hist_method>`\n\n#### Tree Construction Parameters\n- **minBinSize** (integer) - Optional - Default: 5. Used only with `method=\"hist\"`. Minimal number of observations in a bin.\n- **minImpurityDecreaseInSplitNode** (float) - Optional - Default: 0.0. Minimum amount of impurity decrease required to split a node.\n- **minObservationsInLeafNode** (integer) - Optional - Default: 1 for classification, 5 for regression. Minimum number of observations in the leaf node.\n- **minObservationsInSplitNode** (integer) - Optional - Default: 2. Minimum number of samples required to split an internal node.\n- **minWeightFractionInLeafNode** (float) - Optional - Default: 0.0. Minimum weighted fraction of the sum total of weights of all the input observations required to be at a leaf node (0.0 to 0.5).\n- **nTrees** (integer) - Optional - Default: 100. The number of trees in the forest.\n- **observationsPerTreeFraction** (float) - Optional - Default: 1. Fraction of the training set used to form the bootstrap set for a single tree training (0 < observationsPerTreeFraction <= 1). Observations are sampled randomly with replacement.\n\n#### Computation and Feature Importance Parameters\n- **resultsToCompute** (integer) - Optional - Default: 0. A 64-bit integer flag specifying which extra characteristics of the decision forest to compute. Use bitwise OR for combinations. Possible values: `computeOutOfBagError`, `computeOutOfBagErrorPerObservation`.\n- **varImportance** (string) - Optional - Default: \"none\". The variable importance computation mode. Possible values: `none`, `MDI` (Mean Decrease of Impurity), `MDA_Raw` (Mean Decrease of Accuracy), `MDA_Scaled` (scaled MDA_Raw).\n\n#### Deprecated Parameters\n- **seed** (integer) - DEPRECATED. Default: 777. Seed for the random number generator.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response Example (Success)"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## Linear Regression Training (Distributed Processing)\n\n### Description\nThis endpoint facilitates training a Linear Regression model in a distributed processing mode, which involves a two-step computation schema: one on local nodes and another on a master node.\n\n### Method\nPOST\n\n### Endpoint\n/algorithms/linear_regression/train/distributed\n\n### Parameters\n#### Query Parameters\n- **computeStep** (string) - Required - Specifies the step of the distributed computation. Options: 'step1Local' (for local nodes) or 'step2Master' (for the master node).\n- **algorithmFPType** (string) - Optional - The floating-point type for intermediate computations. Can be 'float' or 'double'. Default is 'float'.\n- **method** (string) - Optional - Available methods for training: 'defaultDense' (normal equations). Default is 'defaultDense'.\n\n#### Request Body (depends on `computeStep` value)\n- **step1Local**: Requires input data and dependent variables.\n  - **data** (NumericTable) - Required - Pointer to the data block on local nodes.\n  - **dependentVariables** (NumericTable) - Required - Pointer to the dependent variables on local nodes.\n- **step2Master**: Requires aggregated results from local nodes.\n  - **localResults** (object) - Required - Aggregated results from the 'step1Local' computation on all nodes.\n\n### Request Example (Step 1)"
+    },
+    {
+      "language": "unknown",
+      "code": "### Request Example (Step 2)"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained linear regression model (available after step2Master).\n- **output** (object) - Status or results of the computation step.\n\n#### Response Example (Step 1)"
+    },
+    {
+      "language": "unknown",
+      "code": "#### Response Example (Step 2)"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## Linear Regression Training (Online Processing)\n\n### Description\nThis endpoint details the parameters required for training a Linear Regression model in an online processing mode. It covers input data, dependent variables, and algorithm-specific training parameters.\n\n### Method\nPOST\n\n### Endpoint\n/algorithms/linear_regression/train/online\n\n### Parameters\n#### Request Body\n- **data** (NumericTable) - Required - Pointer to the \\(n_i \\times p\\) numeric table representing the current data block.\n- **dependentVariables** (NumericTable) - Required - Pointer to the \\(n_i \\times k\\) numeric table with responses.\n- **algorithmFPType** (string) - Optional - The floating-point type for intermediate computations. Can be 'float' or 'double'. Default is 'float'.\n- **method** (string) - Optional - Available methods for training: 'defaultDense' (normal equations), 'qrDense' (QR decomposition). Default is 'defaultDense'.\n- **interceptFlag** (boolean) - Optional - Flag to compute \\(\\beta_{0_j}\\). Default is true.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained linear regression model.\n- **output** (object) - Details on the training output. Refer to :ref:`regression_usage_model` for more information.\n\n#### Response Example"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## Algorithm Parameters for Linear Regression Quality Metrics\n\n### Description\nConfigure the parameters used for calculating the quality metrics of a linear regression model.\n\n### Parameters\n\n#### Algorithm Parameters\n\n- **floatingPointType** (string) - Optional - The floating-point type that the algorithm uses for intermediate computations. Can be ``float`` or ``double``.\n- **method** (string) - Optional - Performance-oriented computation method. Currently, only ``defaultDense`` is supported.\n- **numBeta** (integer) - Optional - Number of beta coefficients used for prediction. Defaults to 0.\n- **numBetaReducedModel** (integer) - Optional - Number of beta coefficients (:math:`p_0`) used for prediction with the reduced linear regression model, where :math:`p - p_0` out of :math:`p` beta coefficients are set to zero. Defaults to 0."
+    },
+    {
+      "language": "cpp",
+      "code": "#include \"oneapi/dal/algo/linear_regression.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n#include \"oneapi/dal/exceptions.hpp\"\n\nnamespace dal = oneapi::dal;\nnamespace result_options = dal::linear_regression::result_options;\n\nint main() {\n    // Load training data\n    const auto x_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"linear_regression_train_data.csv\" });\n    const auto y_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"linear_regression_train_responses.csv\" });\n\n    // Configure to return both coefficients and intercept\n    const auto lr_desc = dal::linear_regression::descriptor<>()\n        .set_result_options(result_options::coefficients | result_options::intercept);\n\n    // Train model\n    const auto train_result = dal::train(lr_desc, x_train, y_train);\n\n    std::cout << \"Coefficients:\\n\" << train_result.get_coefficients() << std::endl;\n    std::cout << \"Intercept:\\n\" << train_result.get_intercept() << std::endl;\n\n    // Extract model for inference\n    const auto lr_model = train_result.get_model();\n\n    // Make predictions on test data\n    const auto x_test = dal::read<dal::table>(\n        dal::csv::data_source{ \"linear_regression_test_data.csv\" });\n    const auto test_result = dal::infer(lr_desc, x_test, lr_model);\n\n    std::cout << \"Predictions:\\n\" << test_result.get_responses() << std::endl;\n\n    return 0;\n}"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## Logistic Regression Training Parameters\n\n### Description\nParameters for the logistic regression batch training algorithm, in addition to standard classifier parameters.\n\n### Method\nNot Applicable (Configuration Parameters)\n\n### Endpoint\nNot Applicable\n\n### Parameters\n#### Path Parameters\nNone\n\n#### Query Parameters\nNone\n\n#### Request Body\n- **algorithmFPType** (string) - Optional - Default: `\"float\"` - The floating-point type for intermediate computations. Can be `\"float\"` or `\"double\"`.\n- **method** (string) - Optional - Default: `\"defaultDense\"` - The computation method used. Currently, only `\"defaultDense\"` is supported.\n- **nClasses** (integer) - Required - The number of classes.\n- **interceptFlag** (boolean) - Optional - Default: `true` - Flag to indicate if :math:`\\theta_j` needs to be computed.\n- **penaltyL1** (number) - Optional - Default: `0` - L1 regularization coefficient. Not supported on GPU.\n- **penaltyL2** (number) - Optional - Default: `0` - L2 regularization coefficient.\n- **optimizationSolver** (string) - Optional - Default: `SGD solver` - The optimization procedure to use. Options include `SGD solver`, `ADAGRAD solver`, `LBFGS solver`, `SAGA solver`.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained logistic regression model with updated beta coefficients.\n\n#### Response Example"
+    },
+    {
+      "language": "APIDOC",
+      "code": "## POST /knn/train\n\n### Description\nTrains a k-Nearest Neighbors (k-NN) classification model using the provided descriptor and input data.\n\n### Method\nPOST\n\n### Endpoint\n/knn/train\n\n### Parameters\n#### Path Parameters\nNone\n\n#### Query Parameters\nNone\n\n#### Request Body\n- **desc** (knn::descriptor) - Required - k-NN algorithm descriptor.\n- **input** (knn::train_input) - Required - Input data for the training operation.\n  - **data** (table) - Required - Feature vectors of the training data.\n  - **labels** (table) - Required - Ground truth labels for the training data.\n\n### Request Example"
+    },
+    {
+      "language": "unknown",
+      "code": "### Response\n#### Success Response (200)\n- **model** (knn::model) - The trained k-NN model.\n- **dataframe** (table) - Optional additional information or results from training.\n\n#### Response Example"
+    }
+  ],
+  "topic_details": [
+    {
+      "topic": "API reference function signatures classes train compute infer parameters",
+      "text_length": 9844,
+      "code_blocks": 10,
+      "snippets": [
+        {
+          "language": "APIDOC",
+          "code": "## POST /api/gbt/classification/train\n\n### Description\nTrains a Gradient Boosted Trees classification model with specified parameters.\n\n### Method\nPOST\n\n### Endpoint\n/api/gbt/classification/train\n\n### Parameters\n#### Query Parameters\n- **algorithmFPType** (string) - Optional - The floating-point type for intermediate computations. Can be 'float' or 'double'.\n- **method** (string) - Optional - The computation method. Supported: 'defaultDense'.\n- **nClasses** (integer) - Required - The number of classes.\n- **loss** (string) - Optional - The loss function type. Default: 'crossEntropy'.\n\n### Request Body\n(No specific request body schema defined, parameters are expected as query parameters or within a configuration object)\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained Gradient Boosted Trees classification model.\n- **status** (string) - Indicates the success of the operation.\n\n#### Response Example"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/algo/decision_forest.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\nnamespace df = dal::decision_forest;\n\nint main() {\n    // Load training data and labels\n    const auto x_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_train_data.csv\" });\n    const auto y_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_train_label.csv\" });\n\n    // Configure decision forest with detailed parameters\n    const auto df_desc = df::descriptor<>{}\n        .set_class_count(5)                           // 5 classes\n        .set_tree_count(10)                           // 10 trees in forest\n        .set_features_per_node(1)                     // Features per split\n        .set_min_observations_in_leaf_node(8)         // Min samples in leaf\n        .set_min_observations_in_split_node(16)       // Min samples to split\n        .set_min_weight_fraction_in_leaf_node(0.0)    // Weight threshold\n        .set_min_impurity_decrease_in_split_node(0.0) // Impurity threshold\n        .set_variable_importance_mode(df::variable_importance_mode::mdi)\n        .set_error_metric_mode(df::error_metric_mode::out_of_bag_error)\n        .set_infer_mode(df::infer_mode::class_responses |\n                        df::infer_mode::class_probabilities)\n        .set_voting_mode(df::voting_mode::weighted);\n\n    // Train the model\n    const auto result_train = dal::train(df_desc, x_train, y_train);\n\n    // Access feature importance and training metrics\n    std::cout << \"Variable importance:\\n\"\n              << result_train.get_var_importance() << std::endl;\n    std::cout << \"OOB error: \" << result_train.get_oob_err() << std::endl;\n\n    // Perform inference on test set\n    const auto x_test = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_test_data.csv\" });\n    const auto result_infer = dal::infer(df_desc, result_train.get_model(), x_test);\n\n    // Get both class predictions and probabilities\n    std::cout << \"Predictions:\\n\" << result_infer.get_responses() << std::endl;\n    std::cout << \"Probabilities:\\n\" << result_infer.get_probabilities() << std::endl;\n\n    return 0;\n}"
+        },
+        {
+          "language": "APIDOC",
+          "code": "## POST /knn/infer\n\n### Description\nPerforms k-NN classification inference on new data using a pre-trained k-NN model.\n\n### Method\nPOST\n\n### Endpoint\n/knn/infer\n\n### Parameters\n#### Path Parameters\nNone\n\n#### Query Parameters\nNone\n\n#### Request Body\n- **desc** (knn::descriptor) - Required - k-NN algorithm descriptor.\n- **model** (knn::model) - Required - The pre-trained k-NN model.\n- **input** (knn::infer_input) - Required - Input data for the inference operation.\n  - **data** (table) - Required - Feature vectors of the data to classify.\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **labels** (table) - Predicted class labels for the input data.\n\n#### Response Example"
+        }
+      ]
+    },
+    {
+      "topic": "table homogen_table csr_table data management constructor",
+      "text_length": 6707,
+      "code_blocks": 7,
+      "snippets": [
+        {
+          "language": "cpp",
+          "code": "float data[nColumns * nRows];\nHomogenNumericTable<float> table(data, nColumns, nRows);"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/table/common.hpp\"\n#include \"oneapi/dal/table/homogen.hpp\"\n#include \"oneapi/dal/table/row_accessor.hpp\"\n\nnamespace dal = oneapi::dal;\n\ntemplate <typename Type = float>\ndal::table get_table(std::int64_t row_count, std::int64_t column_count) {\n    const std::int64_t elem_count = row_count * column_count;\n    auto* const raw_data = new Type[elem_count];\n\n    // Create array with custom deleter\n    auto data = dal::array<Type>(raw_data, elem_count,\n                                 [](Type* const ptr) -> void {\n                                     delete[] ptr;\n                                 });\n\n    // Fill with structured data\n    for (std::int64_t row = 0l; row < row_count; ++row) {\n        for (std::int64_t col = 0l; col < column_count; ++col) {\n            const std::int64_t idx = row * column_count + col;\n            raw_data[idx] = static_cast<Type>(row * col);\n        }\n    }\n\n    return dal::homogen_table::wrap(data, row_count, column_count);\n}\n\nint main() {\n    constexpr std::int64_t row_count = 4;\n    constexpr std::int64_t column_count = 3;\n\n    // Create table\n    const dal::table test_table = get_table(row_count, column_count);\n\n    // Query table properties\n    std::cout << \"Rows: \" << test_table.get_row_count() << '\\n';\n    std::cout << \"Columns: \" << test_table.get_column_count() << '\\n';\n\n    // Check table type\n    const bool is_homogen = test_table.get_kind() == dal::homogen_table::kind();\n    std::cout << \"Is homogeneous: \" << is_homogen << '\\n';\n\n    // Access data using row accessor\n    dal::row_accessor<const double> accessor{ test_table };\n    dal::array<double> slice = accessor.pull({ 1l, 3l });  // Rows 1-2\n\n    std::cout << \"Row slice: \" << slice << std::endl;\n\n    return 0;\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "#include <sycl/sycl.hpp>\n#include <iostream>\n\n#include \"oneapi/dal/table/homogen.hpp\"\n#include \"oneapi/dal/table/row_accessor.hpp\"\n\nusing namespace oneapi;\n\nint main() {\n   sycl::queue queue { sycl::default_selector() };\n\n   constexpr float host_data[] = {\n      1.0f, 1.5f, 2.0f,\n      2.1f, 3.2f, 3.7f,\n      4.0f, 4.9f, 5.0f,\n      5.2f, 6.1f, 6.2f\n   };\n\n   constexpr std::int64_t row_count = 4;\n   constexpr std::int64_t column_count = 3;\n\n   auto shared_data = sycl::malloc_shared<float>(row_count * column_count, queue);\n   auto event = queue.memcpy(shared_data, host_data, sizeof(float) * row_count * column_count);\n   auto t = dal::homogen_table::wrap(queue, shared_data, row_count, column_count, { event });\n\n   // Accessing second and third rows of the table\n   dal::row_accessor<const float> acc { t };\n\n   auto block = acc.pull(queue, {1, 3});\n   for(std::int64_t i = 0; i < block.get_count(); i++) {\n      std::cout << block[i] << \", \";\n   }\n   std::cout << std::endl;\n\n   sycl::free(shared_data, queue);\n   return 0;\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/table/homogen.hpp\"\n\n// Create table with type safety\nauto table = homogen_table::wrap(data, rows, cols);\n\n// Access data\nauto accessor = row_accessor<const float>(table);\nauto subset = accessor.pull({0, 10}); // Rows 0-9\nconst float * data_block subset.get_data();\n\n// Pull memory with device access\nauto subset_gpu = accessor.pull({0, 10}, sycl::usm::alloc::device);\n// SYCL USM pointer\nconst float * gpu_data_block subset_gpu.get_data();"
+        },
+        {
+          "language": "cpp",
+          "code": "HomogenNumericTable<float> table(nColumns, nRows, NumericTable::doNotAllocate);\n    float data[nColumns * nRows];\n    table.setArray(data, nRows);"
+        }
+      ]
+    },
+    {
+      "topic": "SVM support vector machine training inference parameters kernel",
+      "text_length": 6961,
+      "code_blocks": 5,
+      "snippets": [
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/algo/svm.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\nnamespace svm = dal::svm;\n\nint main() {\n    // Load training data\n    const auto x_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"svm_two_class_train_dense_data.csv\" });\n    const auto y_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"svm_two_class_train_dense_label.csv\" });\n\n    // Configure linear kernel\n    const auto kernel_desc = dal::linear_kernel::descriptor{},\n        .set_scale(1.0)\n        .set_shift(0.0);\n\n    // Configure SVM with kernel and parameters\n    const auto svm_desc = svm::descriptor{ kernel_desc }\n        .set_c(1.0)                      // Regularization parameter\n        .set_accuracy_threshold(0.001)   // Convergence threshold\n        .set_max_iteration_count(100)    // Max iterations\n        .set_cache_size(200.0)           // Cache size in MB\n        .set_tau(1e-6);                  // Stopping criterion\n\n    // Train SVM model\n    const auto result_train = dal::train(svm_desc, x_train, y_train);\n\n    std::cout << \"Biases:\\n\" << result_train.get_biases() << std::endl;\n    std::cout << \"Support indices:\\n\"\n              << result_train.get_support_indices() << std::endl;\n\n    // Perform inference\n    const auto x_test = dal::read<dal::table>(\n        dal::csv::data_source{ \"svm_two_class_test_dense_data.csv\" });\n    const auto result_infer = dal::infer(svm_desc, result_train.get_model(), x_test);\n\n    std::cout << \"Decision function:\\n\"\n              << result_infer.get_decision_function() << std::endl;\n    std::cout << \"Predicted labels:\\n\"\n              << result_infer.get_responses() << std::endl;\n\n    return 0;\n}"
+        },
+        {
+          "language": "APIDOC",
+          "code": "## SVM Inference\n\n### Description\nPerforms inference using a trained Support Vector Machine (SVM) model to predict labels for new data.\n\n### Method\n`svm::infer`\n\n### Endpoint\nN/A (This is a library API, not a REST endpoint)\n\n### Parameters\n#### Input\n- **desc** (svm::descriptor) - The SVM algorithm descriptor.\n- **input** (svm::infer_input) - The input data for the inference operation, typically containing the features of the data points to classify.\n\n### Preconditions for Inference Input\n- `input.data.is_empty == false`\n\n### Result\n- **infer_result** (svm::infer_result) - The result of the inference operation, containing the predicted labels or scores.\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **predictions** (svm::infer_result) - The result containing predictions for the input data.\n\n#### Response Example"
+        },
+        {
+          "language": "APIDOC",
+          "code": "## SVM Training\n\n### Description\nTrains a Support Vector Machine (SVM) model using the provided descriptor and input data.\n\n### Method\n`svm::train`\n\n### Endpoint\nN/A (This is a library API, not a REST endpoint)\n\n### Parameters\n#### Input\n- **desc** (svm::descriptor) - The SVM algorithm descriptor.\n- **input** (svm::train_input) - The input data for the training operation, including features and labels.\n\n### Preconditions for Training Input\n- `input.data.is_empty == false`\n- `input.labels.is_empty == false`\n- `input.labels.column_count == 1`\n- `input.data.row_count == input.labels.row_count`\n\n### Result\n- **train_result** (svm::train_result) - The result of the training operation, typically containing the trained model.\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **trained_model** (svm::model) - The trained SVM model.\n\n#### Response Example"
+        }
+      ]
+    },
+    {
+      "topic": "K-Means clustering training compute centroids assignments",
+      "text_length": 7855,
+      "code_blocks": 5,
+      "snippets": [
+        {
+          "language": "APIDOC",
+          "code": "## POST /api/kmeans/train\n\n### Description\nTrains a K-Means model on the provided data.\n\n### Method\nPOST\n\n### Endpoint\n/api/kmeans/train\n\n### Parameters\n#### Request Body\n- **desc** (object) - Required - K-Means algorithm descriptor containing parameters like `cluster_count` and `max_iteration_count`.\n- **input** (object) - Required - Input data for the training operation, including `data` and optional `initial_centroids`.\n  - **data** (object) - Required - The input dataset.\n  - **initial_centroids** (object) - Optional - Initial centroids for the K-Means algorithm.\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **labels** (array) - Array of cluster assignments for each data point.\n- **iteration_count** (integer) - The number of iterations performed.\n- **model** (object) - The trained K-Means model containing the final centroids.\n  - **centroids** (object) - The calculated centroids for each cluster.\n\n#### Response Example"
+        },
+        {
+          "language": "cpp",
+          "code": "// Copyright 2021 Intel Corporation\n//\n// Licensed under the Apache License, Version 2.0 (the \"License\");\n// you may not use this file except in compliance with the License.\n// You may obtain a copy of the License at\n//\n//     http://www.apache.org/licenses/LICENSE-2.0\n//\n// Unless required by applicable law or agreed to in writing, software\n// distributed under the License is distributed on an \"AS IS\" BASIS,\n// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n// See the License for the specific language governing permissions and\n// limitations under the License.\n\n#include \"oneapi/dal/algo/kmeans.hpp\"\n#include \"oneapi/dal/table/common.hpp\"\n#include <iostream>\n\n// Assuming 'table' and 'print_table', 'print_value' are defined elsewhere in the OneDAL library\n\nkmeans::model<> run_training(const table& data,\n                              const table& initial_centroids) {\n   const auto kmeans_desc = kmeans::descriptor<float>{} \\\n      .set_cluster_count(10) \\\n      .set_max_iteration_count(50) \\\n      .set_accuracy_threshold(1e-4);\n\n   const auto result = train(kmeans_desc, data, initial_centroids);\n\n   print_table(\"labels\", result.get_labels());\n   print_table(\"centroids\", result.get_model().get_centroids());\n   print_value(\"objective\", result.get_objective_function_value());\n\n   return result.get_model();\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "template <typename Descriptor>\nkmeans::train_result train(const Descriptor& desc,\n                         const kmeans::train_input& input)\n\n:param desc: K-Means algorithm descriptor :expr:`kmeans::descriptor`\n:param input: Input data for the training operation\n\nPreconditions\n   | :expr:`input.data.has_data == true`\n   | :expr:`input.initial_centroids.row_count == desc.cluster_count`\n   | :expr:`input.initial_centroids.column_count == input.data.column_count`\nPostconditions\n   | :expr:`result.labels.row_count == input.data.row_count`\n   | :expr:`result.labels.column_count == 1`\n   | :expr:`result.labels[i] >= 0`\n   | :expr:`result.labels[i] < desc.cluster_count`\n   | :expr:`result.iteration_count <= desc.max_iteration_count`\n   | :expr:`result.model.centroids.row_count == desc.cluster_count`\n   | :expr:`result.model.centroids.column_count == input.data.column_count`"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"daal.h\"\n#include \"service.h\"\n\nusing namespace daal;\nusing namespace daal::algorithms;\nusing namespace daal::data_management;\n\nint main(int argc, char* argv[]) {\n    const std::string datasetFileName = \"../data/batch/kmeans_dense.csv\";\n\n    // Load data using FileDataSource\n    FileDataSource<CSVFeatureManager> dataSource(\n        datasetFileName,\n        DataSource::doAllocateNumericTable,\n        DataSource::doDictionaryFromContext);\n    dataSource.loadDataBlock();\n\n    // Initialize centroids\n    const size_t nClusters = 20;\n    kmeans::init::Batch<float,kmeans::init::randomDense> init(nClusters);\n    init.input.set(kmeans::init::data, dataSource.getNumericTable());\n    init.compute();\n    NumericTablePtr centroids = init.getResult()->get(kmeans::init::centroids);\n\n    // Create K-Means algorithm\n    const size_t nIterations = 5;\n    kmeans::Batch<> algorithm(nClusters, nIterations);\n    algorithm.input.set(kmeans::data, dataSource.getNumericTable());\n    algorithm.input.set(kmeans::inputCentroids, centroids);\n\n    // Configure results to compute\n    algorithm.parameter().resultsToEvaluate =\n        kmeans::computeCentroids |\n        kmeans::computeAssignments |\n        kmeans::computeExactObjectiveFunction;\n\n    // Execute\n    algorithm.compute();\n\n    // Print results\n    printNumericTable(algorithm.getResult()->get(kmeans::assignments), \"First 10 cluster assignments:\", 10);\n    printNumericTable(algorithm.getResult()->get(kmeans::centroids), \"First 10 dimensions of centroids:\", 20, 10);\n    printNumericTable(algorithm.getResult()->get(kmeans::objectiveFunction), \"Objective function value:\");\n\n    return 0;\n}"
+        }
+      ]
+    },
+    {
+      "topic": "PCA principal component analysis training transform",
+      "text_length": 4503,
+      "code_blocks": 4,
+      "snippets": [
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/algo/pca.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\nnamespace pca = dal::pca;\n\nint main() {\n    // Load data\n    const auto x_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"pca_non_normalized.csv\" });\n\n    // Configure PCA with 5 components and mean centering\n    const auto pca_desc = pca::descriptor<float, pca::method::cov>()\n        .set_component_count(5)\n        .set_deterministic(true)\n        .set_normalization_mode(pca::normalization::mean_center)\n        .set_whiten(true);  // Apply whitening transformation\n\n    // Train PCA model\n    const auto result_train = dal::train(pca_desc, x_train);\n\n    // Access all PCA results\n    std::cout << \"Eigenvectors:\\n\" << result_train.get_eigenvectors() << std::endl;\n    std::cout << \"Eigenvalues:\\n\" << result_train.get_eigenvalues() << std::endl;\n    std::cout << \"Singular Values:\\n\" << result_train.get_singular_values() << std::endl;\n    std::cout << \"Variances:\\n\" << result_train.get_variances() << std::endl;\n    std::cout << \"Means:\\n\" << result_train.get_means() << std::endl;\n    std::cout << \"Explained variances ratio:\\n\"\n              << result_train.get_explained_variances_ratio() << std::endl;\n\n    // Transform data to principal components\n    const auto result_infer = dal::infer(pca_desc, result_train.get_model(), x_train);\n    std::cout << \"Transformed data:\\n\" << result_infer.get_transformed_data() << std::endl;\n\n    return 0;\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "pca::model<> run_training(const table& data) {\n   const auto pca_desc = pca::descriptor<float>{} \n      .set_component_count(5)\n      .set_deterministic(true);\n\n   const auto result = train(pca_desc, data);\n\n   print_table(\"means\", result.get_means());\n   print_table(\"variances\", result.get_variances());\n   print_table(\"eigenvalues\", result.get_eigenvalues());\n   print_table(\"eigenvectors\", result.get_eigenvectors());\n\n   return result.get_model();\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "const auto pca_desc = dal::pca::descriptor<float>\n   .set_component_count(3)\n   .set_deterministic(true);\n\nconst dal::pca::train_result train_res = dal::train(queue, pca_desc, data);"
+        },
+        {
+          "language": "cpp",
+          "code": "template <typename Descriptor>\n              pca::train_result train(const Descriptor& desc,\n                                         const pca::train_input& input)"
+        }
+      ]
+    },
+    {
+      "topic": "decision forest classification regression training inference",
+      "text_length": 11263,
+      "code_blocks": 8,
+      "snippets": [
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/algo/decision_forest.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\nnamespace df = dal::decision_forest;\n\nint main() {\n    // Load training data and labels\n    const auto x_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_train_data.csv\" });\n    const auto y_train = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_train_label.csv\" });\n\n    // Configure decision forest with detailed parameters\n    const auto df_desc = df::descriptor<>{}\n        .set_class_count(5)                           // 5 classes\n        .set_tree_count(10)                           // 10 trees in forest\n        .set_features_per_node(1)                     // Features per split\n        .set_min_observations_in_leaf_node(8)         // Min samples in leaf\n        .set_min_observations_in_split_node(16)       // Min samples to split\n        .set_min_weight_fraction_in_leaf_node(0.0)    // Weight threshold\n        .set_min_impurity_decrease_in_split_node(0.0) // Impurity threshold\n        .set_variable_importance_mode(df::variable_importance_mode::mdi)\n        .set_error_metric_mode(df::error_metric_mode::out_of_bag_error)\n        .set_infer_mode(df::infer_mode::class_responses |\n                        df::infer_mode::class_probabilities)\n        .set_voting_mode(df::voting_mode::weighted);\n\n    // Train the model\n    const auto result_train = dal::train(df_desc, x_train, y_train);\n\n    // Access feature importance and training metrics\n    std::cout << \"Variable importance:\\n\"\n              << result_train.get_var_importance() << std::endl;\n    std::cout << \"OOB error: \" << result_train.get_oob_err() << std::endl;\n\n    // Perform inference on test set\n    const auto x_test = dal::read<dal::table>(\n        dal::csv::data_source{ \"df_classification_test_data.csv\" });\n    const auto result_infer = dal::infer(df_desc, result_train.get_model(), x_test);\n\n    // Get both class predictions and probabilities\n    std::cout << \"Predictions:\\n\" << result_infer.get_responses() << std::endl;\n    std::cout << \"Probabilities:\\n\" << result_infer.get_probabilities() << std::endl;\n\n    return 0;\n}"
+        },
+        {
+          "language": "APIDOC",
+          "code": "## POST /train\n\n### Description\nTrains a Decision Forest model based on the provided descriptor and input data. This function supports both classification and regression tasks.\n\n### Method\nPOST\n\n### Endpoint\n`/train`\n\n### Parameters\n\n#### Query Parameters\n- **desc** (`oneapi::dal::decision_forest::descriptor`) - Required - The descriptor for the Decision Forest algorithm configuration.\n- **input** (`oneapi::dal::decision_forest::train_input`) - Required - The input data and labels for the training operation.\n\n#### Request Body\n(Not applicable for this function signature, parameters are passed directly)\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n\n#### Success Response (200)\n- **result** (`oneapi::dal::decision_forest::train_result`) - The trained Decision Forest model.\n\n#### Response Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Preconditions\n- `input.data` must not be empty.\n- `input.labels` must not be empty.\n- `input.labels.column_count` must be 1.\n- `input.data.row_count` must equal `input.labels.row_count`.\n- If `desc.get_bootstrap() == true`, no additional constraints on `desc.get_variable_importance_mode()`.\n- If `desc.get_bootstrap() == false`, then `desc.get_variable_importance_mode()` must not be `variable_importance_mode::mda_raw` or `variable_importance_mode::mda_scaled`."
+        },
+        {
+          "language": "APIDOC",
+          "code": "## POST /decision-forest/train\n\n### Description\nTrains a decision forest model using batch processing. This endpoint allows configuration of various training parameters including data types, binning strategies, tree building methods, and feature importance calculation settings.\n\n### Method\nPOST\n\n### Endpoint\n/decision-forest/train\n\n### Parameters\n#### Query Parameters\n* **method** (string) - Optional - The computation method used by the decision forest classification. For CPU, options include `\"dense\"` and `\"hist\"`.\n\n#### Request Body\n**algorithmFPType** (string) - Optional - Default: `\"float\"` - The floating-point type for intermediate computations. Can be `\"float\"` or `\"double\"`.\n\n**binningStrategy** (string) - Optional - Default: `\"quantiles\"` - Used only with `method=\"hist\"` and CPU only. Selects the algorithm to calculate bin edges. `\"quantiles\"` results in bins with similar amounts of training data points. `\"averages\"` divides the range of values into equal-width bins.\n\n**bootstrap** (boolean) - Optional - Default: `true` - If true, the training set for a tree is a bootstrap sample. If false, the entire training set is used.\n\n**engine** (object) - Optional - Pointer to the random number generator engine. Used for bootstrap sampling, split feature selection, and MDA importance computation.\n\n**featuresPerNode** (integer) - Optional - Default: `0` - The number of features tried as possible splits per node. If `0`, the library uses \\(\\sqrt{p}\\) for classification and \\(p/3\\) for regression, where \\(p\\) is the number of features.\n\n**impurityThreshold** (number) - Optional - Default: `0` - The threshold for stopping criteria. If node impurity is smaller than this threshold, the node is not split.\n\n**maxBins** (integer) - Optional - Default: `256` - Used only with `method=\"hist\"`. Maximum number of discrete bins for continuous features. `0` disables bucketing.\n\n**maxLeafNodes** (integer) - Optional - Default: `0` - Maximum number of leaf nodes. If `0`, this parameter does not limit the number of leaf nodes, and trees grow in a depth-first fashion.\n\n**maxTreeDepth** (integer) - Optional - Default: `0` - Maximum tree depth. Default is `0` (unlimited).\n\n### Request Example"
+        }
+      ]
+    },
+    {
+      "topic": "linear regression training compute parameters",
+      "text_length": 8157,
+      "code_blocks": 8,
+      "snippets": [
+        {
+          "language": "APIDOC",
+          "code": "## Linear Regression Training (Distributed Processing)\n\n### Description\nThis endpoint facilitates training a Linear Regression model in a distributed processing mode, which involves a two-step computation schema: one on local nodes and another on a master node.\n\n### Method\nPOST\n\n### Endpoint\n/algorithms/linear_regression/train/distributed\n\n### Parameters\n#### Query Parameters\n- **computeStep** (string) - Required - Specifies the step of the distributed computation. Options: 'step1Local' (for local nodes) or 'step2Master' (for the master node).\n- **algorithmFPType** (string) - Optional - The floating-point type for intermediate computations. Can be 'float' or 'double'. Default is 'float'.\n- **method** (string) - Optional - Available methods for training: 'defaultDense' (normal equations). Default is 'defaultDense'.\n\n#### Request Body (depends on `computeStep` value)\n- **step1Local**: Requires input data and dependent variables.\n  - **data** (NumericTable) - Required - Pointer to the data block on local nodes.\n  - **dependentVariables** (NumericTable) - Required - Pointer to the dependent variables on local nodes.\n- **step2Master**: Requires aggregated results from local nodes.\n  - **localResults** (object) - Required - Aggregated results from the 'step1Local' computation on all nodes.\n\n### Request Example (Step 1)"
+        },
+        {
+          "language": "unknown",
+          "code": "### Request Example (Step 2)"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained linear regression model (available after step2Master).\n- **output** (object) - Status or results of the computation step.\n\n#### Response Example (Step 1)"
+        },
+        {
+          "language": "unknown",
+          "code": "#### Response Example (Step 2)"
+        },
+        {
+          "language": "APIDOC",
+          "code": "## Linear Regression Training (Online Processing)\n\n### Description\nThis endpoint details the parameters required for training a Linear Regression model in an online processing mode. It covers input data, dependent variables, and algorithm-specific training parameters.\n\n### Method\nPOST\n\n### Endpoint\n/algorithms/linear_regression/train/online\n\n### Parameters\n#### Request Body\n- **data** (NumericTable) - Required - Pointer to the \\(n_i \\times p\\) numeric table representing the current data block.\n- **dependentVariables** (NumericTable) - Required - Pointer to the \\(n_i \\times k\\) numeric table with responses.\n- **algorithmFPType** (string) - Optional - The floating-point type for intermediate computations. Can be 'float' or 'double'. Default is 'float'.\n- **method** (string) - Optional - Available methods for training: 'defaultDense' (normal equations), 'qrDense' (QR decomposition). Default is 'defaultDense'.\n- **interceptFlag** (boolean) - Optional - Flag to compute \\(\\beta_{0_j}\\). Default is true.\n\n### Request Example"
+        }
+      ]
+    },
+    {
+      "topic": "logistic regression training inference binary multiclass",
+      "text_length": 6059,
+      "code_blocks": 4,
+      "snippets": [
+        {
+          "language": "APIDOC",
+          "code": "## Logistic Regression Training Parameters\n\n### Description\nParameters for the logistic regression batch training algorithm, in addition to standard classifier parameters.\n\n### Method\nNot Applicable (Configuration Parameters)\n\n### Endpoint\nNot Applicable\n\n### Parameters\n#### Path Parameters\nNone\n\n#### Query Parameters\nNone\n\n#### Request Body\n- **algorithmFPType** (string) - Optional - Default: `\"float\"` - The floating-point type for intermediate computations. Can be `\"float\"` or `\"double\"`.\n- **method** (string) - Optional - Default: `\"defaultDense\"` - The computation method used. Currently, only `\"defaultDense\"` is supported.\n- **nClasses** (integer) - Required - The number of classes.\n- **interceptFlag** (boolean) - Optional - Default: `true` - Flag to indicate if :math:`\\theta_j` needs to be computed.\n- **penaltyL1** (number) - Optional - Default: `0` - L1 regularization coefficient. Not supported on GPU.\n- **penaltyL2** (number) - Optional - Default: `0` - L2 regularization coefficient.\n- **optimizationSolver** (string) - Optional - Default: `SGD solver` - The optimization procedure to use. Options include `SGD solver`, `ADAGRAD solver`, `LBFGS solver`, `SAGA solver`.\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained logistic regression model with updated beta coefficients.\n\n#### Response Example"
+        },
+        {
+          "language": "APIDOC",
+          "code": "## Multi-class Classifier Training API\n\n### Description\nThis section details the parameters used for multi-class classifier training.\n\n### Method\nPOST\n\n### Endpoint\n/train/multiclass/svm\n\n### Parameters\n#### Query Parameters\n- **nClasses** (integer) - Required - The number of classes in the dataset.\n- **trainingAlgorithm** (pointer) - Optional - Pointer to the training algorithm. Defaults to the SVM two-class classifier.\n\n#### Request Body\n- **data** (NumericTable) - Required - Pointer to the training data.\n- **labels** (NumericTable) - Required - Pointer to the training data labels.\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **model** (pointer) - Pointer to the trained multi-class classifier model.\n\n#### Response Example"
+        }
+      ]
+    },
+    {
+      "topic": "KNN k-nearest neighbors training inference search",
+      "text_length": 5598,
+      "code_blocks": 7,
+      "snippets": [
+        {
+          "language": "APIDOC",
+          "code": "## POST /knn/train\n\n### Description\nTrains a k-Nearest Neighbors (k-NN) classification model using the provided descriptor and input data.\n\n### Method\nPOST\n\n### Endpoint\n/knn/train\n\n### Parameters\n#### Path Parameters\nNone\n\n#### Query Parameters\nNone\n\n#### Request Body\n- **desc** (knn::descriptor) - Required - k-NN algorithm descriptor.\n- **input** (knn::train_input) - Required - Input data for the training operation.\n  - **data** (table) - Required - Feature vectors of the training data.\n  - **labels** (table) - Required - Ground truth labels for the training data.\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **model** (knn::model) - The trained k-NN model.\n- **dataframe** (table) - Optional additional information or results from training.\n\n#### Response Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Preconditions\n- `input.data.has_data == true`\n- `input.labels.has_data == true`\n- `input.data.row_count == input.labels.row_count`\n- `input.labels.column_count == 1`\n- `input.labels[i] >= 0`\n- `input.labels[i] < desc.class_count`"
+        },
+        {
+          "language": "cpp",
+          "code": "knn::model<> run_training(const table& data,\n                          const table& labels) {\n     const std::int64_t class_count = 10;\n     const std::int64_t neighbor_count = 5;\n     const auto knn_desc = knn::descriptor<float>{class_count, neighbor_count};\n\n     const auto result = train(knn_desc, data, labels);\n\n     return result.get_model();\n  }"
+        },
+        {
+          "language": "APIDOC",
+          "code": "## POST /knn/infer\n\n### Description\nPerforms k-NN classification inference on new data using a pre-trained k-NN model.\n\n### Method\nPOST\n\n### Endpoint\n/knn/infer\n\n### Parameters\n#### Path Parameters\nNone\n\n#### Query Parameters\nNone\n\n#### Request Body\n- **desc** (knn::descriptor) - Required - k-NN algorithm descriptor.\n- **model** (knn::model) - Required - The pre-trained k-NN model.\n- **input** (knn::infer_input) - Required - Input data for the inference operation.\n  - **data** (table) - Required - Feature vectors of the data to classify.\n\n### Request Example"
+        }
+      ]
+    },
+    {
+      "topic": "gradient boosted trees training classification regression",
+      "text_length": 6542,
+      "code_blocks": 5,
+      "snippets": [
+        {
+          "language": "APIDOC",
+          "code": "## POST /api/gbt/classification/train\n\n### Description\nTrains a Gradient Boosted Trees classification model with specified parameters.\n\n### Method\nPOST\n\n### Endpoint\n/api/gbt/classification/train\n\n### Parameters\n#### Query Parameters\n- **algorithmFPType** (string) - Optional - The floating-point type for intermediate computations. Can be 'float' or 'double'.\n- **method** (string) - Optional - The computation method. Supported: 'defaultDense'.\n- **nClasses** (integer) - Required - The number of classes.\n- **loss** (string) - Optional - The loss function type. Default: 'crossEntropy'.\n\n### Request Body\n(No specific request body schema defined, parameters are expected as query parameters or within a configuration object)\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **model** (object) - The trained Gradient Boosted Trees classification model.\n- **status** (string) - Indicates the success of the operation.\n\n#### Response Example"
+        },
+        {
+          "language": "APIDOC",
+          "code": "## Gradient Boosted Trees Training Parameters (Batch Processing)\n\n### Description\nThis API endpoint allows for the training of Gradient Boosted Trees models using batch processing. The following parameters control the training process:\n\n### Method\nPOST\n\n### Endpoint\n`/uxlfoundation/onedal/train/gradient-boosted-trees/batch`\n\n### Parameters\n#### Query Parameters\n- **splitMethod** (string) - Optional - Default: `\"inexact\"` - Split computation mode. Possible values: `\"inexact\"` (bucketed features) or `\"exact\"` (all splits).\n- **maxIterations** (integer) - Optional - Default: `50` - Maximal number of iterations (trees) in the model.\n- **maxTreeDepth** (integer) - Optional - Default: `6` - Maximal tree depth. `0` means unlimited depth.\n- **shrinkage** (float) - Optional - Default: `0.3` - Learning rate (0, 1]. Scales the contribution of each tree.\n- **minSplitLoss** (float) - Optional - Default: `0` - Minimal loss reduction required for a further split on a leaf node. Range: `[0, infinity)`.\n- **lambda** (float) - Optional - Default: `1` - L2 regularization parameter on weights. Range: `[0, infinity)`.\n- **observationsPerTreeFraction** (float) - Optional - Default: `1` - Fraction of training set used for single tree training. `0 < fraction <= 1`.\n- **featuresPerNode** (integer) - Optional - Default: `0` - Number of features tried per node. `0` means all features are used.\n- **minObservationsInLeafNode** (integer) - Optional - Default: `5` - Minimal number of observations in a leaf node.\n- **memorySavingMode** (boolean) - Optional - Default: `false` - If true, uses memory-saving (but slower) mode.\n- **engine** (object) - Optional - Default: `SharePtr< engines:: mt19937:: Batch>()` - Pointer to the random number generator.\n- **maxBins** (integer) - Optional - Default: `256` - Used with `\"inexact\"` split method only. Maximal number of discrete bins for continuous features.\n- **minBinSize** (integer) - Optional - Default: `5` - Used with `\"inexact\"` split method only. Minimal number of observations in a bin.\n\n### Request Example"
+        },
+        {
+          "language": "unknown",
+          "code": "### Response\n#### Success Response (200)\n- **model_id** (string) - Identifier for the trained model.\n\n#### Response Example"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"gradient_boosted_trees/gbt_reg_dense_batch.cpp\""
+        }
+      ]
+    },
+    {
+      "topic": "CSV data source reader loading data",
+      "text_length": 4381,
+      "code_blocks": 4,
+      "snippets": [
+        {
+          "language": "cpp",
+          "code": "#include <iostream>\n#include <fstream>\n\n#include \"oneapi/dal/algo/read.hpp\"\n#include \"oneapi/dal/table/csv.hpp\"\n\nint main() {\n    // Create a dummy CSV file for the example\n    std::ofstream ofs(\"data.csv\");\n    ofs << \"1,2,3\\n4,5,6\\n\";\n    ofs.close();\n\n    // Create a data source object\n    const auto data_source = dal::csv::data_source{ \"data.csv\" };\n\n    // Read the data into a table\n    const auto table = dal::read(data_source);\n\n    // Print the table (optional)\n    std::cout << table << std::endl;\n\n    return 0;\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "using namespace oneapi;\n\nconst auto data_source = dal::csv::data_source(\"data.csv\", ',');\n\nconst auto table = dal::read<dal::table>(data_source);"
+        },
+        {
+          "language": "cpp",
+          "code": "enum class read_options : std::uint64_t {\n   none = 0,\n   parse_header = 1 << 0\n};\n\nconstexpr char default_delimiter = ',';\nconstexpr read_options default_read_options = read_options::none;\n\nclass data_source {\npublic:\n   data_source(const char *file_name,\n               char delimiter = default_delimiter,\n               read_options opts = default_read_options);\n\n   data_source(const std::string &file_name,\n               char delimiter = default_delimiter,\n               read_options opts = default_read_options);\n\n   std::string get_file_name() const;\n   char get_delimiter() const;\n   read_options get_read_options() const;\n};"
+        },
+        {
+          "language": "cpp",
+          "code": "// DAAL: Explicit data source management\nFileDataSource<CSVFeatureManager> dataSource(fileName, \n                                             DataSource::doAllocateNumericTable,\n                                             DataSource::doDictionaryFromContext);\ndataSource.loadDataBlock();\n\n// oneAPI CPU: Modern data loading\nconst auto input = dal::read<dal::table>(dal::csv::data_source{fileName});\n\n// oneAPI GPU: Queue-aware data loading  \nconst auto input = dal::read<dal::table>(queue, dal::csv::data_source{fileName});"
+        }
+      ]
+    },
+    {
+      "topic": "SYCL DPC++ queue device GPU compute",
+      "text_length": 6673,
+      "code_blocks": 5,
+      "snippets": [
+        {
+          "language": "cpp",
+          "code": "const auto queue = sycl::queue{ sycl::gpu_selector_v };"
+        },
+        {
+          "language": "cpp",
+          "code": "#include <sycl/sycl.hpp>\n\n#ifndef ONEDAL_DATA_PARALLEL\n#define ONEDAL_DATA_PARALLEL\n#endif\n\n#include \"oneapi/dal/algo/kmeans.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\n\nvoid run(sycl::queue &q) {\n    // Load data through SYCL queue for GPU processing\n    const auto x_train = dal::read<dal::table>(\n        q, dal::csv::data_source{ \"kmeans_dense_train_data.csv\" });\n    const auto initial_centroids = dal::read<dal::table>(\n        q, dal::csv::data_source{ \"kmeans_dense_train_centroids.csv\" });\n\n    // Configure descriptor (same API as CPU version)\n    const auto kmeans_desc = dal::kmeans::descriptor<>()\n                                 .set_cluster_count(20)\n                                 .set_max_iteration_count(5)\n                                 .set_accuracy_threshold(0.001);\n\n    // Train on GPU by passing queue\n    const auto result_train = dal::train(q, kmeans_desc, x_train, initial_centroids);\n\n    std::cout << \"GPU Iteration count: \" << result_train.get_iteration_count() << std::endl;\n    std::cout << \"Centroids:\\n\" << result_train.get_model().get_centroids() << std::endl;\n\n    // Inference on GPU\n    const auto x_test = dal::read<dal::table>(\n        q, dal::csv::data_source{ \"kmeans_dense_test_data.csv\" });\n    const auto result_test = dal::infer(q, kmeans_desc, result_train.get_model(), x_test);\n\n    std::cout << \"Predictions:\\n\" << result_test.get_responses() << std::endl;\n}\n\nint main(int argc, char const *argv[]) {\n    // Iterate through available devices (CPU, GPU, etc.)\n    for (auto d : list_devices()) {\n        std::cout << \"Running on \"\n                  << d.get_platform().get_info<sycl::info::platform::name>()\n                  << \", \" << d.get_info<sycl::info::device::name>() << \"\\n\";\n        auto q = sycl::queue{ d };\n        run(q);\n    }\n    return 0;\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "template <typename Float>\nsycl::event gpu_compute(sycl::queue& q,\n                       const Float * data,  // SYCL USM data pointer\n                       std::int64_t n,\n                       const std::vector<sycl::event>& deps) {\n    return q.submit([&](sycl::handler& cgh) {\n        cgh.parallel_for(sycl::nd_range<1>(n, 256), [=](sycl::nd_item<1> item) {\n            // Dependencies handling\n            cgh.depends_on(deps);\n            const auto idx = item.get_global_id(0);\n            // GPU computation\n        });\n    });\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/algo/kmeans.hpp\"\n\n// Configure algorithm\nauto desc = kmeans::descriptor<float>()\n    .set_cluster_count(10)\n    .set_max_iteration_count(100);\n\n// CPU execution\nauto result = train(desc, data);\n\n// GPU execution\nsycl::queue gpu_q(sycl::gpu_selector_v);\nauto gpu_result = train(gpu_q, desc, data);\n\n// Distributed execution\nauto comm = spmd::make_communicator();\nauto dist_result = train(comm, desc, data);"
+        },
+        {
+          "language": "cpp",
+          "code": "namespace pr = dal::backend::primitives;\n\n  // Create a 2D ndarray from input data table\n  auto data_nd = pr::table2ndarray<float>(queue, data_table, sycl::usm::alloc::device);\n  const std::int64_t row_count = data_table.get_row_count();\n  const std::int64_t column_count = data_table.get_column_count();\n\n  // Create a 1D ndarray to store the sum of each column\n  auto sum_nd = pr::ndarray<float, 1>::empty(queue,\n                                             { column_count },\n                                             sycl::usm::alloc::device);\n\n  // Get USM pointers to the data and sum arrays\n  const float * data_ptr = data_nd.get_data();\n  float * sum_ptr = sum_nd.get_mutable_data();\n\n  constexpr std::int64_t row_block_size    = 1024;\n  constexpr std::int64_t column_block_size = 512;\n\n  // Define the SYCL* range for the kernel\n  const auto range = sycl::nd_range<2>({ row_block_size, column_block_size }, { 1, column_block_size });\n\n  // Compute the sum of each data row\n  auto event = queue.submit([&](sycl::handler& cgh) {\n        queue.submit([&](sycl::handler& cgh) {\n        cgh.parallel_for(range, [=](auto it) {\n            const std::int64_t row_shift = it.get_global_id(0);\n            const std::int64_t col_shift = it.get_local_id(1);\n            for (auto row_idx = row_shift; row_idx < row_count; row_idx += row_block_size) {\n                const auto start = row_idx * column_count;\n                const auto end = start + column_count;\n                // Exclusive storage of the partial sum for execution unit\n                float local_sum = 0.0f;\n                for (auto idx = start + col_shift; idx < end; idx += column_block_size) {\n                    local_sum += data_ptr[idx];\n                }\n                // Reduction over the workgroup\n                sum_ptr[row_idx] = sycl::reduce_over_group(it.get_group(), local_sum, sycl::plus<float>());\n            }\n        });\n    });"
+        }
+      ]
+    },
+    {
+      "topic": "distributed computing MPI SPMD",
+      "text_length": 8769,
+      "code_blocks": 4,
+      "snippets": [
+        {
+          "language": "APIDOC",
+          "code": "## Distributed SPMD Model API\n\n### Description\nThe Synchronous, Parallel, Dynamic, Model (SPMD) distributed model enables distributed computations within the oneDAL library. It extends existing methods like `train`, `infer`, and `compute` to accept a `communicator` object, facilitating distributed execution across multiple ranks.\n\n### Core Components\n\n1.  **Extended Methods**: `train`, `infer`, and `compute` methods now accept a `communicator` object as the first parameter. These methods are designed to be invoked on all participating ranks to initiate distributed computations.\n2.  **Communicator Class**: A `communicator` class provides methods for performing collective operations (e.g., broadcast, allreduce) among all ranks participating in the distributed computation.\n3.  **Communicator Creation**: Free functions are available to create a `communicator` instance using a specified backend. Supported backends include `ccl` (oneCCL) and `mpi` (MPI).\n\n### Usage Example (MPI Backend)"
+        },
+        {
+          "language": "unknown",
+          "code": "### Usage Example (CCL Backend)"
+        },
+        {
+          "language": "cpp",
+          "code": "#ifndef ONEDAL_DATA_PARALLEL\n#define ONEDAL_DATA_PARALLEL\n#endif\n\n#include \"oneapi/dal/algo/kmeans.hpp\"\n#include \"oneapi/dal/spmd/mpi/communicator.hpp\"\n\nkmeans::model<> run_training(const table& data,\n                           const table& initial_centroids) {\n   const auto kmeans_desc = kmeans::descriptor<float>{}\n      .set_cluster_count(10)\n      .set_max_iteration_count(50)\n      .set_accuracy_threshold(1e-4);\n\n   auto comm = dal::preview::spmd::make_communicator<dal::preview::spmd::backend::mpi>(queue);\n   auto rank_id = comm.get_rank();\n\n   const auto result_train = dal::preview::train(comm, kmeans_desc, local_input);\n\n   if(rank_id == 0) {\n      print_table(\"centroids\", result.get_model().get_centroids());\n      print_value(\"objective\", result.get_objective_function_value());\n   }\n   return result.get_model();\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "#include <mpi.h>\n#include \"daal.h\"\n#include \"service.h\"\n\nusing namespace daal;\nusing namespace daal::algorithms;\n\ntypedef float algorithmFPType;\n\nconst size_t nClusters = 20;\nconst size_t nIterations = 5;\nconst size_t nBlocks = 4;\n\nint main(int argc, char* argv[]) {\n    int rankId, comm_size;\n    MPI_Init(&argc, &argv);\n    MPI_Comm_size(MPI_COMM_WORLD, &comm_size);\n    MPI_Comm_rank(MPI_COMM_WORLD, &rankId);\n\n    // Load local data partition\n    NumericTablePtr pData = createSparseTable<float>(\n        dataFileNames[rankId]);\n\n    // Initialize centroids in distributed mode\n    const size_t nVectorsInBlock = pData->getNumberOfRows();\n    kmeans::init::Distributed<step1Local, algorithmFPType,\n                             kmeans::init::randomCSR> localInit(\n        nClusters,\n        nBlocks * nVectorsInBlock,\n        rankId * nVectorsInBlock);\n\n    localInit.input.set(kmeans::init::data, pData);\n    localInit.compute();\n\n    // Serialize and communicate partial results\n    data_management::InputDataArchive dataArch;\n    localInit.getPartialResult()->serialize(dataArch);\n    size_t perNodeArchLength = dataArch.getSizeOfArchive();\n\n    // Gather data lengths from all nodes\n    ByteBuffer serializedData;\n    serializedData.resize(perNodeArchLength);\n    dataArch.copyArchiveToArray(&serializedData[0], perNodeArchLength);\n\n    // MPI Allgather for collecting partial results\n    ByteBuffer nodeResults(perNodeArchLength * nBlocks);\n    MPI_Allgather(&serializedData[0], perNodeArchLength, MPI_CHAR,\n                  &nodeResults[0], perNodeArchLength, MPI_CHAR,\n                  MPI_COMM_WORLD);\n\n    // Master node finalizes initialization\n    NumericTablePtr centroids;\n    if (rankId == 0) {\n        kmeans::init::Distributed<step2Master, algorithmFPType,\n                                 kmeans::init::randomCSR> masterInit(nClusters);\n\n        for (size_t i = 0; i < nBlocks; i++) {\n            data_management::OutputDataArchive dataArch(\n                &nodeResults[perNodeArchLength * i], perNodeArchLength);\n            kmeans::init::PartialResultPtr dataForStep2FromStep1(\n                new kmeans::init::PartialResult());\n            dataForStep2FromStep1->deserialize(dataArch);\n            masterInit.input.add(kmeans::init::partialResults,\n                                dataForStep2FromStep1);\n        }\n\n        masterInit.compute();\n        masterInit.finalizeCompute();\n        centroids = masterInit.getResult()->get(kmeans::init::centroids);\n    }\n\n    // Iterate K-Means computation across nodes\n    for (size_t iteration = 0; iteration < nIterations; iteration++) {\n        // Each node computes local assignments and updates\n        kmeans::Distributed<step1Local> localAlgorithm(nClusters);\n        localAlgorithm.input.set(kmeans::data, pData);\n        localAlgorithm.input.set(kmeans::inputCentroids, centroids);\n        localAlgorithm.compute();\n\n        // Serialize and gather partial results\n        // ... (similar MPI communication pattern)\n\n        // Master computes new centroids\n        if (rankId == 0) {\n            kmeans::Distributed<step2Master> masterAlgorithm(nClusters);\n            // Add partial results from all nodes\n            // Compute new centroids\n            centroids = masterAlgorithm.getResult()->get(kmeans::centroids);\n        }\n\n        // Broadcast new centroids to all nodes\n        // ... (MPI_Bcast operation)\n    }\n\n    if (rankId == 0) {\n        printNumericTable(centroids, \"Final centroids:\", 20, 10);\n    }\n\n    MPI_Finalize();\n    return 0;\n}"
+        }
+      ]
+    },
+    {
+      "topic": "oneapi dal namespace includes headers",
+      "text_length": 3454,
+      "code_blocks": 3,
+      "snippets": [
+        {
+          "language": "APIDOC",
+          "code": "## oneapi::dal::array API\n\n### Description\nThis section details the programming interface for the `oneapi::dal::array` class. It covers various methods for creating and managing arrays, including constructors for external memory, copy constructors, `reset` methods for re-assigning memory, and methods for accessing array data. Static methods are also provided for simplified array creation.\n\n### Programming Interface\nAll types and functions are declared in the `oneapi::dal` namespace and require including the `oneapi/dal/array.hpp` header file.\n\n### Key Method Groups:\n\n1.  **Constructors**: Create arrays from external, mutable, or immutable memory.\n2.  **Shared Data Constructors/Assignment**: Create arrays that share data with other arrays.\n3.  **`reset()` Methods (External Memory)**: Re-assign an array to another external memory block.\n4.  **`reset()` Methods (Internal Memory)**: Re-assign an array to an internally allocated memory block.\n5.  **Data Access Methods**: Methods to access the array's data.\n6.  **Static Creation Methods**: Simplified methods to create arrays from external memory or allocate new internal memory.\n\n### Usage Example\nRefer to the `../../includes/data-management/array-usage-example.rst` file for a usage example of the array API."
+        },
+        {
+          "language": "APIDOC",
+          "code": "## Namespace\n\n### Description\nAll types and functions are declared in the ``oneapi::dal::backend::primitives`` namespace.\n\n### Usage"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal.hpp\"\n\n/* Standard library headers required by this example */\n#include <cassert>\n#include <iostream>"
+        }
+      ]
+    },
+    {
+      "topic": "code examples usage samples complete programs",
+      "text_length": 7018,
+      "code_blocks": 5,
+      "snippets": [
+        {
+          "language": "cpp",
+          "code": "using namespace onedal;\n\n// Creating homogen_table sub-type.\ndal::homogen_table table1 = homogen_table::wrap(queue, data_ptr, row_count, column_count);\n\n// table1 and table2 share the same data (no data copy is performed)\ndal::table table2 = table1;\n\n// Creating an empty table\ndal::table table3;\n\nstd::cout << table1.get_kind() == table2.get_kind() << std::endl; // true\nstd::cout << homogen_table::kind() == table2.get_kind() << std::endl; // true\nstd::cout << table2.get_kind() == table3.get_kind() << std::endl; // false\n\n// Referring table3 to the table2.\ntable3 = table2;\nstd::cout << table2.get_kind() == table3.get_kind() << std::endl; // true"
+        },
+        {
+          "language": "cpp",
+          "code": "namespace pr = dal::backend::primitives;\n\n  // Create a 2D ndarray from input data table\n  auto data_nd = pr::table2ndarray<float>(queue, data_table, sycl::usm::alloc::device);\n  const std::int64_t row_count = data_table.get_row_count();\n  const std::int64_t column_count = data_table.get_column_count();\n\n  // Create a 1D ndarray to store the sum of each column\n  auto sum_nd = pr::ndarray<float, 1>::empty(queue,\n                                             { column_count },\n                                             sycl::usm::alloc::device);\n\n  // Get USM pointers to the data and sum arrays\n  const float * data_ptr = data_nd.get_data();\n  float * sum_ptr = sum_nd.get_mutable_data();\n\n  constexpr std::int64_t row_block_size    = 1024;\n  constexpr std::int64_t column_block_size = 512;\n\n  // Define the SYCL* range for the kernel\n  const auto range = sycl::nd_range<2>({ row_block_size, column_block_size }, { 1, column_block_size });\n\n  // Compute the sum of each data row\n  auto event = queue.submit([&](sycl::handler& cgh) {\n        queue.submit([&](sycl::handler& cgh) {\n        cgh.parallel_for(range, [=](auto it) {\n            const std::int64_t row_shift = it.get_global_id(0);\n            const std::int64_t col_shift = it.get_local_id(1);\n            for (auto row_idx = row_shift; row_idx < row_count; row_idx += row_block_size) {\n                const auto start = row_idx * column_count;\n                const auto end = start + column_count;\n                // Exclusive storage of the partial sum for execution unit\n                float local_sum = 0.0f;\n                for (auto idx = start + col_shift; idx < end; idx += column_block_size) {\n                    local_sum += data_ptr[idx];\n                }\n                // Reduction over the workgroup\n                sum_ptr[row_idx] = sycl::reduce_over_group(it.get_group(), local_sum, sycl::plus<float>());\n            }\n        });\n    });"
+        },
+        {
+          "language": "cpp",
+          "code": "#include <iostream>\n#include <oneapi/dal/table/csr_accessor.hpp>\n#include <oneapi/dal/table/row_accessor.hpp>\n#include <oneapi/dal/table/detail/table_builder.hpp>\n\nint main() {\n    using namespace oneapi::dal;\n\n    // Assume 'table' is a pre-existing csr_table\n    // For demonstration, let's create a dummy table\n    detail::table_builder tb;\n    tb.reset(2, 3);\n    tb.set_row_begin(0, 0);\n    tb.set_row_begin(1, 2);\n    tb.set_indices({0, 2, 3});\n    tb.set_values({1.0, 2.0, 3.0});\n    auto table = tb.build();\n\n    const auto accessor = dal::csr_accessor<const_data_t>(table);\n\n    // Accessing the first row\n    auto row0 = accessor.get_row(0);\n    std::cout << \"Row 0: \" << row0.get_count() << \" elements\" << std::endl;\n    for (std::int64_t i = 0; i < row0.get_count(); ++i) {\n        std::cout << row0.get_indices()[i] << \": \" << row0.get_values()[i] << std::endl;\n    }\n\n    // Accessing the second row\n    auto row1 = accessor.get_row(1);\n    std::cout << \"Row 1: \" << row1.get_count() << \" elements\" << std::endl;\n    for (std::int64_t i = 0; i < row1.get_count(); ++i) {\n        std::cout << row1.get_indices()[i] << \": \" << row1.get_values()[i] << std::endl;\n    }\n\n    return 0;\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/algo/covariance.hpp\"\n#include \"oneapi/dal/io/csv.hpp\"\n\nnamespace dal = oneapi::dal;\n\nint main() {\n    // Load input data\n    const auto input = dal::read<dal::table>(\n        dal::csv::data_source{ \"covcormoments_dense.csv\" });\n\n    // Configure to compute covariance matrix only\n    auto cov_desc = dal::covariance::descriptor{},\n        .set_result_options(dal::covariance::result_options::cov_matrix);\n\n    // Compute covariance\n    auto result = dal::compute(cov_desc, input);\n\n    std::cout << \"Sample covariance:\\n\" << result.get_cov_matrix() << std::endl;\n\n    return 0;\n}"
+        },
+        {
+          "language": "cpp",
+          "code": "#include \"oneapi/dal/data/table.hpp\"\n#include \"oneapi/dal/data/column_accessor.hpp\"\n#include <iostream>\n\nint main() {\n    // Assuming 'my_table' is an initialized dal::table object\n    // dal::table my_table = ...;\n\n    // Example: Accessing a specific column (e.g., column index 0)\n    // auto column_data = dal::column_accessor<float>(my_table)(0);\n\n    // You can then iterate through 'column_data' to access individual values\n    // for (std::size_t i = 0; i < column_data.get_count(); ++i) {\n    //     std::cout << column_data[i] << \" \";\n    // }\n    // std::cout << std::endl;\n\n    return 0;\n}"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "namespaces": 6,
+    "classes": 31,
+    "functions": 77,
+    "includes": 29,
+    "enums": 7,
+    "code_examples": 75
+  }
+}

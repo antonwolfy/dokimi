@@ -94,12 +94,8 @@ class PersonaGenerator:
         self.provider = provider
         self.api_key = api_key
 
-        if provider == "openai":
-            self.llm = ChatOpenAI(model=model, api_key=api_key)
-        elif provider == "anthropic":
-            self.llm = ChatAnthropic(model=model, api_key=api_key)
-        else:
-            raise ValueError(f"Unsupported provider: {provider}")
+        from doc_benchmarks.utils import get_llm
+        self.llm = get_llm(provider, model, api_key)
         
         logger.info(f"Initialized PersonaGenerator with {provider}/{model}")
     

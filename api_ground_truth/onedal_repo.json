@@ -1,0 +1,1707 @@
+{
+  "library_name": "oneDAL",
+  "source": "repository_docs",
+  "extracted_at": "2026-03-06T04:41:40.121230+00:00",
+  "docs_dir": "vendor_docs/onedal/docs/source",
+  "headers_dir": "vendor_docs/onedal/cpp/oneapi/dal",
+  "api_entities": {
+    "namespaces": [],
+    "classes_from_docs": [
+      "CSVFeatureManager",
+      "Classification",
+      "Classifier",
+      "Methods",
+      "MyFeatureModifier",
+      "SVM",
+      "Support",
+      "data_layout",
+      "data_source",
+      "feature_type",
+      "graph_traits",
+      "read_args",
+      "read_args<typename Object>",
+      "read_options",
+      "sparse_indexing"
+    ],
+    "classes_from_headers": [
+      "Descriptor",
+      "Parameters",
+      "a",
+      "afforest",
+      "algo_fixture",
+      "all_vertex_pairs",
+      "array",
+      "bad_alloc",
+      "base",
+      "basic_statistics",
+      "basic_statistics_test",
+      "binary_op_result",
+      "brute_force",
+      "buffer_info",
+      "caching_builder",
+      "cannot",
+      "ccl",
+      "ccl_backend",
+      "ccl_info",
+      "checker_info",
+      "chunked_array",
+      "chunked_array_base",
+      "classification",
+      "clustering",
+      "collective_operation_guard",
+      "column_accessor",
+      "combine_types",
+      "combine_types_element_2d",
+      "communication_error",
+      "communicator",
+      "communicator_iface",
+      "communicator_iface_base",
+      "compute",
+      "compute_input",
+      "compute_input_impl",
+      "compute_ops",
+      "compute_parameters",
+      "compute_parameters_cpu",
+      "compute_parameters_gpu",
+      "compute_parameters_impl",
+      "compute_result",
+      "compute_result_impl",
+      "count",
+      "cov",
+      "covariance_test",
+      "coworker_error",
+      "crtp_algo_fixture",
+      "crtp_base_algo_fixture",
+      "crtp_spmd_backend_algo_fixture",
+      "csr_accessor",
+      "csr_make_blobs",
+      "csr_table",
+      "csr_table_builder",
+      "data_layout",
+      "data_source",
+      "data_source_base",
+      "data_source_impl",
+      "data_source_tag",
+      "data_type",
+      "dataframe",
+      "dataframe_builder",
+      "dataframe_builder_action",
+      "dataframe_builder_action_allocate",
+      "dataframe_builder_action_fill",
+      "dataframe_builder_action_fill_diag",
+      "dataframe_builder_action_fill_normal",
+      "dataframe_builder_action_fill_uniform",
+      "dataframe_builder_action_read_external_dataset",
+      "dataframe_builder_impl",
+      "dataframe_builder_program",
+      "dataframe_impl",
+      "dataset_info",
+      "dbscan_spmd_backend_fixture",
+      "dbscan_spmd_backend_test",
+      "dbscan_test",
+      "de",
+      "decision_tree_task_map",
+      "delta_stepping",
+      "dense",
+      "dense_batch",
+      "descriptor",
+      "descriptor_base",
+      "descriptor_impl",
+      "descriptor_tag",
+      "detail",
+      "device_bad_alloc",
+      "device_test_policy",
+      "df_test",
+      "dim_reduction",
+      "directed_adjacency_vector_graph",
+      "domain_error",
+      "dot_op",
+      "double",
+      "dummy_table",
+      "dummy_table_impl",
+      "empty_value",
+      "engine_type",
+      "error_holder",
+      "error_metric_mode",
+      "exception"
+    ],
+    "functions_from_docs": [
+      "apply(modifiers::csv::Context &context)",
+      "compute(const Descriptor& desc, \\\n                                         const dbscan:)",
+      "compute(const Descriptor& desc, \\\n                                         const kmeans_)",
+      "compute(const Descriptor& desc, \\\n                                         const objecti)",
+      "compute(const Descriptor& desc, \\\n                                      const basic_stat)",
+      "compute(const Descriptor& desc, \\\n                                      const correlatio)",
+      "compute(const Descriptor& desc, \\\n                                      const cosine_dis)",
+      "compute(const Descriptor& desc, \\\n                                      const covariance)",
+      "compute(const Descriptor& desc, \\\n                                      const linear_ker)",
+      "compute(const Descriptor& desc, \\\n                                      const polynomial)",
+      "compute(const Descriptor& desc, \\\n                                      const rbf_kernel)",
+      "compute(const Descriptor& desc, \\\n                                      const sigmoid_ke)",
+      "finalize(modifiers::csv::Config &config)",
+      "get_bootstrap",
+      "get_error_metric_mode",
+      "get_variable_importance_mode",
+      "infer(const Descriptor& desc, \\\n                                         const decisio)",
+      "infer(const Descriptor& desc, \\\n                                         const kmeans:)",
+      "infer(const Descriptor& desc, \\\n                                         const knn::in)",
+      "infer(const Descriptor& desc, \\\n                                         const logisti)",
+      "infer(const Descriptor& desc, \\\n                                         const pca::in)",
+      "infer(const Descriptor& desc, \\\n                                      const svm::infer)",
+      "initialize(modifiers::csv::Config &config)",
+      "train(const Descriptor& desc, \\\n                                         const decisio)",
+      "train(const Descriptor& desc, \\\n                                         const kmeans:)",
+      "train(const Descriptor& desc, \\\n                                         const knn::tr)",
+      "train(const Descriptor& desc, \\\n                                         const logisti)",
+      "train(const Descriptor& desc, \\\n                                         const pca::tr)",
+      "train(const Descriptor& desc, \\\n                                      const svm::train)"
+    ],
+    "functions_from_headers": [
+      "add(Args&&... args)",
+      "add_field(const std::string& name, T&& value)",
+      "arange(std::int64_t from, std::int64_t to)",
+      "arange(std::int64_t to)",
+      "argsort(const table& distances)",
+      "barrier()",
+      "build_csr_table(device_test_policy& policy)",
+      "build_csr_table(host_test_policy& policy)",
+      "build_dense_table(device_test_policy& policy)",
+      "build_dense_table(host_test_policy& policy)",
+      "calculate_predictions(array<Float>& data_arr, array<Float>& params_arr, Float* pred_ptr)",
+      "centers_of_mass(const table& data, const table& assignments, std::int64_t cluster_count)",
+      "check_centroid_match_with_rel_tol(float_t rel_tol, const table& left, const table& right)",
+      "check_compute_result(const objective_function::compute_result<>& result)",
+      "check_eigenvalues(const table& reference, const table& eigenvalues)",
+      "check_eigenvalues_order(const table& eigenvalues)",
+      "check_eigenvectors(const table& reference, const table& eigenvectors)",
+      "check_eigenvectors_orthogonality(const table& eigenvectors)",
+      "check_empty_clusters()",
+      "check_for_exception_for_non_requested_results(bs::result_option_id compute_mode,\n                                             )",
+      "check_for_exception_for_non_requested_results(result_option_id compute_mode,\n                                                 )",
+      "check_if_accessible_on(const sycl::queue& q)",
+      "check_if_close(const table& left, const table& right, double tol = 1e-3)",
+      "check_if_file_exists(const std::string& path)",
+      "check_if_host_accessible()",
+      "check_if_metadata_equal(const table_metadata& actual, const table_metadata& reference)",
+      "check_if_migratable_to(const sycl::queue& q)",
+      "check_if_results_same_on_all_ranks()",
+      "check_if_table_content_equal(const table& actual, const table& reference)",
+      "check_if_tables_equal(const table& actual, const table& reference)",
+      "check_infer_nans(const table& transformed_data)",
+      "check_means(const te::basic_statistics<double>& reference, const table& means)",
+      "check_means_values(const descriptor_t& desc, const table& data, const table& means)",
+      "check_nans(const infer_result_t& result)",
+      "check_nans(const knn::infer_result<Task>& result)",
+      "check_nans(const pca::train_result<>& result)",
+      "check_nans(const train_result_t& result)",
+      "check_on_gold_data()",
+      "check_on_large_data_with_one_cluster()",
+      "check_on_smoke_data()",
+      "check_possition()",
+      "check_ranges()",
+      "check_response_match(const table& left, const table& right)",
+      "check_responses_against_ref(const table &responses, const table &ref_responses)",
+      "check_responses_against_ref(const table& responses, const table& ref_responses)",
+      "check_results(std::int64_t cluster_count, const table& data, const table& centroids)",
+      "check_trees_node_min_sample_count(const df::model<Task>& model,\n                                           std::in)",
+      "check_variances(const te::basic_statistics<double>& reference, const table& variances)",
+      "compress_tuple(std::tuple<T, std::tuple<Args...>>)",
+      "compress_tuples(std::tuple<Tuples...>)",
+      "compute(Args&&... args)",
+      "compute(device_test_policy& policy, Args&&... args)",
+      "compute(host_test_policy& policy, Args&&... args)",
+      "compute(spmd::communicator<spmd::device_memory_access::none>& comm, Args&&... args)",
+      "compute(spmd::communicator<spmd::device_memory_access::usm>& comm, Args&&... args)",
+      "compute(sycl::queue& queue, Args&&... args)",
+      "compute_in_parallel(const Descriptor& desc, Args&&... args)",
+      "compute_in_parallel_and_merge(const Descriptor& desc, Args&&... args)",
+      "compute_override(Args&&... args)",
+      "compute_responses(const table& beta, const table& bias, const table& data)",
+      "csr_general_checks(const te::csr_table_builder<>& data,\n                            bs::result_opti)",
+      "dense_checks(std::int64_t cluster_count, const table& data)",
+      "deserialize(dal::detail::input_archive &ar)",
+      "deserialize(dal::detail::input_archive& ar)",
+      "deserialize(detail::input_archive& ar)",
+      "distances(const table& train_data, const table& infer_data)",
+      "empty(const table_metadata& meta)",
+      "enter_communication()",
+      "enumerate(const matrix<T, lyt>& m, Op&& op)",
+      "enumerate_column_first(const matrix<T, lyt>& m, Op&& op)",
+      "enumerate_linear(const matrix<T, lyt>& m, Op&& op)",
+      "enumerate_linear_mutable(matrix<T, lyt>& m, Op&& op)",
+      "enumerate_row_first(const matrix<T, lyt>& m, Op&& op)",
+      "epilogue()",
+      "exclusive(const Body& body)",
+      "execute(const Body& body)",
+      "exit_communication()",
+      "fill_with_max_impl(byte_t* dst, std::int64_t count)",
+      "fill_with_min_impl(byte_t* dst, std::int64_t count)",
+      "fill_with_zeros_impl(byte_t* dst, std::int64_t count)",
+      "finalize_compute(Args&&... args)",
+      "finalize_compute(device_test_policy& policy, Args&&... args)",
+      "finalize_compute(host_test_policy& policy, Args&&... args)",
+      "finalize_compute(spmd::communicator<spmd::device_memory_access::none>& comm, Args&&... args)",
+      "finalize_compute(spmd::communicator<spmd::device_memory_access::usm>& comm, Args&&... args)",
+      "finalize_compute(sycl::queue& queue, Args&&... args)",
+      "finalize_compute_override(Args&&... args)",
+      "finalize_train(Args&&... args)",
+      "finalize_train(device_test_policy& policy, Args&&... args)",
+      "finalize_train(host_test_policy& policy, Args&&... args)",
+      "finalize_train(spmd::communicator<spmd::device_memory_access::none>& comm, Args&&... args)",
+      "finalize_train(spmd::communicator<spmd::device_memory_access::usm>& comm, Args&&... args)",
+      "finalize_train(sycl::queue& queue, Args&&... args)",
+      "finalize_train_override(Args&&... args)",
+      "for_each(const matrix<T, lyt>& m, Op&& op)",
+      "gen_dimensions(std::int64_t n = -1,\n                        std::int64_t p = -1,\n              )",
+      "gen_input()",
+      "gen_input(bool fit_intercept = true, double C = 1.0, std::int64_t seed = 2007)",
+      "general_checks()",
+      "generate(std::int64_t seed = 777)"
+    ],
+    "includes": [
+      "algorithm",
+      "any",
+      "cassert",
+      "catch2/catch_all.hpp",
+      "cmath",
+      "condition_variable",
+      "cstdint",
+      "fmt/core.h",
+      "fstream",
+      "iomanip",
+      "iostream",
+      "limits",
+      "list",
+      "memory",
+      "mutex",
+      "new",
+      "numeric",
+      "oneapi/dal/algo/basic_statistics.hpp",
+      "oneapi/dal/algo/basic_statistics/common.hpp",
+      "oneapi/dal/algo/basic_statistics/compute.hpp",
+      "oneapi/dal/algo/basic_statistics/compute_types.hpp",
+      "oneapi/dal/algo/basic_statistics/detail/compute_ops.hpp",
+      "oneapi/dal/algo/basic_statistics/detail/finalize_compute_ops.hpp",
+      "oneapi/dal/algo/basic_statistics/detail/partial_compute_ops.hpp",
+      "oneapi/dal/algo/basic_statistics/finalize_compute.hpp",
+      "oneapi/dal/algo/basic_statistics/partial_compute.hpp",
+      "oneapi/dal/algo/connected_components.hpp",
+      "oneapi/dal/algo/connected_components/common.hpp",
+      "oneapi/dal/algo/connected_components/detail/vertex_partitioning_ops.hpp",
+      "oneapi/dal/algo/connected_components/detail/vertex_partitioning_types.hpp",
+      "oneapi/dal/algo/connected_components/vertex_partitioning.hpp",
+      "oneapi/dal/algo/connected_components/vertex_partitioning_types.hpp",
+      "oneapi/dal/algo/correlation_distance.hpp",
+      "oneapi/dal/algo/correlation_distance/common.hpp",
+      "oneapi/dal/algo/correlation_distance/compute.hpp",
+      "oneapi/dal/algo/correlation_distance/compute_types.hpp",
+      "oneapi/dal/algo/correlation_distance/detail/compute_ops.hpp",
+      "oneapi/dal/algo/cosine_distance.hpp",
+      "oneapi/dal/algo/cosine_distance/common.hpp",
+      "oneapi/dal/algo/cosine_distance/compute.hpp",
+      "oneapi/dal/algo/cosine_distance/compute_types.hpp",
+      "oneapi/dal/algo/cosine_distance/detail/compute_ops.hpp",
+      "oneapi/dal/algo/covariance.hpp",
+      "oneapi/dal/algo/covariance/common.hpp",
+      "oneapi/dal/algo/covariance/compute.hpp",
+      "oneapi/dal/algo/covariance/compute_types.hpp",
+      "oneapi/dal/algo/covariance/detail/compute_ops.hpp",
+      "oneapi/dal/algo/covariance/detail/finalize_compute_ops.hpp",
+      "oneapi/dal/algo/covariance/detail/partial_compute_ops.hpp",
+      "oneapi/dal/algo/covariance/finalize_compute.hpp",
+      "oneapi/dal/algo/covariance/partial_compute.hpp",
+      "oneapi/dal/algo/dbscan.hpp",
+      "oneapi/dal/algo/dbscan/common.hpp",
+      "oneapi/dal/algo/dbscan/compute.hpp",
+      "oneapi/dal/algo/dbscan/compute_types.hpp",
+      "oneapi/dal/algo/dbscan/detail/compute_ops.hpp",
+      "oneapi/dal/algo/dbscan/test/data.hpp",
+      "oneapi/dal/algo/dbscan/test/spmd_backend_fixture.hpp",
+      "oneapi/dal/algo/decision_forest.hpp",
+      "oneapi/dal/algo/decision_forest/common.hpp",
+      "oneapi/dal/algo/decision_forest/detail/infer_ops.hpp",
+      "oneapi/dal/algo/decision_forest/detail/train_ops.hpp",
+      "oneapi/dal/algo/decision_forest/infer.hpp",
+      "oneapi/dal/algo/decision_forest/infer_types.hpp",
+      "oneapi/dal/algo/decision_forest/train.hpp",
+      "oneapi/dal/algo/decision_forest/train_types.hpp",
+      "oneapi/dal/algo/decision_tree/detail/node_visitor.hpp",
+      "oneapi/dal/algo/finiteness_checker/common.hpp",
+      "oneapi/dal/algo/finiteness_checker/compute.hpp",
+      "oneapi/dal/algo/finiteness_checker/compute_types.hpp",
+      "oneapi/dal/algo/finiteness_checker/detail/compute_ops.hpp",
+      "oneapi/dal/algo/jaccard/common.hpp",
+      "oneapi/dal/algo/jaccard/detail/vertex_similarity_ops.hpp",
+      "oneapi/dal/algo/jaccard/detail/vertex_similarity_types.hpp",
+      "oneapi/dal/algo/jaccard/vertex_similarity.hpp",
+      "oneapi/dal/algo/jaccard/vertex_similarity_types.hpp",
+      "oneapi/dal/algo/kmeans.hpp",
+      "oneapi/dal/algo/kmeans/common.hpp",
+      "oneapi/dal/algo/kmeans/detail/infer_ops.hpp",
+      "oneapi/dal/algo/kmeans/detail/train_ops.hpp",
+      "oneapi/dal/algo/kmeans/infer.hpp",
+      "oneapi/dal/algo/kmeans/infer_types.hpp",
+      "oneapi/dal/algo/kmeans/test/data.hpp",
+      "oneapi/dal/algo/kmeans/test/spmd_backend_fixture.hpp",
+      "oneapi/dal/algo/kmeans/train.hpp",
+      "oneapi/dal/algo/kmeans/train_types.hpp",
+      "oneapi/dal/algo/kmeans_init.hpp",
+      "oneapi/dal/algo/kmeans_init/common.hpp",
+      "oneapi/dal/algo/kmeans_init/compute.hpp",
+      "oneapi/dal/algo/kmeans_init/compute_types.hpp",
+      "oneapi/dal/algo/kmeans_init/detail/compute_ops.hpp",
+      "oneapi/dal/algo/knn.hpp",
+      "oneapi/dal/algo/knn/common.hpp",
+      "oneapi/dal/algo/knn/detail/distance.hpp",
+      "oneapi/dal/algo/knn/detail/infer_ops.hpp",
+      "oneapi/dal/algo/knn/detail/train_ops.hpp",
+      "oneapi/dal/algo/knn/infer.hpp",
+      "oneapi/dal/algo/knn/infer_types.hpp",
+      "oneapi/dal/algo/knn/train.hpp",
+      "oneapi/dal/algo/knn/train_types.hpp",
+      "oneapi/dal/algo/linear_kernel.hpp",
+      "oneapi/dal/algo/linear_kernel/common.hpp",
+      "oneapi/dal/algo/linear_kernel/compute.hpp",
+      "oneapi/dal/algo/linear_kernel/compute_types.hpp",
+      "oneapi/dal/algo/linear_kernel/detail/compute_ops.hpp",
+      "oneapi/dal/algo/linear_regression.hpp",
+      "oneapi/dal/algo/linear_regression/common.hpp",
+      "oneapi/dal/algo/linear_regression/detail/finalize_train_ops.hpp",
+      "oneapi/dal/algo/linear_regression/detail/infer_ops.hpp",
+      "oneapi/dal/algo/linear_regression/detail/partial_train_ops.hpp",
+      "oneapi/dal/algo/linear_regression/detail/train_ops.hpp",
+      "oneapi/dal/algo/linear_regression/finalize_train.hpp",
+      "oneapi/dal/algo/linear_regression/infer.hpp",
+      "oneapi/dal/algo/linear_regression/infer_types.hpp",
+      "oneapi/dal/algo/linear_regression/partial_train.hpp",
+      "oneapi/dal/algo/linear_regression/test/fixture.hpp",
+      "oneapi/dal/algo/linear_regression/train.hpp",
+      "oneapi/dal/algo/linear_regression/train_types.hpp",
+      "oneapi/dal/algo/logistic_regression.hpp",
+      "oneapi/dal/algo/logistic_regression/common.hpp",
+      "oneapi/dal/algo/logistic_regression/detail/infer_ops.hpp",
+      "oneapi/dal/algo/logistic_regression/detail/optimizer.hpp",
+      "oneapi/dal/algo/logistic_regression/detail/train_ops.hpp",
+      "oneapi/dal/algo/logistic_regression/infer.hpp",
+      "oneapi/dal/algo/logistic_regression/infer_types.hpp",
+      "oneapi/dal/algo/logistic_regression/test/fixture.hpp",
+      "oneapi/dal/algo/logistic_regression/train.hpp",
+      "oneapi/dal/algo/logistic_regression/train_types.hpp",
+      "oneapi/dal/algo/logloss_objective/common.hpp",
+      "oneapi/dal/algo/louvain/common.hpp",
+      "oneapi/dal/algo/louvain/detail/vertex_partitioning_ops.hpp",
+      "oneapi/dal/algo/louvain/detail/vertex_partitioning_types.hpp",
+      "oneapi/dal/algo/louvain/vertex_partitioning.hpp",
+      "oneapi/dal/algo/louvain/vertex_partitioning_types.hpp",
+      "oneapi/dal/algo/newton_cg/common.hpp",
+      "oneapi/dal/algo/objective_function.hpp",
+      "oneapi/dal/algo/objective_function/common.hpp",
+      "oneapi/dal/algo/objective_function/compute.hpp",
+      "oneapi/dal/algo/objective_function/compute_types.hpp",
+      "oneapi/dal/algo/objective_function/detail/compute_ops.hpp",
+      "oneapi/dal/algo/objective_function/detail/objective.hpp",
+      "oneapi/dal/algo/pca.hpp",
+      "oneapi/dal/algo/pca/common.hpp",
+      "oneapi/dal/algo/pca/detail/finalize_train_ops.hpp",
+      "oneapi/dal/algo/pca/detail/infer_ops.hpp",
+      "oneapi/dal/algo/pca/detail/partial_train_ops.hpp",
+      "oneapi/dal/algo/pca/detail/train_ops.hpp",
+      "oneapi/dal/algo/pca/finalize_train.hpp",
+      "oneapi/dal/algo/pca/infer.hpp",
+      "oneapi/dal/algo/pca/infer_types.hpp",
+      "oneapi/dal/algo/pca/partial_train.hpp",
+      "oneapi/dal/algo/pca/train.hpp",
+      "oneapi/dal/algo/pca/train_types.hpp",
+      "oneapi/dal/algo/polynomial_kernel.hpp",
+      "oneapi/dal/algo/polynomial_kernel/common.hpp",
+      "oneapi/dal/algo/polynomial_kernel/compute.hpp",
+      "oneapi/dal/algo/polynomial_kernel/compute_types.hpp",
+      "oneapi/dal/algo/polynomial_kernel/detail/compute_ops.hpp",
+      "oneapi/dal/algo/rbf_kernel.hpp",
+      "oneapi/dal/algo/rbf_kernel/common.hpp",
+      "oneapi/dal/algo/rbf_kernel/compute.hpp",
+      "oneapi/dal/algo/rbf_kernel/compute_types.hpp",
+      "oneapi/dal/algo/rbf_kernel/detail/compute_ops.hpp",
+      "oneapi/dal/algo/shortest_paths/common.hpp",
+      "oneapi/dal/algo/shortest_paths/detail/traverse_ops.hpp",
+      "oneapi/dal/algo/shortest_paths/detail/traverse_types.hpp",
+      "oneapi/dal/algo/shortest_paths/traverse.hpp",
+      "oneapi/dal/algo/shortest_paths/traverse_types.hpp",
+      "oneapi/dal/algo/sigmoid_kernel.hpp",
+      "oneapi/dal/algo/sigmoid_kernel/common.hpp",
+      "oneapi/dal/algo/sigmoid_kernel/compute.hpp",
+      "oneapi/dal/algo/sigmoid_kernel/compute_types.hpp",
+      "oneapi/dal/algo/sigmoid_kernel/detail/compute_ops.hpp",
+      "oneapi/dal/algo/subgraph_isomorphism.hpp",
+      "oneapi/dal/algo/subgraph_isomorphism/common.hpp",
+      "oneapi/dal/algo/subgraph_isomorphism/detail/graph_matching_ops.hpp",
+      "oneapi/dal/algo/subgraph_isomorphism/detail/graph_matching_types.hpp",
+      "oneapi/dal/algo/subgraph_isomorphism/graph_matching.hpp",
+      "oneapi/dal/algo/subgraph_isomorphism/graph_matching_types.hpp",
+      "oneapi/dal/algo/svm.hpp",
+      "oneapi/dal/algo/svm/common.hpp",
+      "oneapi/dal/algo/svm/detail/infer_ops.hpp",
+      "oneapi/dal/algo/svm/detail/kernel_function.hpp",
+      "oneapi/dal/algo/svm/detail/train_ops.hpp",
+      "oneapi/dal/algo/svm/infer.hpp",
+      "oneapi/dal/algo/svm/infer_types.hpp",
+      "oneapi/dal/algo/svm/train.hpp",
+      "oneapi/dal/algo/svm/train_types.hpp",
+      "oneapi/dal/algo/triangle_counting/common.hpp",
+      "oneapi/dal/algo/triangle_counting/detail/vertex_ranking_ops.hpp",
+      "oneapi/dal/algo/triangle_counting/detail/vertex_ranking_types.hpp",
+      "oneapi/dal/algo/triangle_counting/vertex_ranking.hpp",
+      "oneapi/dal/algo/triangle_counting/vertex_ranking_types.hpp",
+      "oneapi/dal/array.hpp",
+      "oneapi/dal/backend/dispatcher.hpp",
+      "oneapi/dal/backend/primitives/ndarray.hpp",
+      "oneapi/dal/chunked_array.hpp",
+      "oneapi/dal/common.hpp",
+      "oneapi/dal/compute.hpp",
+      "oneapi/dal/detail/array_impl.hpp",
+      "oneapi/dal/detail/array_utils.hpp",
+      "oneapi/dal/detail/ccl/communicator.hpp",
+      "oneapi/dal/detail/chunked_array_impl.hpp",
+      "oneapi/dal/detail/common.hpp",
+      "oneapi/dal/detail/communicator.hpp",
+      "oneapi/dal/detail/compute_ops.hpp",
+      "oneapi/dal/detail/error_messages.hpp",
+      "oneapi/dal/detail/finalize_compute_ops.hpp",
+      "oneapi/dal/detail/finalize_train_ops.hpp",
+      "oneapi/dal/detail/graph_matching_ops.hpp",
+      "oneapi/dal/detail/infer_ops.hpp",
+      "oneapi/dal/detail/memory.hpp",
+      "oneapi/dal/detail/memory_impl_dpc.hpp",
+      "oneapi/dal/detail/mpi/communicator.hpp",
+      "oneapi/dal/detail/parameters/system_parameters.hpp",
+      "oneapi/dal/detail/partial_compute_ops.hpp",
+      "oneapi/dal/detail/partial_train_ops.hpp",
+      "oneapi/dal/detail/read_ops.hpp",
+      "oneapi/dal/detail/serialization.hpp",
+      "oneapi/dal/detail/singleton.hpp",
+      "oneapi/dal/detail/spmd_policy.hpp",
+      "oneapi/dal/detail/threading.hpp",
+      "oneapi/dal/detail/train_ops.hpp",
+      "oneapi/dal/detail/traverse_ops.hpp",
+      "oneapi/dal/detail/vertex_partitioning_ops.hpp",
+      "oneapi/dal/detail/vertex_ranking_ops.hpp",
+      "oneapi/dal/detail/vertex_similarity_ops.hpp",
+      "oneapi/dal/exceptions.hpp",
+      "oneapi/dal/finalize_compute.hpp",
+      "oneapi/dal/finalize_train.hpp",
+      "oneapi/dal/graph/common.hpp",
+      "oneapi/dal/graph/detail/common.hpp",
+      "oneapi/dal/graph/detail/container.hpp",
+      "oneapi/dal/graph/detail/directed_adjacency_vector_graph_impl.hpp",
+      "oneapi/dal/graph/detail/service_functions_impl.hpp",
+      "oneapi/dal/graph/detail/undirected_adjacency_vector_graph_impl.hpp",
+      "oneapi/dal/graph/directed_adjacency_vector_graph.hpp",
+      "oneapi/dal/graph/service_functions.hpp",
+      "oneapi/dal/graph/undirected_adjacency_vector_graph.hpp",
+      "oneapi/dal/graph_matching.hpp",
+      "oneapi/dal/infer.hpp",
+      "oneapi/dal/io/csv.hpp",
+      "oneapi/dal/io/csv/common.hpp",
+      "oneapi/dal/io/csv/detail/read_ops.hpp",
+      "oneapi/dal/io/csv/read.hpp",
+      "oneapi/dal/io/csv/read_types.hpp",
+      "oneapi/dal/partial_compute.hpp",
+      "oneapi/dal/partial_train.hpp",
+      "oneapi/dal/read.hpp",
+      "oneapi/dal/rng.hpp",
+      "oneapi/dal/spmd/common.hpp",
+      "oneapi/dal/spmd/communicator.hpp",
+      "oneapi/dal/spmd/exceptions.hpp",
+      "oneapi/dal/table/column_accessor.hpp",
+      "oneapi/dal/table/common.hpp",
+      "oneapi/dal/table/csr.hpp",
+      "oneapi/dal/table/csr_accessor.hpp",
+      "oneapi/dal/table/detail/metadata_utils.hpp",
+      "oneapi/dal/table/detail/table_builder.hpp",
+      "oneapi/dal/table/detail/table_iface.hpp",
+      "oneapi/dal/table/detail/table_utils.hpp",
+      "oneapi/dal/table/homogen.hpp",
+      "oneapi/dal/table/ndarray.hpp",
+      "oneapi/dal/table/row_accessor.hpp",
+      "oneapi/dal/test/engine/catch.hpp",
+      "oneapi/dal/test/engine/common.hpp",
+      "oneapi/dal/test/engine/config.hpp",
+      "oneapi/dal/test/engine/csr_table_builder.hpp",
+      "oneapi/dal/test/engine/dataframe.hpp",
+      "oneapi/dal/test/engine/dataframe_common.hpp",
+      "oneapi/dal/test/engine/dataframe_math.hpp",
+      "oneapi/dal/test/engine/fixtures.hpp",
+      "oneapi/dal/test/engine/io.hpp",
+      "oneapi/dal/test/engine/linalg.hpp",
+      "oneapi/dal/test/engine/linalg/dot.hpp",
+      "oneapi/dal/test/engine/linalg/loops.hpp",
+      "oneapi/dal/test/engine/linalg/matrix.hpp",
+      "oneapi/dal/test/engine/linalg/random.hpp",
+      "oneapi/dal/test/engine/linalg/umath.hpp",
+      "oneapi/dal/test/engine/macro.hpp",
+      "oneapi/dal/test/engine/math.hpp",
+      "oneapi/dal/test/engine/metrics/classification.hpp",
+      "oneapi/dal/test/engine/metrics/clustering.hpp",
+      "oneapi/dal/test/engine/metrics/regression.hpp",
+      "oneapi/dal/test/engine/spmd.hpp",
+      "oneapi/dal/test/engine/tables.hpp",
+      "oneapi/dal/test/engine/thread_communicator.hpp",
+      "oneapi/dal/test/engine/type_traits.hpp",
+      "oneapi/dal/train.hpp",
+      "oneapi/dal/traverse.hpp",
+      "oneapi/dal/util/common.hpp",
+      "oneapi/dal/util/detail/type_traits.hpp",
+      "oneapi/dal/util/result_option_id.hpp",
+      "oneapi/dal/vertex_partitioning.hpp",
+      "oneapi/dal/vertex_ranking.hpp",
+      "oneapi/dal/vertex_similarity.hpp",
+      "optional",
+      "ostream",
+      "random",
+      "stdexcept",
+      "string",
+      "sycl/sycl.hpp",
+      "system_error",
+      "thread",
+      "tuple",
+      "type_traits",
+      "unordered_map",
+      "unordered_set",
+      "utility",
+      "vector"
+    ],
+    "enums_from_docs": [
+      "data_layout",
+      "feature_type",
+      "read_options",
+      "sparse_indexing"
+    ],
+    "enums_from_headers": [
+      {
+        "name": "variable_importance_mode",
+        "values": [
+          "/// Do not compute variable importance\n    none",
+          "/// Mean Decrease Impurity.\n    /// Computed as the sum of weighted impurity decreases for all nodes where the variable is used",
+          "/// averaged over all trees in the forest\n    mdi",
+          "/// Mean Decrease Accuracy (permutation importance).\n    /// For each tree",
+          "the prediction error on the out-of-bag portion of the data is computed\n    /// (error rate for classification",
+          "MSE for regression).\n    /// The same is done after permuting each predictor variable.\n    /// The difference between the two are then averaged over all trees.\n    mda_raw",
+          "/// Mean Decrease Accuracy (permutation importance).\n    /// This is MDA_Raw value scaled by its standard deviation.\n    mda_scaled"
+        ]
+      },
+      {
+        "name": "voting_mode",
+        "values": [
+          "/// The final prediction is combined through a weighted majority voting\n    weighted",
+          "/// The final prediction is combined through a simple majority voting\n    unweighted"
+        ]
+      },
+      {
+        "name": "splitter_mode",
+        "values": [
+          "/// Threshold for a node is chosen as the best among all bins\n    best",
+          "/// Threshold for a node is the best for a set chosen at random\n    random"
+        ]
+      },
+      {
+        "name": "voting_mode",
+        "values": [
+          "/// Uniform weights for neighbors for prediction voting.\n    uniform",
+          "/// Weight neighbors by the inverse of their distance.\n    distance"
+        ]
+      },
+      {
+        "name": "normalization",
+        "values": [
+          "/// No normalization is necessary or data is not normalized\n    none",
+          "/// Just mean centered is necessary",
+          "or data is already centered\n    mean_center",
+          "/// Normalization is necessary",
+          "or data is already normalized\n    zscore"
+        ]
+      },
+      {
+        "name": "kind",
+        "values": [
+          "/// Search for an induced subgraph isomorphic to the pattern graph. All existing and non-existing edges\n    /// in a subgraph are considered.\n    induced",
+          "/// Search for a non-induced subgraph isomorphic to the pattern graph. Only existing edges\n    /// in a subgraph are considered.\n    non_induced"
+        ]
+      },
+      {
+        "name": "kind",
+        "values": [
+          "undirected_clique",
+          "directed_cycle",
+          "directed_closed_triplet"
+        ]
+      },
+      {
+        "name": "relabel",
+        "values": [
+          "no",
+          "yes"
+        ]
+      },
+      {
+        "name": "read_mode",
+        "values": [
+          "table",
+          "edge_list",
+          "weighted_edge_list"
+        ]
+      },
+      {
+        "name": "engine_type",
+        "values": [
+          "/// Mersenne Twister engine with specific optimizations for parallel environments.\n    mt2203",
+          "/// Multiplicative congruential generator with a modulus of \\(2^{59"
+        ]
+      },
+      {
+        "name": "reduce_op",
+        "values": [
+          "max",
+          "min",
+          "sum"
+        ]
+      },
+      {
+        "name": "feature_type",
+        "values": [
+          "nominal",
+          "ordinal",
+          "interval",
+          "ratio"
+        ]
+      },
+      {
+        "name": "data_layout",
+        "values": [
+          "unknown",
+          "row_major",
+          "column_major"
+        ]
+      },
+      {
+        "name": "sparse_indexing",
+        "values": [
+          "zero_based",
+          "one_based"
+        ]
+      },
+      {
+        "name": "table_kind",
+        "values": [
+          "homogen"
+        ]
+      },
+      {
+        "name": "table_float_type",
+        "values": [
+          "f32",
+          "f64"
+        ]
+      },
+      {
+        "name": "layout",
+        "values": [
+          "row_major",
+          "column_major"
+        ]
+      }
+    ],
+    "parameters": [
+      {
+        "name": "get_vertex_count",
+        "description": ":capterm:`undirected graph`, :capterm:`directed graph`"
+      },
+      {
+        "name": "get_edge_count",
+        "description": ":capterm:`undirected graph`, :capterm:`directed graph`"
+      },
+      {
+        "name": "get_vertex_degree",
+        "description": ":capterm:`undirected graph`"
+      },
+      {
+        "name": "get_vertex_outward_degree",
+        "description": ":capterm:`directed graph`"
+      },
+      {
+        "name": "get_vertex_neighbors",
+        "description": ":capterm:`undirected graph`"
+      },
+      {
+        "name": "get_vertex_outward_neighbors",
+        "description": ":capterm:`directed graph`"
+      },
+      {
+        "name": "get_edge_value",
+        "description": ":capterm:`undirected graph`, :capterm:`directed graph`"
+      },
+      {
+        "name": "VertexValue",
+        "description": "The type of the vertex :capterm:`attribute <Attribute>` values"
+      },
+      {
+        "name": "EdgeValue",
+        "description": "The type of the edge :capterm:`attribute <Attribute>` values"
+      },
+      {
+        "name": "GraphValue",
+        "description": "The type of the graph :capterm:`attribute <Attribute>` value"
+      },
+      {
+        "name": "IndexType",
+        "description": "The type of the :capterm:`vertex indices <Vertex index>`"
+      },
+      {
+        "name": "Allocator",
+        "description": "The type of a graph allocator"
+      },
+      {
+        "name": "graph_type",
+        "description": "The type of the graph ``G``"
+      },
+      {
+        "name": "allocator_type",
+        "description": "The type of the allocator of the graph ``G``"
+      },
+      {
+        "name": "graph_user_value_type",
+        "description": "The type of the :capterm:`attribute` of the graph ``G``"
+      },
+      {
+        "name": "const_graph_user_value_type",
+        "description": "The constant type of the :capterm:`attribute` of the graph ``G``"
+      },
+      {
+        "name": "vertex_type",
+        "description": "The type of the vertices in the graph ``G``"
+      },
+      {
+        "name": "vertex_iterator",
+        "description": "The type of the vertex iterator in the graph ``G``"
+      },
+      {
+        "name": "const_vertex_iterator",
+        "description": "The constant type of the vertex iterator in the graph ``G``"
+      },
+      {
+        "name": "vertex_size_type",
+        "description": "The type of the vertex indices in the graph ``G``"
+      },
+      {
+        "name": "vertex_user_value_type",
+        "description": "The type of the vertex :capterm:`attribute <Attribute>` of the graph ``G``"
+      },
+      {
+        "name": "edge_type",
+        "description": "The type of edges in the graph ``G``"
+      },
+      {
+        "name": "edge_iterator",
+        "description": "The type of the edge iterator in the graph ``G``"
+      },
+      {
+        "name": "const_edge_iterator",
+        "description": "The constant type of the edge iterator in the graph ``G``"
+      },
+      {
+        "name": "edge_size_type",
+        "description": "The type of the edge indices in the graph ``G``"
+      },
+      {
+        "name": "edge_user_value_type",
+        "description": "The type of edge :capterm:`attribute <Attribute>`"
+      },
+      {
+        "name": "vertex_edge_size_type",
+        "description": "The type of the vertex neighbors indices"
+      },
+      {
+        "name": "vertex_outward_edge_size_type",
+        "description": "The type of the vertex outward neighbors indices"
+      },
+      {
+        "name": "vertex_edge_iterator_type",
+        "description": "The type of the vertex neighbors iterator"
+      },
+      {
+        "name": "const_vertex_edge_iterator_type",
+        "description": "The type of the vertex neighbors constant iterator"
+      },
+      {
+        "name": "vertex_outward_edge_iterator_type",
+        "description": "The type of the vertex outward neighbors iterator"
+      },
+      {
+        "name": "const_vertex_outward_edge_iterator_type",
+        "description": "The type of the vertex outward neighbors constant iterator"
+      },
+      {
+        "name": "vertex_edge_range",
+        "description": "The type of the range of vertex neighbors"
+      },
+      {
+        "name": "const_vertex_edge_range",
+        "description": "The type of the constant range of vertex neighbors"
+      },
+      {
+        "name": "vertex_outward_edge_range",
+        "description": "The type of the range of vertex outward neighbors"
+      },
+      {
+        "name": "const_vertex_outward_edge_range",
+        "description": "The type of the constant range of vertex outward neighbors"
+      },
+      {
+        "name": "Allocator",
+        "description": "- :ref:`template parameters of graph G <api_graph_template_type>`."
+      },
+      {
+        "name": "data",
+        "description": "Pointer to the :math:`p \\times p` numeric table that represents"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "choleskyFactor",
+        "description": "Pointer to the :math:`p \\times p` numeric table that represents the lower triang"
+      },
+      {
+        "name": "data",
+        "description": "Pointer to the :math:`n \\times p` numeric table for which the variance-covarianc"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "defaultDense",
+        "description": "default performance-oriented method"
+      },
+      {
+        "name": "singlePassDense",
+        "description": "implementation of the single-pass algorithm proposed by D.H.D. West"
+      },
+      {
+        "name": "sumDense",
+        "description": "implementation of the algorithm in the cases where the"
+      },
+      {
+        "name": "fastCSR",
+        "description": "performance-oriented method for CSR numeric tables"
+      },
+      {
+        "name": "singlePassCSR",
+        "description": "implementation of the single-pass algorithm proposed by D.H.D. West; optimized f"
+      },
+      {
+        "name": "sumCSR",
+        "description": "implementation of the algorithm in the cases where the basic"
+      },
+      {
+        "name": "defaultDense",
+        "description": "default performance-oriented method"
+      },
+      {
+        "name": "outputMatrixType",
+        "description": "``covarianceMatrix``"
+      },
+      {
+        "name": "covarianceMatrix",
+        "description": "variance-covariance matrix"
+      },
+      {
+        "name": "correlationMatrix",
+        "description": "correlation matrix"
+      },
+      {
+        "name": "covariance",
+        "description": "Use when outputMatrixType=covarianceMatrix. Pointer to the numeric table"
+      },
+      {
+        "name": "correlation",
+        "description": "Use when outputMatrixType=correlationMatrix. Pointer to the numeric"
+      },
+      {
+        "name": "mean",
+        "description": "Pointer to the :math:`1 \\times p` numeric table with means."
+      },
+      {
+        "name": "computeStep",
+        "description": "Not applicable"
+      },
+      {
+        "name": "step1Local",
+        "description": "the first step, performed on local nodes"
+      },
+      {
+        "name": "step2Master",
+        "description": "the second step, performed on a master node"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "outputMatrixType",
+        "description": "``covarianceMatrix``"
+      },
+      {
+        "name": "covarianceMatrix",
+        "description": "variance-covariance matrix"
+      },
+      {
+        "name": "correlationMatrix",
+        "description": "correlation matrix"
+      },
+      {
+        "name": "data",
+        "description": "Pointer to the numeric table of size :math:`n_i \\times p` that represents the :m"
+      },
+      {
+        "name": "nObservations",
+        "description": "Pointer to the :math:`1 \\times 1` numeric table that contains the number of obse"
+      },
+      {
+        "name": "crossProduct",
+        "description": "Pointer to :math:`p \\times p` numeric table with the cross-product matrix comput"
+      },
+      {
+        "name": "sum",
+        "description": "Pointer to :math:`1 \\times p` numeric table with partial sums computed so far on"
+      },
+      {
+        "name": "partialResults",
+        "description": "A collection that contains results computed in :ref:`Step 1 <cor_cov_step_1>` on"
+      },
+      {
+        "name": "covariance",
+        "description": "Use when ``outputMatrixType``=``covarianceMatrix``. Pointer to the numeric table"
+      },
+      {
+        "name": "correlation",
+        "description": "Use when ``outputMatrixType``=``correlationMatrix``. Pointer to the numeric tabl"
+      },
+      {
+        "name": "mean",
+        "description": "Pointer to the :math:`1 \\times p` numeric table with means."
+      },
+      {
+        "name": "data",
+        "description": "Pointer to the numeric table of size :math:`n_i \\times p` that represents the cu"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "outputMatrixType",
+        "description": "``covarianceMatrix``"
+      },
+      {
+        "name": "covarianceMatrix",
+        "description": "variance-covariance matrix"
+      },
+      {
+        "name": "correlationMatrix",
+        "description": "correlation matrix"
+      },
+      {
+        "name": "initializationProcedure",
+        "description": "Not applicable"
+      },
+      {
+        "name": "nObservations",
+        "description": "Pointer to the :math:`1 \\times 1` numeric table that contains the number of obse"
+      },
+      {
+        "name": "crossProduct",
+        "description": "Pointer to :math:`p \\times p` numeric table with the cross-product matrix comput"
+      },
+      {
+        "name": "sum",
+        "description": "Pointer to :math:`1 \\times p` numeric table with partial sums computed so far."
+      },
+      {
+        "name": "covariance",
+        "description": "Use when ``outputMatrixType``=``covarianceMatrix``. Pointer to the numeric table"
+      },
+      {
+        "name": "correlation",
+        "description": "Use when ``outputMatrixType``=``correlationMatrix``. Pointer to the numeric tabl"
+      },
+      {
+        "name": "mean",
+        "description": "Pointer to the :math:`1 \\times p` numeric table with means."
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "defaultDense",
+        "description": "uses brute-force for neighborhood computation"
+      },
+      {
+        "name": "epsilon",
+        "description": "Not applicable"
+      },
+      {
+        "name": "minObservations",
+        "description": "Not applicable"
+      },
+      {
+        "name": "memorySavingMode",
+        "description": "``false``"
+      },
+      {
+        "name": "resultsToCompute",
+        "description": ":math:`0`"
+      },
+      {
+        "name": "data",
+        "description": "Pointer to the :math:`n \\times p` numeric table with the data to be clustered."
+      },
+      {
+        "name": "weights",
+        "description": "Optional input. Pointer to the :math:`n \\times 1` numeric table with weights of"
+      },
+      {
+        "name": "assignments",
+        "description": "Pointer to the :math:`n \\times 1` numeric table with assignments of cluster indi"
+      },
+      {
+        "name": "nClusters",
+        "description": "Pointer to the :math:`1 \\times 1` numeric table with the total number of cluster"
+      },
+      {
+        "name": "coreIndices",
+        "description": "Pointer to the numeric table with :math:`1` column and arbitrary number of rows,"
+      },
+      {
+        "name": "coreObservations",
+        "description": "Pointer to the numeric table with :math:`p` columns and arbitrary number of rows"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "defaultDense",
+        "description": "uses brute-force for neighborhood computation"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "defaultDense",
+        "description": "uses brute-force for neighborhood computation"
+      },
+      {
+        "name": "blockIndex",
+        "description": "Not applicable"
+      },
+      {
+        "name": "nBlocks",
+        "description": "Not applicable"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "defaultDense",
+        "description": "uses brute-force for neighborhood computation"
+      },
+      {
+        "name": "leftBlocks",
+        "description": "Not applicable"
+      },
+      {
+        "name": "rightBlocks",
+        "description": "Not applicable"
+      },
+      {
+        "name": "step1Data",
+        "description": "Pointer to the :math:`n \\times p` numeric table with the observations to be clus"
+      },
+      {
+        "name": "partialOrder",
+        "description": "Pointer to the :math:`n \\times 2` numeric table containing information about obs"
+      },
+      {
+        "name": "step10InputClusterStructure",
+        "description": "Pointer to the numeric table with :math:`4` columns and arbitrary number of rows"
+      },
+      {
+        "name": "step10ClusterOffset",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the offset for cluster nu"
+      },
+      {
+        "name": "step10ClusterStructure",
+        "description": "Pointer to the numeric table with :math:`4` columns and arbitrary number of rows"
+      },
+      {
+        "name": "step10FinishedFlag",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the flag indicating that"
+      },
+      {
+        "name": "step10Queries",
+        "description": "Pointer to the collection of ``nBlocks`` numeric tables with :math:`4` columns a"
+      },
+      {
+        "name": "step11InputClusterStructure",
+        "description": "Pointer to the numeric table with :math:`4` columns and arbitrary number of rows"
+      },
+      {
+        "name": "step11PartialQueries",
+        "description": "Pointer to the collection of numeric tables with :math:`4` columns and arbitrary"
+      },
+      {
+        "name": "step11ClusterStructure",
+        "description": "Pointer to the numeric table with :math:`4` columns and arbitrary number of rows"
+      },
+      {
+        "name": "step11FinishedFlag",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the flag indicating that"
+      },
+      {
+        "name": "step11Queries",
+        "description": "Pointer to the collection of ``nBlocks`` numeric tables with :math:`4` columns a"
+      },
+      {
+        "name": "step12InputClusterStructure",
+        "description": "Pointer to the numeric table with :math:`4` columns and arbitrary number of rows"
+      },
+      {
+        "name": "step12PartialOrders",
+        "description": "Pointer to the collection of :math:`n \\times 2` numeric tables containing inform"
+      },
+      {
+        "name": "assignmentQueries",
+        "description": "Pointer to the collection of ``nBlocks`` numeric tables with :math:`2` columns a"
+      },
+      {
+        "name": "partialAssignmentQueries",
+        "description": "Pointer to the collection of numeric tables with :math:`2` columns and arbitrary"
+      },
+      {
+        "name": "step13Assignments",
+        "description": "Pointer to the :math:`n \\times 1` numeric table with assignments of cluster indi"
+      },
+      {
+        "name": "step13AssignmentsQueries",
+        "description": "Pointer to the numeric table with :math:`2` columns and arbitrary number of rows"
+      },
+      {
+        "name": "partialData",
+        "description": "Pointer to the collection of numeric tables with :math:`p` columns and arbitrary"
+      },
+      {
+        "name": "boundingBox",
+        "description": "Pointer to the :math:`2 \\times p` numeric table containing bounding box of input"
+      },
+      {
+        "name": "partialData",
+        "description": "Pointer to the collection of numeric tables with :math:`p` columns and arbitrary"
+      },
+      {
+        "name": "step3PartialBoundingBoxes",
+        "description": "Pointer to the collection of the :math:`2 \\times p` numeric tables containing bo"
+      },
+      {
+        "name": "split",
+        "description": "Pointer to the :math:`1 \\times 2` numeric table containing information about spl"
+      },
+      {
+        "name": "partialData",
+        "description": "Pointer to the collection of numeric tables with :math:`p` columns and arbitrary"
+      },
+      {
+        "name": "step4PartialOrders",
+        "description": "Pointer to the collection of numeric table with :math:`2` columns and arbitrary"
+      },
+      {
+        "name": "step4PartialSplits",
+        "description": "Pointer to the collection of the :math:`1 \\times 2` numeric table containing inf"
+      },
+      {
+        "name": "partitionedData",
+        "description": "Pointer to the collection of (``leftBlocks`` + ``rightBlocks``) numeric tables w"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "defaultDense",
+        "description": "uses brute-force for neighborhood computation"
+      },
+      {
+        "name": "blockIndex",
+        "description": "Not applicable"
+      },
+      {
+        "name": "nBlocks",
+        "description": "Not applicable"
+      },
+      {
+        "name": "epsilon",
+        "description": "Not applicable"
+      },
+      {
+        "name": "partialData",
+        "description": "Pointer to the collection of numeric tables with :math:`p` columns and arbitrary"
+      },
+      {
+        "name": "step5PartialBoundingBoxes",
+        "description": "Pointer to the collection of :math:`2 \\times p` numeric table containing boundin"
+      },
+      {
+        "name": "partitionedHaloData",
+        "description": "Pointer to the collection of ``nBlocks`` numeric tables with :math:`p` columns a"
+      },
+      {
+        "name": "partitionedHaloDataIndices",
+        "description": "Pointer to the collection of ``nBlocks`` numeric tables with :math:`1` column an"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "defaultDense",
+        "description": "uses brute-force for neighborhood computation"
+      },
+      {
+        "name": "blockIndex",
+        "description": "Not applicable"
+      },
+      {
+        "name": "nBlocks",
+        "description": "Not applicable"
+      },
+      {
+        "name": "epsilon",
+        "description": "Not applicable"
+      },
+      {
+        "name": "minObservations",
+        "description": "Not applicable"
+      },
+      {
+        "name": "memorySavingMode",
+        "description": "``false``"
+      },
+      {
+        "name": "partialData",
+        "description": "Pointer to the collection of numeric tables with :math:`p` columns and arbitrary"
+      },
+      {
+        "name": "haloData",
+        "description": "Pointer to the collection of numeric tables with :math:`p` columns and arbitrary"
+      },
+      {
+        "name": "haloDataIndices",
+        "description": "Pointer to the collection of numeric tables with :math:`1` column and arbitrary"
+      },
+      {
+        "name": "haloDataBlocks",
+        "description": "Pointer to the collection of :math:`1 \\times 1` numeric tables containing identi"
+      },
+      {
+        "name": "step6ClusterStructure",
+        "description": "Pointer to the numeric table with :math:`4` columns and arbitrary number of rows"
+      },
+      {
+        "name": "step6FinishedFlag",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the flag indicating that"
+      },
+      {
+        "name": "step6NClusters",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the current number of clu"
+      },
+      {
+        "name": "step6Queries",
+        "description": "Pointer to the collection of ``nBlocks`` numeric tables with :math:`3` columns a"
+      },
+      {
+        "name": "partialFinishedFlags",
+        "description": "Pointer to the collection of :math:`1 \\times 1` numeric table containing the fla"
+      },
+      {
+        "name": "finishedFlag",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the flag indicating"
+      },
+      {
+        "name": "step8InputClusterStructure",
+        "description": "Pointer to the numeric table with :math:`4` columns and arbitrary number of rows"
+      },
+      {
+        "name": "step8InputNClusters",
+        "description": "Pointer to :math:`1 \\times 1` numeric tables containing the current number of cl"
+      },
+      {
+        "name": "step8PartialQueries",
+        "description": "Pointer to the collection of numeric tables with :math:`3` columns and arbitrary"
+      },
+      {
+        "name": "step8ClusterStructure",
+        "description": "Pointer to the numeric table with :math:`4` columns and arbitrary number of rows"
+      },
+      {
+        "name": "step8FinishedFlag",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the flag indicating that"
+      },
+      {
+        "name": "step8NClusters",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the current number of clu"
+      },
+      {
+        "name": "step8Queries",
+        "description": "Pointer to the collection of ``nBlocks`` numeric tables with :math:`3` columns a"
+      },
+      {
+        "name": "partialNClusters",
+        "description": "Pointer to the collection of :math:`1 \\times 1` numeric table containing the num"
+      },
+      {
+        "name": "step9NClusters",
+        "description": "Pointer to :math:`1 \\times 1` numeric table containing the number of clusters fo"
+      },
+      {
+        "name": "clusterOffsets",
+        "description": "Pointer to the collection of :math:`1 \\times 1` numeric tables containing offset"
+      },
+      {
+        "name": "nClasses",
+        "description": "Not applicable"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "nClasses",
+        "description": "Not applicable"
+      },
+      {
+        "name": "votingMethod",
+        "description": "``weighted``"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "algorithmFPType",
+        "description": "``float``"
+      },
+      {
+        "name": "binningStrategy",
+        "description": "``quantiles``"
+      },
+      {
+        "name": "true",
+        "description": "If true, the training set for a tree is a bootstrap of the whole training set."
+      },
+      {
+        "name": "engine",
+        "description": "``SharePtr<engines::mt2203::Batch>()>``"
+      },
+      {
+        "name": "featuresPerNode",
+        "description": ":math:`0`"
+      },
+      {
+        "name": "impurityThreshold",
+        "description": ":math:`0`"
+      },
+      {
+        "name": "maxBins",
+        "description": ":math:`256`"
+      },
+      {
+        "name": "maxLeafNodes",
+        "description": ":math:`0`"
+      },
+      {
+        "name": "maxTreeDepth",
+        "description": ":math:`0`"
+      },
+      {
+        "name": "method",
+        "description": "``defaultDense``"
+      },
+      {
+        "name": "defaultDense",
+        "description": "default performance-oriented method"
+      },
+      {
+        "name": "hist",
+        "description": "inexact histogram computation method"
+      },
+      {
+        "name": "hist",
+        "description": ":ref:`inexact histogram computation method <df_inexact_hist_method>`"
+      },
+      {
+        "name": "minBinSize",
+        "description": ":math:`5`"
+      },
+      {
+        "name": "minImpurityDecreaseInSplitNode",
+        "description": ":math:`0.0`"
+      },
+      {
+        "name": "minObservationsInLeafNode",
+        "description": ":math:`1` for classification, :math:`5` for regression"
+      }
+    ]
+  },
+  "code_examples": [
+    {
+      "language": "cpp",
+      "code": "template <typename Graph>\n  return_type<Graph> get_[graph_element](const Graph& g, ...);"
+    },
+    {
+      "language": "cpp",
+      "code": "using graph_type = ...;\n  const my_graph_type g = ...;\n  std::cout << \"The number of vertices: \" << oneapi::dal::preview::get_vertex_count(g) << std::endl;\n  std::cout << \"The number of edges: \" << oneapi::dal::preview::get_edge_count(g) << std::endl;"
+    },
+    {
+      "language": "cpp",
+      "code": "template <typename VertexValue,\n            typename EdgeValue,\n            typename GraphValue,\n            typename IndexType,\n            typename Allocator>\n  class [graph_name]_graph;"
+    },
+    {
+      "language": "cpp",
+      "code": "template <typename G>\n   struct graph_traits {\n      using graph_type = ...;\n      using allocator_type = ...;\n      ...\n   };"
+    }
+  ],
+  "api_files": [
+    {
+      "file": "api/algorithms/clustering/dbscan.rst",
+      "title": "DBSCAN",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/dbscan.hpp"
+    },
+    {
+      "file": "api/algorithms/clustering/kmeans-init.rst",
+      "title": "K-Means initialization",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/kmeans_init.hpp"
+    },
+    {
+      "file": "api/algorithms/clustering/kmeans.rst",
+      "title": "K-Means",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/kmeans.hpp"
+    },
+    {
+      "file": "api/algorithms/covariance/covariance.rst",
+      "title": "Covariance",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/covariance.hpp"
+    },
+    {
+      "file": "api/algorithms/decomposition/pca.rst",
+      "title": "Principal Components Analysis (PCA)",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/pca.hpp"
+    },
+    {
+      "file": "api/algorithms/ensembles/decision-forest.rst",
+      "title": "Decision Forest Classification and Regression (DF)",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/decision_forest.hpp"
+    },
+    {
+      "file": "api/algorithms/kernel-functions/linear-kernel.rst",
+      "title": "Linear kernel",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/linear_kernel.hpp"
+    },
+    {
+      "file": "api/algorithms/kernel-functions/polynomial-kernel.rst",
+      "title": "Polynomial kernel",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/polynomial_kernel.hpp"
+    },
+    {
+      "file": "api/algorithms/kernel-functions/rbf-kernel.rst",
+      "title": "Radial Basis Function (RBF) kernel",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/rbf_kernel.hpp"
+    },
+    {
+      "file": "api/algorithms/kernel-functions/sigmoid-kernel.rst",
+      "title": "Sigmoid kernel",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/sigmoid_kernel.hpp"
+    },
+    {
+      "file": "api/algorithms/logistic-regression/logistic-regression.rst",
+      "title": "Logistic Regression",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/logistic_regression.hpp"
+    },
+    {
+      "file": "api/algorithms/nearest-neighbors/knn-classification.rst",
+      "title": "k-Nearest Neighbors Classification (k-NN)",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/knn.hpp"
+    },
+    {
+      "file": "api/algorithms/objective-function/objective-function.rst",
+      "title": "Objective function",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/objective_function.hpp"
+    },
+    {
+      "file": "api/algorithms/pairwise-distances/correlation-distance.rst",
+      "title": "Correlation distance",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/correlation_distance.hpp"
+    },
+    {
+      "file": "api/algorithms/pairwise-distances/cosine-distance.rst",
+      "title": "Cosine distance",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/cosine_distance.hpp"
+    },
+    {
+      "file": "api/algorithms/statistics/basic-statistics.rst",
+      "title": "Basic Statistics",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/basic_statistics.hpp"
+    },
+    {
+      "file": "api/algorithms/svm/svm.rst",
+      "title": "Support Vector Machine Classifier (SVM)",
+      "namespace": "",
+      "header_file": "oneapi/dal/algo/svm.hpp"
+    },
+    {
+      "file": "api/data-management/data-source/csv.rst",
+      "title": "",
+      "namespace": "",
+      "header_file": "oneapi/dal/io/csv.hpp"
+    },
+    {
+      "file": "api/data-management/graph-service.rst",
+      "title": "Graph Service",
+      "namespace": "",
+      "header_file": "oneapi/dal/graph/service_functions.hpp"
+    },
+    {
+      "file": "api/data-management/graphs.rst",
+      "title": "Graphs",
+      "namespace": "",
+      "header_file": "oneapi/dal/graph/common.hpp"
+    },
+    {
+      "file": "api/data-management/tables.rst",
+      "title": "Tables",
+      "namespace": "",
+      "header_file": "oneapi/dal/table/common.hpp"
+    },
+    {
+      "file": "bibliography.rst",
+      "title": "Bibliography",
+      "namespace": "",
+      "header_file": ""
+    },
+    {
+      "file": "daal/algorithms/svm/support-vector-machine-classifier.rst",
+      "title": "Support Vector Machine Classifier",
+      "namespace": "",
+      "header_file": ""
+    },
+    {
+      "file": "daal/algorithms/svm_multi_class/multi-class-classifier.rst",
+      "title": "Multi-class Classifier",
+      "namespace": "",
+      "header_file": ""
+    },
+    {
+      "file": "daal/data-management/data-sources.rst",
+      "title": "Data Sources",
+      "namespace": "",
+      "header_file": ""
+    },
+    {
+      "file": "daal/services/callback-for-host-application.rst",
+      "title": "Providing a Callback for the Host Application",
+      "namespace": "",
+      "header_file": ""
+    },
+    {
+      "file": "deprecation.rst",
+      "title": "Deprecation Notice",
+      "namespace": "",
+      "header_file": ""
+    }
+  ],
+  "summary": {
+    "rst_files": 217,
+    "hpp_files": 228,
+    "classes": 289,
+    "functions": 401,
+    "includes": 310,
+    "code_examples": 4,
+    "parameters": 989
+  }
+}

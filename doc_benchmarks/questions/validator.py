@@ -112,9 +112,33 @@ class QuestionValidator:
         """
         logger.info(f"Validating {len(questions)} questions...")
         
+        # Step 0: Pre-filter synthetic "document analysis" questions
+        SYNTHETIC_PATTERNS = [
+            r"\bmentioned in\b",
+            r"\baccording to the doc",
+            r"\bdescribed in the (excerpt|doc)",
+            r"\bstated in the doc",
+            r"\bin the documentation excerpt\b",
+            r"\bthe documentation (says|states|mentions|describes)\b",
+            r"\bwhat (does|is|are) .{0,40} (mentioned|described|stated|listed) in",
+        ]
+        import re
+        pre_filtered = []
+        pre_rejected = []
+        for q in questions:
+            text = self._q_text(q).lower()
+            rejected = any(re.search(p, text, re.IGNORECASE) for p in SYNTHETIC_PATTERNS)
+            if rejected:
+                pre_rejected.append(q)
+                logger.info(f"Pre-filter rejected (synthetic framing): {self._q_text(q)[:80]}")
+            else:
+                pre_filtered.append(q)
+        if pre_rejected:
+            logger.warning(f"Pre-filter removed {len(pre_rejected)} synthetic questions")
+        
         # Step 1: Validate each question (LLM scoring)
         validated = []
-        for q in questions:
+        for q in pre_filtered:
             score = self._validate_question(library_name, self._q_text(q))
             if score is not None:
                 q["validation_score"] = score["aggregate"]
@@ -131,9 +155,11 @@ class QuestionValidator:
         
         stats = {
             "initial_count": len(questions),
+            "after_prefilter": len(pre_filtered),
+            "removed_synthetic": len(pre_rejected),
             "after_validation": len(validated),
             "after_deduplication": len(deduplicated),
-            "removed_low_score": len(questions) - len(validated),
+            "removed_low_score": len(pre_filtered) - len(validated),
             "removed_duplicates": len(validated) - len(deduplicated),
             "duplicate_groups": dup_groups
         }

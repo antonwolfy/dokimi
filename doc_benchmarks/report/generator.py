@@ -124,6 +124,7 @@ class ReportGenerator:
                     "answer_provider": answer_provider,
                     "judge_model": judge_model,
                     "judge_provider": judge_provider,
+                    "question_set_hash": question_set_hash,
                 },
             }, indent=2)
         else:

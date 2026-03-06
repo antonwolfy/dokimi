@@ -132,7 +132,7 @@ class Answerer:
         completed = [0]
 
         def _process(idx: int, q: Dict) -> None:
-            q_id = q["id"]
+            q_id = q.get("id") or q.get("question_id") or str(idx)
             t0 = time.time()
             try:
                 pair = self._generate_answer_pair(
@@ -196,7 +196,12 @@ class Answerer:
         max_tokens: int
     ) -> Dict[str, Any]:
         """Generate WITH and WITHOUT answers for a single question."""
-        question_text = question.get("question") or question.get("text", "")
+        question_text = (
+            question.get("question")
+            or question.get("text")
+            or question.get("question_text", "")
+        )
+        qid = question.get("id") or question.get("question_id") or "unknown_q"
         
         # WITH docs
         with_docs_answer = None
@@ -213,7 +218,7 @@ class Answerer:
             else:
                 # Fallback: no relevant docs found
                 logger.warning(
-                    f"No relevant docs for {question['id']}, "
+                    f"No relevant docs for {qid}, "
                     f"metadata: {retrieval_metadata}"
                 )
                 with_docs_answer = {
@@ -224,13 +229,13 @@ class Answerer:
                     "retrieval_metadata": retrieval_metadata if self.debug_retrieval else None
                 }
         else:
-            logger.warning(f"No MCP client - skipping WITH docs for {question['id']}")
+            logger.warning(f"No MCP client - skipping WITH docs for {qid}")
         
         # WITHOUT docs
         without_docs_answer = self._generate_without_docs(question_text)
         
         result = {
-            "question_id": question["id"],
+            "question_id": qid,
             "question_text": question_text,
             "library_name": library_name,
             "category": question.get("category"),
@@ -384,12 +389,16 @@ class Answerer:
     def save_answers(
         self,
         answers: List[Dict[str, Any]],
-        output_path: Path
+        output_path: Path,
+        question_set_hash: str = None,
     ):
         """Save answers to JSON file."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
+        data = self._build_output(answers)
+        if question_set_hash:
+            data["question_set_hash"] = question_set_hash
         with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(self._build_output(answers), f, indent=2)
+            json.dump(data, f, indent=2)
         logger.info(f"✓ Saved answers for {len(answers)} questions to {output_path}")
     
     @staticmethod

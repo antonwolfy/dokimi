@@ -152,7 +152,11 @@ class Judge:
         elif provider == "anthropic":
             self.llm = ChatAnthropic(model=model, api_key=api_key)
         else:
-            raise ValueError(f"Unsupported provider: {provider}")
+            from doc_benchmarks.utils import get_llm
+            import os
+            # Only use OPENROUTER_API_KEY as fallback for the openrouter provider
+            fallback_key = os.environ.get("OPENROUTER_API_KEY") if provider == "openrouter" else None
+            self.llm = get_llm(provider, model, api_key or fallback_key)
         
         logger.info(f"Judge initialized: {provider}/{model}")
     

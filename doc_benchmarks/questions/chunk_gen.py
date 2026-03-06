@@ -44,10 +44,20 @@ __CHUNK__
 - Include installation/setup questions if the excerpt covers them
 - Include performance/speedup questions if the excerpt mentions benchmarks or numbers
 
+**PREFERRED — write questions as a real user would ask them:**
+- "What PCA implementations does __LIBRARY__ support?" (not "What PCA implementations are mentioned?")
+- "How do I configure [specific parameter] in __LIBRARY__?"
+- "What does [specific API] return when [condition]?"
+- "What is the difference between [A] and [B] in __LIBRARY__?"
+- "Which [modes / algorithms] in __LIBRARY__ support [feature]?"
+- "What speedup should I expect from __LIBRARY__ on [task]?"
+
 **FORBIDDEN:**
 - "What are the best practices..." (open-ended, opinion-based)
 - Questions answerable without reading the excerpt
 - Duplicate or near-duplicate questions
+- Questions that reference the documentation itself: "What does the documentation say about X?", "What is mentioned in the excerpt?", "What types of X are mentioned in the documentation?" — questions must be framed from a user's perspective, NOT as document analysis tasks
+- Any question containing: "mentioned in", "according to the documentation", "described in the excerpt", "stated in the docs", "in the documentation excerpt"
 
 **Output ONLY a JSON array of strings:**
 ["Question 1?", "Question 2?", ...]

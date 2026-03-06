@@ -93,13 +93,28 @@ def llm_call(
         }
         api_key = os.environ.get(env_map.get(provider, "OPENAI_API_KEY"), "")
 
+    # Resolve file: references (e.g. "file:~/.openclaw/credentials/...")
+    if api_key and api_key.startswith("file:"):
+        key_path = os.path.expanduser(api_key[len("file:"):])
+        try:
+            with open(key_path) as _f:
+                api_key = _f.read().strip()
+        except OSError as exc:
+            raise ValueError(f"Cannot read API key from file '{key_path}': {exc}") from exc
+
     # Build litellm model string
-    if "/" in model:
+    if provider == "openrouter":
+        # Always prefix with openrouter/ so litellm routes to OpenRouter, not the
+        # upstream provider directly (e.g. deepseek/deepseek-chat → deepseek API).
+        litellm_model = model if model.startswith("openrouter/") else f"openrouter/{model}"
+    elif "/" in model:
         litellm_model = model           # already prefixed (e.g. "gemini/gemini-2.0-flash")
     elif provider == "openai":
         litellm_model = model           # openai models work as-is
-    elif provider in ("google", "gemini"):
-        litellm_model = f"gemini/{model}"
+    elif provider in ("google", "gemini", "google-vertex"):
+        litellm_model = f"vertex_ai/{model}"
+    elif provider == "amazon-bedrock":
+        litellm_model = f"bedrock/{model}"
     else:
         litellm_model = f"{provider}/{model}"
 
