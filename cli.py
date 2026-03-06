@@ -1409,14 +1409,11 @@ def cmd_benchmark_run(args: argparse.Namespace) -> None:
             questions_from=questions_from,
         )
     else:
-        # Multi-run mode: generate questions once (run 1), then evaluate N times
         print(f"\n🔁 Multi-run mode: {n_runs} evaluation passes")
         run_averages = []
         first_run_dir = f"{output_dir}_run1"
-
         for i in range(1, n_runs + 1):
             run_dir = f"{output_dir}_run{i}" if n_runs > 1 else output_dir
-            # All runs after run 1 reuse questions from run 1
             qfrom = questions_from if questions_from else (first_run_dir if i > 1 else None)
             print(f"\n  ── Run {i}/{n_runs} → {run_dir}")
             r = _run_single_library(
@@ -1432,21 +1429,16 @@ def cmd_benchmark_run(args: argparse.Namespace) -> None:
                 concurrency=concurrency,
                 questions_from=qfrom,
             )
-            # Extract per-run WITH-docs average from result
             try:
                 eval_summary = r["result"]["steps"]["evaluation"]["summary"]
                 run_averages.append(eval_summary["with_avg"])
             except (KeyError, TypeError):
                 pass
-
-        # Summary across runs
         if run_averages:
+            import statistics as _stats
             std = _stats.stdev(run_averages) if len(run_averages) > 1 else 0.0
             mean = _stats.mean(run_averages)
-            print(f"\n📊 Multi-run summary ({n_runs} runs):")
-            print(f"   WITH-docs avg: {mean:.1f} ± {std:.2f} (std)")
-            for idx, avg in enumerate(run_averages, 1):
-                print(f"   Run {idx}: {avg:.1f}")
+            print(f"\n📊 Multi-run summary ({n_runs} runs): WITH-docs avg {mean:.1f} ± {std:.2f}")
             if std > 5.0:
                 print("   ⚠️  High variance — scores are unstable (std > 5)")
 
