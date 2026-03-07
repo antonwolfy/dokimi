@@ -92,12 +92,17 @@ class QuestionGenerator:
             self.llm = ChatOpenAI(model=model, api_key=api_key)
         elif provider == "anthropic":
             self.llm = ChatAnthropic(model=model, api_key=api_key)
-        else:
+        elif provider in ("google", "gemini", "google-vertex", "openrouter",
+                          "amazon-bedrock", "vertex_ai"):
             from doc_benchmarks.utils import get_llm
             import os
-            # Only use OPENROUTER_API_KEY as fallback for the openrouter provider
             fallback_key = os.environ.get("OPENROUTER_API_KEY") if provider == "openrouter" else None
             self.llm = get_llm(provider, model, api_key or fallback_key)
+        else:
+            raise ValueError(
+                f"Unsupported provider: '{provider}'. "
+                "Use 'openai', 'anthropic', 'google', 'openrouter', or 'amazon-bedrock'."
+            )
         
         logger.info(f"QuestionGenerator initialized: {provider}/{model}")
     

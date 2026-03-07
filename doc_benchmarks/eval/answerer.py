@@ -11,7 +11,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
+from doc_benchmarks.llm import llm_call, llm_call_with_usage, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
 from .reranker import SimpleReranker, SentenceTransformerReranker, SENTENCE_TRANSFORMERS_AVAILABLE
 
@@ -83,9 +83,14 @@ class Answerer:
             self.llm = ChatOpenAI(model=model, api_key=api_key)
         elif provider == "anthropic":
             self.llm = ChatAnthropic(model=model, api_key=api_key)
+        elif provider in ("google", "gemini", "google-vertex", "openrouter",
+                          "amazon-bedrock", "vertex_ai"):
+            self.llm = None  # llm_call_with_usage handles these natively
         else:
-            from doc_benchmarks.utils import get_llm
-            self.llm = get_llm(provider, model, api_key)
+            raise ValueError(
+                f"Unsupported provider: '{provider}'. "
+                "Use 'openai', 'anthropic', 'google', 'openrouter', or 'amazon-bedrock'."
+            )
         self.top_k = top_k
         self.debug_retrieval = debug_retrieval
         
@@ -321,60 +326,95 @@ class Answerer:
                 "retrieved_docs": [],
                 "model": self.model,
                 "doc_source": "none",
-                "retrieval_metadata": retrieval_metadata if self.debug_retrieval else None
+                "retrieval_metadata": retrieval_metadata if self.debug_retrieval else None,
+                "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                                "context_chars": 0},
             }
-        
+
+        # ~4k tokens at ~4 chars/token; keeps prompt within most models' context window
+        MAX_DOC_CHARS = 15_000
+
         # Format docs
         docs_text = "\n\n---\n\n".join(d["content"] for d in docs)
-        
+        context_chars = len(docs_text)
+        docs_text_trimmed = docs_text[:MAX_DOC_CHARS]
+
         # Generate answer
         prompt = ANSWER_PROMPT_WITH_DOCS.format(
             question=question,
-            docs=docs_text[:15000]  # Limit to avoid token overflow
+            docs=docs_text_trimmed,
         )
-        
-        response = self.llm.invoke(prompt)
-        answer_text = response.content if hasattr(response, "content") else str(response)
-        
+
+        answer_text, usage = llm_call_with_usage(
+            prompt=prompt,
+            model=self.model,
+            provider=self.provider,
+            api_key=self.api_key,
+        )
+
+        # Attach context size to usage for analysis
+        usage["context_chars"] = context_chars
+
         result = {
             "answer": answer_text,
             "retrieved_docs": [
                 {
                     "source": d.get("source", "unknown"),
                     "snippet": d["content"][:200] + "..." if len(d["content"]) > 200 else d["content"],
-                    "relevance_score": d.get("relevance_score")
+                    "relevance_score": d.get("relevance_score"),
                 }
                 for d in docs
             ],
             "model": self.model,
-            "doc_source": docs[0].get("source", "unknown") if docs else "none"
+            "doc_source": docs[0].get("source", "unknown") if docs else "none",
+            "token_usage": usage,
         }
-        
+
         # Add metadata if debug mode enabled
         if self.debug_retrieval and retrieval_metadata:
             result["retrieval_metadata"] = retrieval_metadata
-        
+
         return result
-    
+
     def _generate_without_docs(self, question: str) -> Dict[str, Any]:
         """Generate answer WITHOUT documentation (baseline)."""
         prompt = ANSWER_PROMPT_WITHOUT_DOCS.format(question=question)
-        
-        response = self.llm.invoke(prompt)
-        answer_text = response.content if hasattr(response, "content") else str(response)
-        
+
+        answer_text, usage = llm_call_with_usage(
+            prompt=prompt,
+            model=self.model,
+            provider=self.provider,
+            api_key=self.api_key,
+        )
+
         return {
             "answer": answer_text,
-            "model": self.model
+            "model": self.model,
+            "token_usage": usage,
         }
     
     def _build_output(self, answers: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Build the serialisable output structure for a set of answers."""
+        # Aggregate token usage across all answers
+        total_usage = {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+            "with_docs": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "without_docs": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        }
+        for a in answers:
+            for mode in ("with_docs", "without_docs"):
+                u = (a.get(mode) or {}).get("token_usage") or {}
+                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    v = u.get(k, 0) or 0
+                    total_usage[mode][k] += v
+                    total_usage[k] += v
+
         return {
             "generated_at": self._get_timestamp(),
             "model": self.model,
             "provider": self.provider,
             "total_questions": len(answers),
+            "token_usage_summary": total_usage,
             "answers": answers,
         }
 

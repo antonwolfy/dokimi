@@ -94,9 +94,20 @@ class PersonaGenerator:
         self.provider = provider
         self.api_key = api_key
 
-        from doc_benchmarks.utils import get_llm
-        self.llm = get_llm(provider, model, api_key)
-        
+        if provider == "openai":
+            self.llm = ChatOpenAI(model=model, api_key=api_key)
+        elif provider == "anthropic":
+            self.llm = ChatAnthropic(model=model, api_key=api_key)
+        elif provider in ("google", "gemini", "google-vertex", "openrouter",
+                          "amazon-bedrock", "vertex_ai"):
+            from doc_benchmarks.utils import get_llm
+            self.llm = get_llm(provider, model, api_key)
+        else:
+            raise ValueError(
+                f"Unsupported provider: '{provider}'. "
+                "Use 'openai', 'anthropic', 'google', 'openrouter', or 'amazon-bedrock'."
+            )
+
         logger.info(f"Initialized PersonaGenerator with {provider}/{model}")
     
     def generate_personas(

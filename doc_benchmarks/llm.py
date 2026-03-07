@@ -58,6 +58,46 @@ def _is_retryable(exc: Exception) -> bool:
     return any(s in msg for s in _RETRYABLE_SUBSTRINGS)
 
 
+def _resolve_api_key(provider: str, api_key: Optional[str]) -> str:
+    """Resolve API key from env vars or file: references."""
+    if not api_key:
+        env_map = {
+            "anthropic":  "ANTHROPIC_API_KEY",
+            "openai":     "OPENAI_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
+            "bedrock":    "AWS_ACCESS_KEY_ID",
+            "google":     "GEMINI_API_KEY",
+            "gemini":     "GEMINI_API_KEY",
+        }
+        api_key = os.environ.get(env_map.get(provider, "OPENAI_API_KEY"), "")
+    if api_key and api_key.startswith("file:"):
+        key_path = os.path.expanduser(api_key[len("file:"):])
+        try:
+            with open(key_path) as _f:
+                api_key = _f.read().strip()
+        except OSError as exc:
+            raise ValueError(f"Cannot read API key from file '{key_path}': {exc}") from exc
+    return api_key
+
+
+def _build_litellm_model(model: str, provider: str) -> str:
+    """Build litellm model string from model + provider."""
+    if provider == "openrouter":
+        return model if model.startswith("openrouter/") else f"openrouter/{model}"
+    elif provider == "openai-codex":
+        return f"openai/{model}"
+    elif "/" in model:
+        return model
+    elif provider == "openai":
+        return model
+    elif provider in ("google", "gemini", "google-vertex"):
+        return f"vertex_ai/{model}"
+    elif provider == "amazon-bedrock":
+        return f"bedrock/{model}"
+    else:
+        return f"{provider}/{model}"
+
+
 def llm_call(
     prompt: str,
     model: str,
@@ -79,44 +119,33 @@ def llm_call(
     Returns:
         Model response as a plain string.
     """
+    text, _ = llm_call_with_usage(
+        prompt=prompt, model=model, provider=provider,
+        api_key=api_key, max_retries=max_retries, retry_delay=retry_delay,
+    )
+    return text
+
+
+def llm_call_with_usage(
+    prompt: str,
+    model: str,
+    provider: str = "openai",
+    api_key: Optional[str] = None,
+    max_retries: int = 3,
+    retry_delay: float = 2.0,
+) -> "tuple[str, dict]":
+    """Like llm_call, but returns (text, usage_dict).
+
+    usage_dict keys: prompt_tokens, completion_tokens, total_tokens.
+    All values default to 0 if the provider doesn't return usage.
+
+    Returns:
+        (response_text: str, usage: dict)
+    """
     from litellm import completion
 
-    # Resolve api_key from env if not provided
-    if not api_key:
-        env_map = {
-            "anthropic":  "ANTHROPIC_API_KEY",
-            "openai":     "OPENAI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-            "bedrock":    "AWS_ACCESS_KEY_ID",
-            "google":     "GEMINI_API_KEY",
-            "gemini":     "GEMINI_API_KEY",
-        }
-        api_key = os.environ.get(env_map.get(provider, "OPENAI_API_KEY"), "")
-
-    # Resolve file: references (e.g. "file:~/.openclaw/credentials/...")
-    if api_key and api_key.startswith("file:"):
-        key_path = os.path.expanduser(api_key[len("file:"):])
-        try:
-            with open(key_path) as _f:
-                api_key = _f.read().strip()
-        except OSError as exc:
-            raise ValueError(f"Cannot read API key from file '{key_path}': {exc}") from exc
-
-    # Build litellm model string
-    if provider == "openrouter":
-        # Always prefix with openrouter/ so litellm routes to OpenRouter, not the
-        # upstream provider directly (e.g. deepseek/deepseek-chat → deepseek API).
-        litellm_model = model if model.startswith("openrouter/") else f"openrouter/{model}"
-    elif "/" in model:
-        litellm_model = model           # already prefixed (e.g. "gemini/gemini-2.0-flash")
-    elif provider == "openai":
-        litellm_model = model           # openai models work as-is
-    elif provider in ("google", "gemini", "google-vertex"):
-        litellm_model = f"vertex_ai/{model}"
-    elif provider == "amazon-bedrock":
-        litellm_model = f"bedrock/{model}"
-    else:
-        litellm_model = f"{provider}/{model}"
+    api_key = _resolve_api_key(provider, api_key)
+    litellm_model = _build_litellm_model(model, provider)
 
     last_exc: Optional[Exception] = None
     delay = retry_delay
@@ -128,7 +157,17 @@ def llm_call(
                 messages=[{"role": "user", "content": prompt}],
                 api_key=api_key or None,
             )
-            return resp.choices[0].message.content
+            text = resp.choices[0].message.content
+
+            # Extract usage — litellm always provides .usage when available
+            usage: dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            if hasattr(resp, "usage") and resp.usage:
+                u = resp.usage
+                usage["prompt_tokens"] = getattr(u, "prompt_tokens", 0) or 0
+                usage["completion_tokens"] = getattr(u, "completion_tokens", 0) or 0
+                usage["total_tokens"] = getattr(u, "total_tokens", 0) or 0
+
+            return text, usage
 
         except Exception as exc:
             last_exc = exc
@@ -138,7 +177,7 @@ def llm_call(
                     f"retrying in {delay:.0f}s: {exc}"
                 )
                 time.sleep(delay)
-                delay *= 2          # exponential backoff
+                delay *= 2
             else:
                 raise
 
