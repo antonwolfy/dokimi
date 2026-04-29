@@ -13,6 +13,46 @@ on:
         default: false
 
 jobs:
+  terminal-bench-verify:
+    name: Verify terminal-bench-tasks (oracle solutions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image — onetbb-parallel-sort
+        run: |
+          docker build \
+            -t intel-hpc-bench/onetbb:latest \
+            terminal-bench-tasks/onetbb-parallel-sort/environment/
+
+      - name: Run oracle solution + verifier inside container
+        run: |
+          docker run --rm \
+            --cpus=2 \
+            --memory=2g \
+            -v "${{ github.workspace }}/terminal-bench-tasks/onetbb-parallel-sort/solution:/solution:ro" \
+            -v "${{ github.workspace }}/terminal-bench-tasks/onetbb-parallel-sort/tests:/tests:ro" \
+            -v /tmp/logs:/logs \
+            intel-hpc-bench/onetbb:latest \
+            bash -c "bash /solution/solve.sh && bash /tests/test.sh"
+
+      - name: Check reward == 1
+        run: |
+          REWARD=$(cat /tmp/logs/verifier/reward.txt | tr -d '[:space:]')
+          echo "Reward: $REWARD"
+          if [ "$REWARD" != "1" ]; then
+            echo "❌ Oracle solution did not pass all tests (reward=$REWARD)"
+            exit 1
+          fi
+          echo "✅ Oracle solution passed all tests"
+
+      - name: Upload verifier logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-bench-logs
+          path: /tmp/logs/
+
   test:
     runs-on: ubuntu-latest
     steps:
