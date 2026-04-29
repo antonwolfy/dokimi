@@ -669,6 +669,42 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
     answerer.save_answers(answers, output_path)
     print(f"\n✅ Saved answers to {output_path}")
 
+    # Optional RAGAS meta-evaluation (--ragas flag)
+    if getattr(args, "ragas", False):
+        _run_ragas_eval(answers, output_path, args)
+
+
+def _run_ragas_eval(answers, output_path, args) -> None:
+    """Run RAGAS meta-evaluation and save results alongside answers."""
+    try:
+        from doc_benchmarks.eval.ragas_eval import RagasEvaluator
+    except ImportError as e:
+        print(f"\n⚠️  RAGAS not available ({e}). Skipping meta-evaluation.")
+        return
+
+    ragas_model = getattr(args, "ragas_model", "gpt-4o-mini")
+    ragas_provider = getattr(args, "ragas_provider", "openai")
+
+    print(f"\n🔍 Running RAGAS meta-evaluation ({ragas_provider}/{ragas_model})...")
+    try:
+        evaluator = RagasEvaluator(
+            llm_model=ragas_model,
+            provider=ragas_provider,
+        )
+        result = evaluator.evaluate(answers, include_without_docs=True)
+
+        # Save ragas results alongside answers
+        import json
+        ragas_path = output_path.with_name(output_path.stem + "_ragas.json")
+        ragas_path.parent.mkdir(parents=True, exist_ok=True)
+        ragas_path.write_text(json.dumps(result.to_dict(), indent=2))
+
+        print(result.format_summary())
+        print(f"✅ Saved RAGAS results to {ragas_path}")
+
+    except Exception as exc:
+        print(f"\n⚠️  RAGAS evaluation failed: {exc}")
+
 
 def cmd_eval_panel_score(args: argparse.Namespace) -> None:
     """Score answers using a multi-judge panel (parallel, role-diverse judges)."""
@@ -796,6 +832,20 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
 
     judge.save_evaluations(evaluations, output_path)
     print(f"\n✅ Saved evaluations to {output_path}")
+
+
+def cmd_eval_ragas(args: argparse.Namespace) -> None:
+    """Run standalone RAGAS meta-evaluation on an answers JSON."""
+    answers_data = json.loads(Path(args.answers).read_text())
+    answers = answers_data.get("answers", answers_data)
+    print(f"Loaded {len(answers)} answers from {args.answers}")
+
+    class _Args:
+        ragas_model = args.ragas_model
+        ragas_provider = args.ragas_provider
+
+    output_path = Path(args.answers)
+    _run_ragas_eval(answers, output_path, _Args())
 
 
 def cmd_report_eval(args: argparse.Namespace) -> None:
@@ -1130,6 +1180,13 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Documentation source: 'context7' (default), 'local:<path>', 'url:<url>'")
     gen_a_p.add_argument("--context7-id", default=None, dest="context7_id",
                          help="Explicit Context7 library ID. Overrides auto-resolution.")
+    gen_a_p.add_argument("--ragas", action="store_true",
+                         help="Run RAGAS meta-evaluation after answer generation and save alongside answers.")
+    gen_a_p.add_argument("--ragas-model", default="gpt-4o-mini",
+                         help="LLM for RAGAS judge (default: gpt-4o-mini)")
+    gen_a_p.add_argument("--ragas-provider", default="openai",
+                         choices=["openai", "anthropic"],
+                         help="Provider for RAGAS judge LLM (default: openai)")
     gen_a_p.set_defaults(func=cmd_answers_generate)
     
     # Eval subcommand group
@@ -1147,6 +1204,15 @@ def build_parser() -> argparse.ArgumentParser:
     score_p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic", "azure", "bedrock", "google"])
     score_p.add_argument("--concurrency", type=positive_int, default=5, help="Parallel judge calls (default: 5)")
     score_p.set_defaults(func=cmd_eval_score)
+
+    # eval ragas
+    ragas_p = eval_sub.add_parser("ragas", help="Run RAGAS meta-evaluation on answers")
+    ragas_p.add_argument("--answers", required=True, help="Path to answers JSON file")
+    ragas_p.add_argument("--ragas-model", default="gpt-4o-mini",
+                         help="LLM for RAGAS judge (default: gpt-4o-mini)")
+    ragas_p.add_argument("--ragas-provider", default="openai", choices=["openai", "anthropic"],
+                         help="Provider for RAGAS judge LLM (default: openai)")
+    ragas_p.set_defaults(func=cmd_eval_ragas)
 
     # eval panel-score
     panel_p = eval_sub.add_parser("panel-score", help="Score answers using a multi-judge panel")
