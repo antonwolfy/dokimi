@@ -4,6 +4,27 @@
 
 ---
 
+### #47 — oneTBB executable task suite from ParRes Kernels
+**Scope:** Task generation / executable benchmarks
+**Status:** PLANNED
+
+Use https://github.com/ParRes/Kernels as a seed corpus for oneTBB tasks. The repo already contains simple Parallel Research Kernels with TBB implementations, which makes it a good base for terminal-bench style tasks that validate both documentation understanding and working oneTBB code.
+
+Initial task candidates:
+- `nstream` — memory bandwidth / parallel loop update
+- `stencil` — 2D neighborhood computation and boundary handling
+- `transpose` — blocked parallel transpose
+- `sparse` — sparse matrix-vector style workload
+- `p2p` — point-to-point style communication pattern adapted to shared memory
+
+Deliverables:
+- Import/derive 3–5 oneTBB tasks under `terminal-bench-tasks/`
+- For each task: Dockerfile, instruction, oracle solution, verifier tests, reward check
+- Add CI verification for all oracle solutions
+- Track license/provenance notes from ParRes/Kernels before copying/adapting code
+
+---
+
 - [x] PR #29 — Multi-evaluator (LLM Judge Panel)
 **Scope:** Evaluation quality
 **Status:** PLANNED
