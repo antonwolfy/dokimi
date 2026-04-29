@@ -1,26 +1,33 @@
-# Doc-Benchmark: Automated Documentation Quality Metrics
+# doc-benchmark
 
-Automated benchmarking tool for documentation quality with **4 metrics**, **gate enforcement**, and **regression detection**.
+`doc-benchmark` is a toolkit for measuring and improving technical documentation quality. It supports two complementary workflows:
 
----
+1. **Static documentation quality checks** over Markdown/code examples: coverage, freshness, readability, example execution, gates, and regression detection.
+2. **LLM-assisted product documentation evaluation**: persona and question generation, answer generation with/without documentation context, LLM-as-judge scoring, multi-judge panels, RAGAS meta-evaluation, dashboards, and executable terminal-bench-style tasks.
 
-## Quick Start
+The repository is currently focused on Intel library documentation quality experiments, especially oneTBB, oneDAL, and oneMKL.
 
-### Installation
+## Quick start
+
+Install dependencies:
+
 ```bash
-pip install PyYAML
-# or
 pip install -r requirements.txt
+pip install -r requirements-test.txt
 ```
 
-### Basic Run
+Run the static documentation benchmark:
+
 ```bash
-python cli.py run --root . --spec benchmarks/spec.v1.yaml \
+python cli.py run \
+  --root . \
+  --spec benchmarks/spec.v1.yaml \
   --out-json baselines/current.json \
   --out-md reports/current.md
 ```
 
-### Compare Snapshots
+Compare a candidate snapshot with a baseline:
+
 ```bash
 python cli.py compare \
   --base baselines/baseline.json \
@@ -30,500 +37,116 @@ python cli.py compare \
   --out-md reports/compare.md
 ```
 
-### Strict Mode (CI Blocking)
+Run the test suite:
+
 ```bash
-python cli.py run --root . --spec benchmarks/spec.v1.yaml \
-  --out-json baselines/current.json \
-  --out-md reports/current.md \
-  --strict
-# Exits 1 if hard gate fails or critical band violated
+python -m pytest -q
 ```
 
----
+Run the same coverage command used by CI:
 
-## Metrics (4 Active)
-
-### 1. Coverage (weight 0.35)
-**What:** Structure coverage — presence of headings, code blocks, body content  
-**Scorer:** Heuristic based on:
-- Headings (H1-H6): 40% weight
-- Code blocks (fenced): 30% weight
-- Body text (word count): 30% weight
-
-**Range:** 0.0 (empty) → 1.0 (well-structured)
-
----
-
-### 2. Freshness (`freshness_lite`) (weight 0.25)
-**What:** File modification age-based scoring  
-**Scorer:** Linear decay from 1.0 (fresh) to 0.0 (stale)  
-**Config:** `max_age_days` (default 365) in spec
-
-**Formula:**
-```
-score = 1.0 - (age_days / max_age_days)
-```
-
-**Range:** 0.0 (>365 days old) → 1.0 (recently modified)
-
----
-
-### 3. Readability (weight 0.20)
-**What:** Flesch-Kincaid grade level (inverse)  
-**Scorer:** FK formula on text (code blocks stripped)  
-**Config:** `grade_max` (default 12) in spec
-
-**Formula:**
-```
-FK = 0.39 * (words/sentences) + 11.8 * (syllables/words) - 15.59
-score = 1.0 - (FK / grade_max)
-```
-
-**Range:** 0.0 (complex/academic) → 1.0 (simple/clear)
-
----
-
-### 4. Example Pass Rate (weight 0.20)
-**What:** Percentage of runnable code examples that execute successfully  
-**Executor:** Isolated subprocess (python, bash, sh)  
-**Config:** `timeout` (default 5s) in spec
-
-**Supported languages:**
-- `python` (python3 -c)
-- `bash` (bash -c)
-- `sh` (sh -c)
-
-**Range:** 0.0 (all examples fail) → 1.0 (all examples pass)
-
-**Features:**
-- Case-insensitive language tags (```Python → python)
-- Metadata support (```python title="x.py")
-- Per-example results in output (index, lang, passed, error)
-- Configurable timeout
-
----
-
-## Gates & Enforcement
-
-### Soft Gate (Report-Only)
-**Purpose:** Visibility into score vs. target without blocking CI
-
-**Behavior:**
-- Always runs (if enabled in spec)
-- Adds `gate.soft` section to snapshot
-- Shows PASS/FAIL/DISABLED in markdown report
-- **Never fails CI** (exit 0)
-
-**Config:**
-```yaml
-future:
-  soft_gate:
-    enabled: true
-    min_score: 0.80
-```
-
-**Report example:**
-```
-## Soft Gate
-❌ **Status:** FAIL
-- Min score: 0.8000
-- Actual score: 0.7245
-```
-
----
-
-### Hard Gate (Strict Mode)
-**Purpose:** Block CI/PR if docs quality below threshold
-
-**Behavior:**
-- Only enforced with `--strict` flag
-- Checks `future.hard_gate` in spec
-- **Exits 1** if score < min_score
-- Prints clear stderr message
-
-**Config:**
-```yaml
-future:
-  hard_gate:
-    enabled: true
-    min_score: 0.85
-```
-
-**Usage:**
 ```bash
-python cli.py run --spec benchmarks/spec.v1.yaml --strict
-# Exit 1 if score < 0.85
-# Stderr: ❌ HARD GATE FAILED: score 0.7245 < 0.8500
+python -m pytest --cov=doc_benchmarks --cov-report=term --cov-report=xml
 ```
 
----
+## Main CLI areas
 
-### Critical Bands
-**Purpose:** Fail on specific metric thresholds (score, coverage, etc.)
+The top-level CLI is `python cli.py`. The main command groups are:
 
-**Behavior:**
-- Only enforced with `--strict` flag
-- Checks `critical_bands.fail_on` list in spec
-- **Exits 1** if any condition violated
-
-**Supported conditions:**
-- `score_below`
-- `coverage_below`
-- `freshness_below` (checks `freshness_lite` metric)
-- `readability_below`
-
-**Config:**
-```yaml
-critical_bands:
-  fail_on:
-    - condition: score_below
-      value: 0.60
-    - condition: coverage_below
-      value: 0.70
+```text
+run                 Run the static docs-quality benchmark
+compare             Compare benchmark snapshots
+report              Render JSON reports to Markdown
+evaluate            Run the full evaluation pipeline
+personas            Discover and approve target user personas
+questions           Generate, analyze, refine, and panel-review questions
+answers             Generate answers with and without documentation context
+eval                Score answers, run RAGAS, or use a multi-judge panel
+library             List/show registered libraries
+benchmark           Run registered library benchmarks
+dashboard           Generate dashboard Markdown/JSON
 ```
 
-**Example stderr:**
-```
-❌ CRITICAL BAND VIOLATIONS:
-  - score_below: 0.5524 < 0.6000
-  - coverage_below: 0.6512 < 0.7000
-```
+Use `--help` on any command for detailed options, for example:
 
----
-
-## Regression Detection
-
-### Purpose
-Identify quality drops between baseline and candidate snapshots
-
-### Severity Levels
-- **OK:** Improvement or drop within acceptable range
-- **WARN:** Drop exceeds warning threshold (e.g. score -3%)
-- **CRITICAL:** Drop exceeds critical threshold (e.g. score -8%)
-
-### Config
-```yaml
-thresholds:
-  regressions:
-    score_drop_warn: 0.03      # 3% drop → WARN
-    score_drop_critical: 0.08  # 8% drop → CRITICAL
-    metric_drop_warn: 0.05     # 5% metric drop → WARN
-    metric_drop_critical: 0.12 # 12% metric drop → CRITICAL
-```
-
-### Usage
 ```bash
-python cli.py compare \
-  --base baselines/baseline.json \
-  --candidate baselines/current.json \
-  --spec benchmarks/spec.v1.yaml \
-  --out-json reports/compare.json \
-  --out-md reports/compare.md
+python cli.py questions --help
+python cli.py eval --help
+python cli.py dashboard generate --help
 ```
 
-### Report Example
-```markdown
-## Regression Analysis
-🔴 **CRITICAL regressions detected**
+## Static benchmark metrics
 
-🔴 **Score:** -0.1000 (CRITICAL)
-🟡 **coverage:** -0.0600 (WARN)
-✅ **freshness_lite:** +0.0100 (OK)
-✅ **readability:** +0.0050 (OK)
-```
+The default static benchmark is configured in `benchmarks/spec.v1.yaml` and currently uses four active metrics:
 
----
+| Metric | Purpose |
+| --- | --- |
+| `coverage` | Checks Markdown structure: headings, code blocks, and body content. |
+| `freshness_lite` | Scores files by modification age. |
+| `readability` | Estimates text readability with a Flesch-Kincaid-style score. |
+| `example_pass_rate` | Executes supported fenced code examples in isolation. |
 
-## CLI Reference
+Weights are normalized across enabled metrics. The benchmark also supports soft gates, hard gates, critical bands, and regression thresholds. Hard gates and critical bands are enforced only when `--strict` is passed.
 
-### `run` — Benchmark documentation
+## LLM evaluation workflow
+
+The LLM workflow is designed to answer a practical question: does documentation improve model answers for real developer tasks?
+
+A typical flow is:
+
 ```bash
-python cli.py run [OPTIONS]
-
-Options:
-  --root PATH         Root directory (default: .)
-  --spec PATH         Spec file (default: benchmarks/spec.v1.yaml)
-  --out-json PATH     Output snapshot JSON (default: baselines/current.json)
-  --out-md PATH       Output report MD (default: reports/current.md)
-  --strict            Enable hard gate + critical bands (exit 1 on fail)
+python cli.py personas discover ...
+python cli.py questions generate ...
+python cli.py questions refine ...
+python cli.py answers generate ...
+python cli.py eval score ...
+python cli.py eval panel-score ...
+python cli.py eval ragas ...
+python cli.py dashboard generate ...
 ```
 
-**Outputs:**
-- JSON snapshot: `summary` (scores), `docs[]` (per-file), `gate` (status)
-- Markdown report: Summary, Gate Status (if enabled), Docs breakdown
+Generated artifacts should normally go under `results/`, `reports/`, or `baselines/current.json` for temporary runs; those paths are ignored by default. Curated fixtures under `answers/`, `eval/`, `baselines/`, `personas/`, and `questions/` may be committed intentionally when they are part of a reproducible benchmark.
 
----
+## Executable oneTBB tasks
 
-### `compare` — Compare snapshots with regression analysis
-```bash
-python cli.py compare [OPTIONS]
+The repository includes terminal-bench-style tasks under `terminal-bench-tasks/`. These tasks validate not just text answers but working code and measurable behavior. Current CI verifies oracle solutions for the included oneTBB task.
 
-Options:
-  --base PATH         Baseline snapshot (required)
-  --candidate PATH    Candidate snapshot (required)
-  --spec PATH         Spec file for regression thresholds (optional)
-  --out-json PATH     Output comparison JSON (default: reports/compare.json)
-  --out-md PATH       Output report MD (default: reports/compare.md)
+Planned next work is to derive additional oneTBB executable tasks from [ParRes/Kernels](https://github.com/ParRes/Kernels), with provenance/license checks before adapting code. Good first candidates are `nstream`, `stencil`, `transpose`, `sparse`, and shared-memory adaptations of `p2p` patterns.
+
+## Repository layout
+
+```text
+benchmarks/              Static benchmark spec and schema
+config/                  Product/library configuration
+doc_benchmarks/          Main Python package
+  dashboard/             Dashboard aggregation/rendering
+  eval/                  Answer generation, judges, panels, RAGAS
+  gate/                  Soft/hard gates and regression classification
+  ingest/                Markdown loading and chunking
+  mcp/                   Documentation source clients
+  metrics/               Static documentation metrics
+  personas/              Persona generation/analysis
+  questions/             Question generation, validation, refinement
+  report/                JSON/Markdown report generation
+  runner/                Benchmark orchestration
+terminal-bench-tasks/    Executable task definitions and verifiers
+tests/                   Pytest suite
 ```
 
-**Outputs:**
-- JSON: `base`, `candidate`, `diff`, `regressions` (if spec provided)
-- Markdown report: Diff, Regression Analysis (with severity)
+## CI
 
----
+GitHub Actions runs three checks on pull requests:
 
-### `report` — Render JSON to markdown
-```bash
-python cli.py report [OPTIONS]
+1. `test` — installs `requirements-test.txt` and runs pytest with coverage.
+2. `benchmark` — runs the static docs-quality benchmark and uploads artifacts.
+3. `Verify terminal-bench-tasks` — builds task containers and verifies oracle solutions.
 
-Options:
-  --input PATH        JSON snapshot or comparison (required)
-  --out-md PATH       Output report MD (default: reports/report.md)
-```
+Manual workflow dispatch supports strict mode for blocking quality gates.
 
----
+## Repository hygiene
 
-## Spec Configuration
-
-### Structure
-```yaml
-version: 1
-schema: ./spec.schema.json
-name: doc-benchmark-spec-v1
-mode: non_blocking
-
-weights:
-  coverage: 0.35
-  freshness_lite: 0.25
-  readability: 0.20
-  example_pass_rate: 0.20
-  llm_eval: 0.0  # Future metric
-
-metrics:
-  coverage:
-    enabled: true
-    weight: 0.35
-    target: 0.90
-  freshness_lite:
-    enabled: true
-    weight: 0.25
-    max_age_days: 365
-  readability:
-    enabled: true
-    weight: 0.20
-    grade_max: 12
-  example_pass_rate:
-    enabled: true
-    weight: 0.20
-    timeout: 5
-
-thresholds:
-  score:
-    green: 0.85
-    yellow: 0.70
-    red: 0.0
-  regressions:
-    score_drop_warn: 0.03
-    score_drop_critical: 0.08
-    metric_drop_warn: 0.05
-    metric_drop_critical: 0.12
-
-critical_bands:
-  fail_on:
-    - condition: score_below
-      value: 0.60
-    - condition: coverage_below
-      value: 0.70
-
-ci:
-  policy: non_blocking
-  report_formats:
-    - json
-    - markdown
-
-future:
-  soft_gate:
-    enabled: false
-    min_score: 0.80
-  hard_gate:
-    enabled: false
-    min_score: 0.85
-
-golden_manifest:
-  min_docs: 10
-  max_docs: 20
-  include:
-    - docs/**/*.md
-  exclude:
-    - docs/archive/**
-```
-
-### Weight Normalization
-Weights are **automatically normalized** across active metrics. If a metric is disabled, its weight is redistributed.
-
-Example:
-- `example_pass_rate` disabled → weights rebalanced so coverage/freshness/readability sum to 1.0
-- No manual adjustment needed
-
----
-
-## CI Integration
-
-### Basic Workflow (Non-Blocking)
-```yaml
-name: docs-quality
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-
-jobs:
-  benchmark:
-    runs-on: ubuntu-latest
-    continue-on-error: true  # Non-blocking
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install deps
-        run: pip install -r requirements.txt
-      - name: Run benchmark
-        run: |
-          python cli.py run --root . --spec benchmarks/spec.v1.yaml \
-            --out-json baselines/current.json --out-md reports/current.md
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: docs-quality-report
-          path: |
-            baselines/current.json
-            reports/current.md
-```
-
-### Optional: Strict Mode on Demand
-```yaml
-on:
-  workflow_dispatch:
-    inputs:
-      strict:
-        description: 'Enable strict mode (exit 1 on gate/band fail)'
-        required: false
-        type: boolean
-        default: false
-
-jobs:
-  benchmark:
-    runs-on: ubuntu-latest
-    continue-on-error: ${{ github.event.inputs.strict != 'true' }}
-    steps:
-      # ... same setup ...
-      - name: Run benchmark
-        run: |
-          python cli.py run --root . --spec benchmarks/spec.v1.yaml \
-            --out-json baselines/current.json --out-md reports/current.md \
-            ${{ github.event.inputs.strict == 'true' && '--strict' || '' }}
-```
-
----
-
-## Validation
-
-### Validate Spec
-```bash
-make validate-benchmark-spec
-```
-
-**Output:**
-```
-Checking YAML parse for benchmarks/spec.v1.yaml
-Converting YAML -> JSON and validating against benchmarks/spec.schema.json
-✅ Benchmark spec is valid
-```
-
-**Requirements:**
-- `yq` (YAML processor)
-- `npx` (or global `ajv-cli`)
-
----
-
-## Project Structure
-
-```
-doc-benchmark/
-├── benchmarks/
-│   ├── spec.v1.yaml          # Configuration
-│   └── spec.schema.json      # JSON Schema validation
-├── doc_benchmarks/
-│   ├── ingest/
-│   │   ├── loader.py         # Markdown discovery
-│   │   └── chunker.py        # Text chunking
-│   ├── metrics/
-│   │   ├── coverage.py       # Structure scorer
-│   │   ├── freshness_lite.py # Age scorer
-│   │   ├── readability.py    # FK grade scorer
-│   │   └── example_runner.py # Code execution
-│   ├── runner/
-│   │   ├── run.py            # Orchestration
-│   │   └── compare.py        # Diff + regressions
-│   ├── report/
-│   │   ├── json_report.py    # JSON writer
-│   │   └── markdown_report.py# MD renderer
-│   └── gate/
-│       ├── soft_gate.py      # Report-only gate
-│       ├── hard_gate.py      # Enforced gate
-│       ├── regression.py     # Regression classifier
-│       └── critical_bands.py # Threshold enforcer
-├── cli.py                    # CLI entry point
-├── Makefile                  # Validation targets
-└── .github/workflows/
-    └── docs-quality.yml      # CI workflow
-```
-
----
-
-## Troubleshooting
-
-### `ModuleNotFoundError: No module named 'yaml'`
-**Solution:** `pip install PyYAML`
-
-### Hard gate doesn't fail CI
-**Cause:** Missing `--strict` flag  
-**Solution:** Add `--strict` to `cli.py run` command
-
-### Unknown critical_bands condition
-**Cause:** Typo in `spec.v1.yaml`  
-**Known conditions:** `score_below`, `coverage_below`, `freshness_below`, `readability_below`  
-**Solution:** Fix typo in spec
-
-### Example execution fails with "Unsupported language"
-**Cause:** Language not in `EXECUTORS` dict  
-**Supported:** python, bash, sh  
-**Solution:** Extend `doc_benchmarks/metrics/example_runner.py` with new executor
-
----
-
-## Roadmap
-
-- [x] Core metrics (coverage, freshness, readability, examples)
-- [x] Soft gate (report-only)
-- [x] Hard gate (strict mode)
-- [x] Critical bands enforcement
-- [x] Regression detection (WARN/CRITICAL)
-- [ ] Unit tests (pytest suite)
-- [ ] LLM eval metric (semantic quality)
-- [ ] Baseline versioning (auto-update on main)
-- [ ] Additional languages (java, rust, c++)
-
----
+Do not commit generated logs, coverage databases, tarballs, local caches, or one-off experiment outputs. Keep generated benchmark artifacts either ignored locally or explicitly curated as fixtures. Use pull requests for all changes to `main`.
 
 ## License
 
 Internal Intel use.
-
----
-
-## Contributing
-
-See [MANUAL_TEST_PLAN.md](MANUAL_TEST_PLAN.md) for testing guide.

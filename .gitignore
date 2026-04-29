@@ -1,16 +1,34 @@
-results/
+# Python/runtime caches
 __pycache__/
 *.pyc
+.pytest_cache/
+.coverage
+coverage.xml
+coverage.json
+
+# Local environments and credentials
 .venv/
 .env
-.cache/
-node_modules/
-context7_comparison_results.json
-reports/
+
+# Generated benchmark outputs and temporary reports
+/results/
+/reports/
+/baselines/current.json
+/baselines/eval/*.json
+/dashboard.json
+/jobs.json
+/cr.md
+/docs-quality-report/
+/context7_comparison_results.json
 *.log
-jobs.json
-cr.md
-docs-quality-report/
-baselines/eval/*.json
 *.tar.gz
+
+# Downloaded/generated external content
+.cache/
 vendor_docs/
+node_modules/
+
+# Generated question/persona experiments that are not curated fixtures
+/personas/generated/
+/personas/*_generated.json
+/questions/*_code_tasks.json
