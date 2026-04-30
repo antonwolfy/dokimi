@@ -4,24 +4,57 @@
 
 ---
 
+### #48 — Next oneTBB executable tasks: reduce, scan, flow graph
+**Scope:** Task generation / executable benchmarks
+**Status:** READY
+
+Add the next three oneTBB terminal-bench-style tasks to cover core APIs that are not yet exercised by the current ParRes-inspired suite.
+
+Tasks:
+- `onetbb-parallel-reduce` — compute aggregate values over generated data with `oneapi::tbb::parallel_reduce`; verifier should compare against a serial reference and check source usage.
+- `onetbb-parallel-scan` — implement prefix sums with `oneapi::tbb::parallel_scan`; verifier should validate exact prefix output/signature against serial reference.
+- `onetbb-flow-graph` — build a small producer/transform/consumer graph with `oneapi::tbb::flow::graph`; verifier should validate deterministic output and graph API usage.
+
+Deliverables:
+- Docker environment, starter source, instruction, oracle `solution/solve.sh`, pytest verifier, `task.toml` for each task
+- Offline oracle verification in CI with `--network none`
+- README task table updates and coverage matrix entries
+- Keep task sizes small enough for reliable CI, but strong enough to reject keyword-only or no-op solutions
+
+---
+
+### #49 — Repository structure and documentation cleanup
+**Scope:** Repository hygiene / documentation
+**Status:** READY
+
+Prune and organize repository docs so the project is easier to navigate as it now includes both static docs-quality benchmarking and executable terminal-bench tasks.
+
+Deliverables:
+- Update top-level README to reflect current state after oneTBB task additions
+- Split or link detailed docs into a small `docs/` structure where useful, instead of overloading README
+- Add/refresh a contributor flow for adding terminal-bench tasks
+- Add a oneTBB task coverage matrix: API/concept, task name, verifier type, difficulty, status
+- Reconcile stale files (`STATUS*.md`, `NEXT_STEPS.md`, `BACKLOG.md`) so they do not contradict the current `main`
+- Make Docker image naming and task metadata conventions explicit
+
+---
+
 ### #47 — oneTBB executable task suite from ParRes Kernels
 **Scope:** Task generation / executable benchmarks
-**Status:** PLANNED
+**Status:** COMPLETED
 
 Use https://github.com/ParRes/Kernels as a seed corpus for oneTBB tasks. The repo already contains simple Parallel Research Kernels with TBB implementations, which makes it a good base for terminal-bench style tasks that validate both documentation understanding and working oneTBB code.
 
-Initial task candidates:
-- `nstream` — memory bandwidth / parallel loop update
-- `stencil` — 2D neighborhood computation and boundary handling
-- `transpose` — blocked parallel transpose
+Completed in PR #49:
+- `onetbb-nstream` — memory bandwidth / parallel loop update
+- `onetbb-stencil` — 2D neighborhood computation and boundary handling
+- `onetbb-transpose` — blocked parallel transpose
+- ParRes/Kernels provenance notes
+- CI oracle verification for all included oneTBB tasks
+
+Remaining ideas moved into future task candidates:
 - `sparse` — sparse matrix-vector style workload
 - `p2p` — point-to-point style communication pattern adapted to shared memory
-
-Deliverables:
-- Import/derive 3–5 oneTBB tasks under `terminal-bench-tasks/`
-- For each task: Dockerfile, instruction, oracle solution, verifier tests, reward check
-- Add CI verification for all oracle solutions
-- Track license/provenance notes from ParRes/Kernels before copying/adapting code
 
 ---
 

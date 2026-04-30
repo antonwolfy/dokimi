@@ -33,6 +33,8 @@ terminal-bench-tasks/<task-name>/
 
 ## Available Tasks
 
+See [COVERAGE.md](./COVERAGE.md) for the broader oneTBB API/concept coverage matrix and planned gaps.
+
 | Task | Library | Difficulty | What it tests |
 |------|---------|------------|---------------|
 | [onetbb-parallel-sort](./onetbb-parallel-sort/) | oneTBB | medium | `tbb::parallel_sort` on 10M integers; correctness + ≤5s wall time |
@@ -75,13 +77,13 @@ docker build -t intel-hpc-bench/onetbb-nstream:latest \
 
 ## Adding New Tasks
 
-1. Copy the `onetbb-parallel-sort/` folder as a template.
-2. Update `instruction.md`, `task.toml`, `environment/Dockerfile`.
-3. Write tests in `tests/test_*.py` — they must write `1` or `0` to
-   `/logs/verifier/reward.txt` via `tests/test.sh`.
-4. Add a reference solution in `solution/solve.sh`.
-5. Build the Docker image and smoke-test with the Oracle agent.
-6. Add a row to the table above.
+1. Pick an API/concept gap from [COVERAGE.md](./COVERAGE.md).
+2. Copy an existing task folder as a template.
+3. Update `instruction.md`, `task.toml`, `environment/Dockerfile`, and starter sources.
+4. Write tests in `tests/test_*.py` — they must write `1` or `0` to `/logs/verifier/reward.txt` via `tests/test.sh`.
+5. Add a deterministic oracle solution in `solution/solve.sh`.
+6. Build the Docker image and smoke-test the oracle verifier offline with `--network none`.
+7. Add a row to the table above and update the coverage matrix.
 
 ## Roadmap
 
