@@ -16,7 +16,7 @@ timeout_sec = 300.0
 
 [environment]
 build_timeout_sec = 300.0
-docker_image = "intel-hpc-bench/onetbb:latest"
+docker_image = "intel-hpc-bench/onetbb-parallel-sort:latest"
 cpus = 4
 memory_mb = 2048
 storage_mb = 5120

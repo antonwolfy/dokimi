@@ -1,17 +1,16 @@
 #!/bin/bash
 # Test runner for onetbb-parallel-sort task.
-# Installs pytest and runs the test suite, writing reward.txt.
+# Runs the pytest suite and writes reward.txt.
 
 set -uo pipefail
 
 REWARD_FILE="/logs/verifier/reward.txt"
 mkdir -p /logs/verifier
 
-pip install pytest --quiet
 
 # Capture exit code without letting set -e abort before we write reward.txt
 set +e
-pytest /tests/test_parallel_sort.py -v 2>&1
+python3 -m pytest /tests/test_parallel_sort.py -v 2>&1
 EXIT_CODE=$?
 set -e
 

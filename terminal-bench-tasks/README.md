@@ -36,6 +36,9 @@ terminal-bench-tasks/<task-name>/
 | Task | Library | Difficulty | What it tests |
 |------|---------|------------|---------------|
 | [onetbb-parallel-sort](./onetbb-parallel-sort/) | oneTBB | medium | `tbb::parallel_sort` on 10M integers; correctness + ≤5s wall time |
+| [onetbb-nstream](./onetbb-nstream/) | oneTBB | medium | ParRes-inspired streaming triad with `parallel_for` + `parallel_reduce` |
+| [onetbb-stencil](./onetbb-stencil/) | oneTBB | medium | ParRes-inspired 2D stencil with tiled `blocked_range2d` parallelism |
+| [onetbb-transpose](./onetbb-transpose/) | oneTBB | medium | ParRes-inspired tiled matrix transpose with `blocked_range2d` |
 
 ## Running a Task (Harbor)
 
@@ -54,14 +57,20 @@ harbor run \
   -a oracle
 ```
 
+## Provenance
+
+The ParRes-inspired tasks are simplified exercises derived from the ideas in [ParRes/Kernels](https://github.com/ParRes/Kernels), not verbatim copies of upstream source files. See [PROVENANCE.md](./PROVENANCE.md) for details and license notes.
+
 ## Docker Images
 
 Tasks use custom Docker images built from `environment/Dockerfile`.
 To build locally:
 
 ```bash
-docker build -t intel-hpc-bench/onetbb:latest \
+docker build -t intel-hpc-bench/onetbb-parallel-sort:latest \
   terminal-bench-tasks/onetbb-parallel-sort/environment/
+docker build -t intel-hpc-bench/onetbb-nstream:latest \
+  terminal-bench-tasks/onetbb-nstream/environment/
 ```
 
 ## Adding New Tasks

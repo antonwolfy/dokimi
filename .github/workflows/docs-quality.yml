@@ -19,32 +19,48 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build Docker image — onetbb-parallel-sort
+      - name: Build Docker images
         run: |
-          docker build \
-            -t intel-hpc-bench/onetbb:latest \
-            terminal-bench-tasks/onetbb-parallel-sort/environment/
+          set -euo pipefail
+          for task in \
+            onetbb-parallel-sort \
+            onetbb-nstream \
+            onetbb-stencil \
+            onetbb-transpose
+          do
+            docker build \
+              -t "intel-hpc-bench/${task}:latest" \
+              "terminal-bench-tasks/${task}/environment/"
+          done
 
-      - name: Run oracle solution + verifier inside container
+      - name: Run oracle solutions + verifiers inside containers
         run: |
-          docker run --rm \
-            --cpus=2 \
-            --memory=2g \
-            -v "${{ github.workspace }}/terminal-bench-tasks/onetbb-parallel-sort/solution:/solution:ro" \
-            -v "${{ github.workspace }}/terminal-bench-tasks/onetbb-parallel-sort/tests:/tests:ro" \
-            -v /tmp/logs:/logs \
-            intel-hpc-bench/onetbb:latest \
-            bash -c "bash /solution/solve.sh && bash /tests/test.sh"
+          set -euo pipefail
+          for task in \
+            onetbb-parallel-sort \
+            onetbb-nstream \
+            onetbb-stencil \
+            onetbb-transpose
+          do
+            mkdir -p "/tmp/logs/${task}"
+            docker run --rm \
+              --network none \
+              --cpus=4 \
+              --memory=2g \
+              -v "${{ github.workspace }}/terminal-bench-tasks/${task}/solution:/solution:ro" \
+              -v "${{ github.workspace }}/terminal-bench-tasks/${task}/tests:/tests:ro" \
+              -v "/tmp/logs/${task}:/logs" \
+              "intel-hpc-bench/${task}:latest" \
+              bash -c "bash /solution/solve.sh && bash /tests/test.sh"
 
-      - name: Check reward == 1
-        run: |
-          REWARD=$(cat /tmp/logs/verifier/reward.txt | tr -d '[:space:]')
-          echo "Reward: $REWARD"
-          if [ "$REWARD" != "1" ]; then
-            echo "❌ Oracle solution did not pass all tests (reward=$REWARD)"
-            exit 1
-          fi
-          echo "✅ Oracle solution passed all tests"
+            REWARD=$(cat "/tmp/logs/${task}/verifier/reward.txt" | tr -d '[:space:]')
+            echo "${task} reward: $REWARD"
+            if [ "$REWARD" != "1" ]; then
+              echo "❌ ${task} oracle solution did not pass all tests (reward=$REWARD)"
+              exit 1
+            fi
+            echo "✅ ${task} oracle solution passed all tests"
+          done
 
       - name: Upload verifier logs
         if: always()
