@@ -26,7 +26,10 @@ jobs:
             onetbb-parallel-sort \
             onetbb-nstream \
             onetbb-stencil \
-            onetbb-transpose
+            onetbb-transpose \
+            onetbb-parallel-reduce \
+            onetbb-parallel-scan \
+            onetbb-flow-graph
           do
             docker build \
               -t "intel-hpc-bench/${task}:latest" \
@@ -40,7 +43,10 @@ jobs:
             onetbb-parallel-sort \
             onetbb-nstream \
             onetbb-stencil \
-            onetbb-transpose
+            onetbb-transpose \
+            onetbb-parallel-reduce \
+            onetbb-parallel-scan \
+            onetbb-flow-graph
           do
             mkdir -p "/tmp/logs/${task}"
             docker run --rm \

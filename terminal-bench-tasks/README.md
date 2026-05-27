@@ -41,6 +41,9 @@ See [COVERAGE.md](./COVERAGE.md) for the broader oneTBB API/concept coverage mat
 | [onetbb-nstream](./onetbb-nstream/) | oneTBB | medium | ParRes-inspired streaming triad with `parallel_for` + `parallel_reduce` |
 | [onetbb-stencil](./onetbb-stencil/) | oneTBB | medium | ParRes-inspired 2D stencil with tiled `blocked_range2d` parallelism |
 | [onetbb-transpose](./onetbb-transpose/) | oneTBB | medium | ParRes-inspired tiled matrix transpose with `blocked_range2d` |
+| [onetbb-parallel-reduce](./onetbb-parallel-reduce/) | oneTBB | medium | Aggregate sum/sumsq/min/max with `parallel_reduce` |
+| [onetbb-parallel-scan](./onetbb-parallel-scan/) | oneTBB | medium | Inclusive prefix sum with `parallel_scan` |
+| [onetbb-flow-graph](./onetbb-flow-graph/) | oneTBB | medium | Deterministic transform pipeline with `flow::graph` and `function_node` |
 
 ## Running a Task (Harbor)
 
