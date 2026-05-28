@@ -43,11 +43,7 @@ Run the test suite:
 python -m pytest -q
 ```
 
-Run the same coverage command used by CI:
-
-```bash
-python -m pytest --cov=doc_benchmarks --cov-report=term --cov-report=xml
-```
+For the LLM evaluation pipeline (answers, judging, dashboard), see [docs/quickstart.md](docs/quickstart.md) and [docs/runbook.md](docs/runbook.md).
 
 ## Main CLI areas
 
@@ -105,7 +101,7 @@ python cli.py eval ragas ...
 python cli.py dashboard generate ...
 ```
 
-Generated artifacts should normally go under `results/`, `reports/`, or `baselines/current.json` for temporary runs; those paths are ignored by default. Curated fixtures under `answers/`, `eval/`, `baselines/`, `personas/`, and `questions/` may be committed intentionally when they are part of a reproducible benchmark.
+Generated artifacts should normally go under `results/`, `reports/`, or `baselines/current.json` for temporary runs; those paths are ignored by default. Curated fixtures under `answers/`, `eval/`, `baselines/`, and `questions/` may be committed intentionally when they are part of a reproducible benchmark.
 
 ## Executable oneTBB tasks
 
@@ -116,8 +112,10 @@ Planned next work is to derive additional oneTBB executable tasks from [ParRes/K
 ## Repository layout
 
 ```text
+cli.py                   Single entry point for all CLI commands
 benchmarks/              Static benchmark spec and schema
 config/                  Product/library configuration
+libraries.yaml           Registered libraries for the LLM evaluation pipeline
 doc_benchmarks/          Main Python package
   dashboard/             Dashboard aggregation/rendering
   eval/                  Answer generation, judges, panels, RAGAS
@@ -125,10 +123,16 @@ doc_benchmarks/          Main Python package
   ingest/                Markdown loading and chunking
   mcp/                   Documentation source clients
   metrics/               Static documentation metrics
+  orchestrator/          Pipeline orchestration
   personas/              Persona generation/analysis
   questions/             Question generation, validation, refinement
   report/                JSON/Markdown report generation
   runner/                Benchmark orchestration
+answers/, eval/,         Curated fixtures used by the evaluation pipeline
+  questions/,
+  baselines/,
+  api_ground_truth/
+docs/                    Documentation: quickstart, runbook, design notes
 terminal-bench-tasks/    Executable task definitions and verifiers
 tests/                   Pytest suite
 ```
@@ -146,6 +150,8 @@ Manual workflow dispatch supports strict mode for blocking quality gates.
 ## Repository hygiene
 
 Do not commit generated logs, coverage databases, tarballs, local caches, or one-off experiment outputs. Keep generated benchmark artifacts either ignored locally or explicitly curated as fixtures. Use pull requests for all changes to `main`.
+
+Status reports, phase plans, and other development-history notes do not belong in the repository — work-in-progress should live in PR descriptions, issues, and `BACKLOG.md`.
 
 ## License
 

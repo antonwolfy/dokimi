@@ -850,7 +850,7 @@ def cmd_eval_ragas(args: argparse.Namespace) -> None:
 
 def cmd_report_eval(args: argparse.Namespace) -> None:
     """Generate quality report from eval JSON (dynamic vs static breakdown)."""
-    from generate_report import generate_report
+    from doc_benchmarks.report.eval_report import generate_report
 
     if args.out:
         out = args.out

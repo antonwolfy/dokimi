@@ -25,16 +25,13 @@ Deliverables:
 
 ### #49 — Repository structure and documentation cleanup
 **Scope:** Repository hygiene / documentation
-**Status:** READY
+**Status:** PARTIAL
 
-Prune and organize repository docs so the project is easier to navigate as it now includes both static docs-quality benchmarking and executable terminal-bench tasks.
+Initial pass: removed development-history markdown (STATUS*, PHASE_*, FINAL_*, TASK_*, IMPLEMENTATION_PLAN, NEXT_STEPS, MANUAL_TEST_PLAN, etc.), deleted unreferenced one-off scripts at repo root, dropped the legacy `benchmark.py` / `run_all_benchmarks.sh` pair (superseded by `cli.py` + `doc_benchmarks/`), moved `QUICKSTART.md` / `RUNBOOK.md` under `docs/`, and folded `generate_report.py` into `doc_benchmarks/report/eval_report.py`.
 
-Deliverables:
-- Update top-level README to reflect current state after oneTBB task additions
-- Split or link detailed docs into a small `docs/` structure where useful, instead of overloading README
+Still open:
 - Add/refresh a contributor flow for adding terminal-bench tasks
 - Add a oneTBB task coverage matrix: API/concept, task name, verifier type, difficulty, status
-- Reconcile stale files (`STATUS*.md`, `NEXT_STEPS.md`, `BACKLOG.md`) so they do not contradict the current `main`
 - Make Docker image naming and task metadata conventions explicit
 
 ---
