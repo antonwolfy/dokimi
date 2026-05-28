@@ -43,7 +43,7 @@ Run the test suite:
 python -m pytest -q
 ```
 
-For the LLM evaluation pipeline (answers, judging, dashboard), see [docs/quickstart.md](docs/quickstart.md) and [docs/runbook.md](docs/runbook.md).
+For the LLM evaluation pipeline (answers, judging, dashboard), see [docs/quickstart.md](docs/quickstart.md). A high-level architecture map is in [docs/architecture.md](docs/architecture.md), and [docs/README.md](docs/README.md) is the documentation index.
 
 ## Main CLI areas
 
@@ -132,8 +132,19 @@ answers/, eval/,         Curated fixtures used by the evaluation pipeline
   questions/,
   baselines/,
   api_ground_truth/
-docs/                    Documentation: quickstart, runbook, design notes
+docs/                    Documentation
+  README.md              Documentation index
+  quickstart.md          End-to-end LLM evaluation pipeline
+  architecture.md        Module map and data flow
+  adding-doc-source.md   Local/URL/custom doc sources
+  contributing-metric.md How to add a static documentation metric
+  contributing-terminal-bench-task.md
+                         How to add an executable task
+  decisions/             Historical design reviews and investigations
 terminal-bench-tasks/    Executable task definitions and verifiers
+  README.md              Task format reference and task table
+  COVERAGE.md            API/concept coverage matrix
+  PROVENANCE.md          Upstream sources and licensing notes
 tests/                   Pytest suite
 ```
 
@@ -153,6 +164,18 @@ Do not commit generated logs, coverage databases, tarballs, local caches, or one
 
 Status reports, phase plans, and other development-history notes do not belong in the repository — work-in-progress should live in PR descriptions, issues, and `BACKLOG.md`.
 
+## Contributing
+
+- Run `python -m pytest -q` before opening a PR.
+- See [docs/contributing-metric.md](docs/contributing-metric.md) and
+  [docs/contributing-terminal-bench-task.md](docs/contributing-terminal-bench-task.md)
+  for the two main extension flows.
+- Keep generated artifacts under `reports/` or `results/` (both ignored).
+  Only commit curated fixtures that are part of a reproducible benchmark.
+
 ## License
 
-Internal Intel use.
+This project does not yet ship an open-source license; the repository is
+currently maintained for internal Intel use. If you intend to consume,
+redistribute, or extend the code outside Intel, contact the maintainers
+before doing so.

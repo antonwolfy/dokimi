@@ -1,5 +1,9 @@
 # Technical Architecture Review (Devils Advocate)
 
+**Status:** Historical — captured Feb 2026. Most P0/P1 findings have since been
+addressed (separate judge model, retrieval logging, RAGAS integration, prompt
+versioning). Kept as a record of the original critique.
+
 **Date:** 2026-02-12  
 **Reviewer:** Devils Advocate (architecture & methodology)
 

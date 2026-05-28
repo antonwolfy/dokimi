@@ -1,5 +1,9 @@
 # Context7 MCP vs HTTP API Comparison
 
+**Status:** Decision recorded — repo uses Context7 HTTP API; MCP transport is
+not used. Revisit if Context7 ships MCP-specific capabilities or if latency
+parity improves. See `doc_benchmarks/mcp/` for the current implementation.
+
 **Date:** 2026-02-14  
 **Library:** oneTBB (uxlfoundation/onetbb)  
 **Test Setup:** 3 sample questions, comparing MCP SDK vs direct HTTP API calls

@@ -1,5 +1,9 @@
 # Intel Product Perspective Review
 
+**Status:** Historical — captured Feb 2026 to record persona/coverage
+recommendations and organizational considerations. Acted-on items are tracked
+in `BACKLOG.md`; unaddressed items remain useful as planning input.
+
 **Date:** 2026-02-12  
 **Reviewer:** Intel Advisor (product & organizational)
 
