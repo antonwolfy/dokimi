@@ -1,5 +1,47 @@
 import sys
 import os
+from typing import Tuple, Dict, Any
+
+
+def parse_frontmatter(text: str) -> "Tuple[Dict[str, Any], str]":
+    """Split a Markdown document into (frontmatter dict, body).
+
+    Supports a leading YAML frontmatter block delimited by ``---`` lines, the
+    same convention used by Claude Code skill files and most static-site
+    generators. When no frontmatter is present, returns ``({}, text)``.
+
+    Args:
+        text: Raw file contents.
+
+    Returns:
+        Tuple of (metadata dict, body string with frontmatter stripped).
+    """
+    import yaml
+
+    if not text:
+        return {}, ""
+
+    stripped = text.lstrip("﻿")  # tolerate a UTF-8 BOM
+    if not stripped.startswith("---"):
+        return {}, stripped
+
+    lines = stripped.splitlines()
+    # First line is the opening '---'; find the closing fence.
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            raw_meta = "\n".join(lines[1:idx])
+            body = "\n".join(lines[idx + 1:]).lstrip("\n")
+            try:
+                meta = yaml.safe_load(raw_meta) or {}
+            except yaml.YAMLError:
+                meta = {}
+            if not isinstance(meta, dict):
+                meta = {}
+            return meta, body
+
+    # No closing fence — treat the whole thing as body.
+    return {}, text
+
 
 def normalize_model_ref(provider: str, model: str) -> str:
     """Normalize provider and model names for comparison."""

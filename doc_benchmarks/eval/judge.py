@@ -359,6 +359,23 @@ class Judge:
         
         return scores
     
+    def score_answer(
+        self,
+        library_name: str,
+        question: str,
+        answer: str,
+        context: str = "(No documentation retrieved)",
+        ground_truth: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Public single-answer scorer — reused by the treatment-arm runner."""
+        return self._judge_answer(
+            library_name=library_name,
+            question=question,
+            answer=answer,
+            context=context,
+            ground_truth=ground_truth,
+        )
+
     @staticmethod
     def _format_context(docs: List[Dict[str, Any]]) -> str:
         """Format retrieved docs as context string."""

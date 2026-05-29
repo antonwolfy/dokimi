@@ -57,6 +57,7 @@ evaluate            Run the full evaluation pipeline
 personas            Discover and approve target user personas
 questions           Generate, analyze, refine, and panel-review questions
 answers             Generate answers with and without documentation context
+arms                Compare context-augmentation treatments (docs/MCP/skills/profiles)
 eval                Score answers, run RAGAS, or use a multi-judge panel
 library             List/show registered libraries
 benchmark           Run registered library benchmarks
@@ -117,17 +118,22 @@ benchmarks/              Static benchmark spec and schema
 config/                  Product/library configuration
 libraries.yaml           Registered libraries for the LLM evaluation pipeline
 doc_benchmarks/          Main Python package
+  agent_profiles/        Agent persona prompt loader
   dashboard/             Dashboard aggregation/rendering
-  eval/                  Answer generation, judges, panels, RAGAS
+  eval/                  Answer generation, judges, panels, RAGAS, arm runner
   gate/                  Soft/hard gates and regression classification
   ingest/                Markdown loading and chunking
-  mcp/                   Documentation source clients
+  mcp/                   Documentation source clients (incl. MCP protocol)
   metrics/               Static documentation metrics
   orchestrator/          Pipeline orchestration
-  personas/              Persona generation/analysis
+  personas/              Persona generation/analysis (synthetic users)
   questions/             Question generation, validation, refinement
   report/                JSON/Markdown report generation
   runner/                Benchmark orchestration
+  skills/                SKILL.md loader
+  treatments/            Treatment-arm abstraction (docs/MCP/skills/profiles)
+agent_profiles/          Agent persona prompt fixtures
+skills/                  Agent skill (SKILL.md) fixtures
 answers/, eval/,         Curated fixtures used by the evaluation pipeline
   questions/,
   baselines/,

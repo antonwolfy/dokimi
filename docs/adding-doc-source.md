@@ -10,6 +10,14 @@ With `--doc-source` you can point it at a local directory or any URL instead.
 | `context7` | Context7 cloud API (default) |
 | `local:<path>` | Local `.md` / `.rst` / `.html` / `.txt` files |
 | `url:<url>` | Fetch and search a single web page |
+| `mcp:<ref>` | Retrieve through a real MCP server (requires `pip install mcp`) |
+
+The `mcp:<ref>` form is `<transport>=<target>[;opt=val...]`, e.g.
+`mcp:cmd=npx -y @upstash/context7-mcp`,
+`mcp:http=https://mcp.context7.com/mcp;tool=get-library-docs`, or
+`mcp:sse=https://example.com/sse;id=uxlfoundation/oneTBB`. To compare an MCP
+doc source against a baseline as treatment arms, see
+[evaluating-treatments.md](evaluating-treatments.md).
 
 ---
 

@@ -4,6 +4,38 @@
 
 ---
 
+### #56 — Evaluate MCP docs, skills, and agent persona prompts
+**Scope:** Evaluation architecture
+**Status:** IN PROGRESS
+
+Generalize the LLM track beyond the binary `with_docs`/`without_docs`
+doc-injection experiment so it can measure the marginal value of three new
+context-augmentation artifacts: MCP doc servers, agent skills, and agent
+persona (system) prompts.
+
+Assessment and phasing in
+[docs/decisions/2026-05-29-evaluating-mcp-skills-personas.md](docs/decisions/2026-05-29-evaluating-mcp-skills-personas.md);
+usage in [docs/evaluating-treatments.md](docs/evaluating-treatments.md).
+
+Phases:
+- **DONE** Phase 1 — agent persona prompts: `system` support in `llm.py`,
+  `agent_profiles/` loader + fixtures, `AgentProfileTreatment`, N-arm
+  `cli.py arms run` + report (the treatment-arm framework).
+- **DONE** Phase 2 (injection) — MCP doc: `mcp/mcp_protocol.py` MCP-protocol
+  client behind `factory.py` (`mcp:<ref>`), injected sub-arm. `mcp` SDK optional.
+- **DONE** Phase 3 (in-process) — tool-calling agent loop
+  (`eval/agent_runner.py`) with read-only tools: `agent[:source]` (doc search)
+  and `skill-agent:<path>` (progressive disclosure); report records tool-use rate.
+- **PARTIAL** Phase 4 — skills: `SKILL.md` loader, skill-as-context
+  (`skill:`), and agentic skill-view (`skill-agent:`) arms done. Remaining:
+  faithful skill *script execution*, which needs terminal-bench Docker
+  isolation (the in-process loop is intentionally read-only).
+
+Naming discipline (applied): `agent_profile`/`profile:` is the answerer's
+system prompt; `persona` stays the synthetic-user concept.
+
+---
+
 ### #54 — Executable tasks for non-TBB oneAPI components
 **Scope:** Task generation / executable benchmarks
 **Status:** IN REVIEW

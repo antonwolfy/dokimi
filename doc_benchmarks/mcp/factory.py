@@ -27,6 +27,18 @@ def create_doc_source_client(
         Fetch documentation from an arbitrary URL, split into paragraphs,
         and return the most query-relevant chunks.
 
+    ``mcp:<ref>``
+        Retrieve documentation through a real MCP server (tool-call protocol).
+        ``<ref>`` selects the transport and target, with optional ``;``-separated
+        options::
+
+            mcp:cmd=npx -y @upstash/context7-mcp
+            mcp:http=https://mcp.context7.com/mcp;tool=get-library-docs
+            mcp:sse=https://example.com/sse;id=uxlfoundation/oneTBB
+
+        Options: ``tool=`` (docs tool), ``resolve=`` (resolve tool), ``id=``
+        (fixed library id). Requires ``pip install mcp``.
+
     Parameters
     ----------
     doc_source:
@@ -71,7 +83,59 @@ def create_doc_source_client(
         _cache = cache_dir or Path(".cache/url")
         return URLClient(url=url, cache_dir=_cache)
 
+    if doc_source.startswith("mcp:"):
+        from .mcp_protocol import MCPProtocolClient
+        return _build_mcp_protocol_client(doc_source[len("mcp:"):])
+
     raise ValueError(
         f"Unknown --doc-source format: '{doc_source}'. "
-        "Valid formats: 'context7', 'local:<path>', 'url:<url>'"
+        "Valid formats: 'context7', 'local:<path>', 'url:<url>', 'mcp:<ref>'"
+    )
+
+
+def _build_mcp_protocol_client(ref: str):
+    """Parse an ``mcp:`` reference into an MCPProtocolClient.
+
+    Grammar: ``<transport>=<target>[;key=value...]`` where transport is one of
+    ``cmd`` (stdio), ``http``, or ``sse``. Recognised options: ``tool``,
+    ``resolve``, ``id``.
+    """
+    from .mcp_protocol import MCPProtocolClient
+
+    parts = ref.split(";")
+    head = parts[0].strip()
+    options = {}
+    for opt in parts[1:]:
+        if "=" in opt:
+            k, _, v = opt.partition("=")
+            options[k.strip()] = v.strip()
+
+    if "=" not in head:
+        raise ValueError(
+            f"Invalid mcp ref: '{ref}'. Expected 'cmd=<command>', 'http=<url>', "
+            "or 'sse=<url>'."
+        )
+    transport_key, _, target = head.partition("=")
+    transport_key = transport_key.strip()
+    target = target.strip()
+
+    kwargs = {
+        "docs_tool": options.get("tool"),
+        "resolve_tool": options.get("resolve"),
+        "default_library_id": options.get("id"),
+    }
+
+    if transport_key == "cmd":
+        argv = target.split()
+        if not argv:
+            raise ValueError("mcp 'cmd=' requires a command, e.g. 'cmd=npx -y @upstash/context7-mcp'")
+        return MCPProtocolClient(transport="stdio", command=argv[0], args=argv[1:], **kwargs)
+    if transport_key == "http":
+        return MCPProtocolClient(transport="http", url=target, **kwargs)
+    if transport_key == "sse":
+        return MCPProtocolClient(transport="sse", url=target, **kwargs)
+
+    raise ValueError(
+        f"Unknown mcp transport '{transport_key}' in '{ref}'. "
+        "Use 'cmd=', 'http=', or 'sse='."
     )

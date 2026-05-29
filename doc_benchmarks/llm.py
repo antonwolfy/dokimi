@@ -105,6 +105,7 @@ def llm_call(
     api_key: Optional[str] = None,
     max_retries: int = 3,
     retry_delay: float = 2.0,
+    system: Optional[str] = None,
 ) -> str:
     """Call any LLM via litellm with automatic retry on transient errors.
 
@@ -115,6 +116,8 @@ def llm_call(
         api_key: Optional API key (falls back to env var).
         max_retries: Max retry attempts on transient errors (default 3).
         retry_delay: Initial delay in seconds; doubles each attempt (exponential backoff).
+        system: Optional system prompt. When provided it is sent as a leading
+            ``system`` message — used to vary the answering agent's persona.
 
     Returns:
         Model response as a plain string.
@@ -122,6 +125,7 @@ def llm_call(
     text, _ = llm_call_with_usage(
         prompt=prompt, model=model, provider=provider,
         api_key=api_key, max_retries=max_retries, retry_delay=retry_delay,
+        system=system,
     )
     return text
 
@@ -133,11 +137,15 @@ def llm_call_with_usage(
     api_key: Optional[str] = None,
     max_retries: int = 3,
     retry_delay: float = 2.0,
+    system: Optional[str] = None,
 ) -> "tuple[str, dict]":
     """Like llm_call, but returns (text, usage_dict).
 
     usage_dict keys: prompt_tokens, completion_tokens, total_tokens.
     All values default to 0 if the provider doesn't return usage.
+
+    Args:
+        system: Optional system prompt sent as a leading ``system`` message.
 
     Returns:
         (response_text: str, usage: dict)
@@ -147,6 +155,11 @@ def llm_call_with_usage(
     api_key = _resolve_api_key(provider, api_key)
     litellm_model = _build_litellm_model(model, provider)
 
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
     last_exc: Optional[Exception] = None
     delay = retry_delay
 
@@ -154,7 +167,7 @@ def llm_call_with_usage(
         try:
             resp = completion(
                 model=litellm_model,
-                messages=[{"role": "user", "content": prompt}],
+                messages=messages,
                 api_key=api_key or None,
             )
             text = resp.choices[0].message.content
@@ -182,6 +195,65 @@ def llm_call_with_usage(
                 raise
 
     raise last_exc  # should never reach here
+
+
+def chat_completion(
+    messages: list,
+    model: str,
+    provider: str = "openai",
+    tools: Optional[list] = None,
+    tool_choice: Optional[str] = None,
+    api_key: Optional[str] = None,
+    max_retries: int = 3,
+    retry_delay: float = 2.0,
+):
+    """Multi-turn completion with optional tool-calling.
+
+    Unlike :func:`llm_call_with_usage` (single user prompt), this accepts a full
+    message list and optional ``tools`` schemas, returning the raw litellm
+    response so callers can inspect ``choices[0].message.tool_calls``. Used by
+    the agentic treatment runner.
+
+    Args:
+        messages: OpenAI-style message dicts.
+        tools: Optional list of tool schemas (OpenAI/litellm format).
+        tool_choice: Optional tool-choice directive (e.g. ``"auto"``).
+
+    Returns:
+        The litellm completion response object.
+    """
+    from litellm import completion
+
+    api_key = _resolve_api_key(provider, api_key)
+    litellm_model = _build_litellm_model(model, provider)
+
+    kwargs = {}
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = tool_choice or "auto"
+
+    last_exc: Optional[Exception] = None
+    delay = retry_delay
+    for attempt in range(max_retries + 1):
+        try:
+            return completion(
+                model=litellm_model,
+                messages=messages,
+                api_key=api_key or None,
+                **kwargs,
+            )
+        except Exception as exc:
+            last_exc = exc
+            if attempt < max_retries and _is_retryable(exc):
+                logger.warning(
+                    f"chat_completion failed (attempt {attempt+1}/{max_retries+1}), "
+                    f"retrying in {delay:.0f}s: {exc}"
+                )
+                time.sleep(delay)
+                delay *= 2
+            else:
+                raise
+    raise last_exc  # pragma: no cover
 
 
 # ── Robust JSON extraction ─────────────────────────────────────────────────────
