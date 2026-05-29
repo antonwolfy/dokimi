@@ -75,6 +75,76 @@ jobs:
           name: terminal-bench-logs
           path: /tmp/logs/
 
+  # Tasks that depend on the Intel oneAPI apt repo (oneMKL, IPP),
+  # header-only oneDPL, or large pip installs (sklearnex). Each task is a
+  # separate matrix leg (one check run per task, fail-fast disabled) so a
+  # failure or heavy build in one cannot affect the core oneTBB job above and
+  # the per-task pass/fail is visible at a glance.
+  terminal-bench-verify-oneapi:
+    name: Verify oneAPI task
+    runs-on: ubuntu-latest
+    # Verify-only job: it just checks out the repo and builds/runs containers,
+    # so restrict the token to read access.
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        task:
+          - sklearnex-classification
+          - onemkl-dgemm
+          - onemkl-fft
+          - onedpl-transform-reduce
+          - ipp-dotprod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android \
+            /opt/hostedtoolcache/CodeQL /usr/local/share/boost || true
+          docker system prune -af || true
+          df -h /
+
+      - name: Build, run, and verify ${{ matrix.task }} (offline verification)
+        run: |
+          set -euo pipefail
+          task="${{ matrix.task }}"
+          echo "::group::build ${task}"
+          docker build \
+            -t "intel-hpc-bench/${task}:latest" \
+            "terminal-bench-tasks/${task}/environment/"
+          echo "::endgroup::"
+
+          mkdir -p "/tmp/logs/${task}"
+          docker run --rm \
+            --network none \
+            --shm-size=2g \
+            --cpus=4 \
+            --memory=4g \
+            -v "${{ github.workspace }}/terminal-bench-tasks/${task}/solution:/solution:ro" \
+            -v "${{ github.workspace }}/terminal-bench-tasks/${task}/tests:/tests:ro" \
+            -v "/tmp/logs/${task}:/logs" \
+            "intel-hpc-bench/${task}:latest" \
+            bash -c "bash /solution/solve.sh && bash /tests/test.sh"
+
+          REWARD=$(cat "/tmp/logs/${task}/verifier/reward.txt" | tr -d '[:space:]')
+          echo "${task} reward: $REWARD"
+          if [ "$REWARD" != "1" ]; then
+            echo "❌ ${task} oracle solution did not pass all tests (reward=$REWARD)"
+            exit 1
+          fi
+          echo "✅ ${task} oracle solution passed all tests"
+
+      - name: Upload verifier logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: terminal-bench-oneapi-logs-${{ matrix.task }}
+          path: /tmp/logs/
+
   test:
     runs-on: ubuntu-latest
     steps:

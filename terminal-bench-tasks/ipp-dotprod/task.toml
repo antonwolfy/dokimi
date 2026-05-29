@@ -1,0 +1,24 @@
+version = "1.0"
+
+[metadata]
+author_name = "Nikolay Petrov"
+author_email = "nikolay.a.petrov@intel.com"
+difficulty = "easy"
+difficulty_explanation = "Requires using an Intel IPP signal-processing primitive (ippsDotProd) and matching a serial reference"
+category = "programming"
+tags = ["c", "ipp", "signal-processing", "intel", "simd"]
+
+[verifier]
+timeout_sec = 60.0
+
+[agent]
+timeout_sec = 300.0
+
+[environment]
+build_timeout_sec = 900.0
+docker_image = "intel-hpc-bench/ipp-dotprod:latest"
+cpus = 4
+memory_mb = 4096
+storage_mb = 16384
+gpus = 0
+allow_internet = false

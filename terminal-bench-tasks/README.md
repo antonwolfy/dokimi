@@ -44,6 +44,18 @@ See [COVERAGE.md](./COVERAGE.md) for the broader oneTBB API/concept coverage mat
 | [onetbb-parallel-reduce](./onetbb-parallel-reduce/) | oneTBB | medium | Aggregate sum/sumsq/min/max with `parallel_reduce` |
 | [onetbb-parallel-scan](./onetbb-parallel-scan/) | oneTBB | medium | Inclusive prefix sum with `parallel_scan` |
 | [onetbb-flow-graph](./onetbb-flow-graph/) | oneTBB | medium | Deterministic transform pipeline with `flow::graph` and `function_node` |
+| [onemkl-dgemm](./onemkl-dgemm/) | oneMKL | medium | Dense matrix multiply with `cblas_dgemm`, signature vs serial reference |
+| [onemkl-fft](./onemkl-fft/) | oneMKL | medium | DFTI forward/backward FFT round-trip + spectrum vs naive DFT |
+| [onedpl-transform-reduce](./onedpl-transform-reduce/) | oneDPL | medium | Parallel `transform_reduce` (`par_unseq`) on the oneTBB backend |
+| [ipp-dotprod](./ipp-dotprod/) | IPP | easy | Vector dot product with `ippsDotProd_64f` vs serial reference |
+| [sklearnex-classification](./sklearnex-classification/) | sklearnex | easy | KNN classifier accelerated with `patch_sklearn()`, accuracy vs stock sklearn |
+
+> The oneTBB tasks build entirely from `ubuntu:22.04` + standard apt and are
+> verified in the `terminal-bench-verify` CI job. The oneMKL / oneDPL / IPP /
+> oneCCL / sklearnex tasks pull the Intel oneAPI apt repo, header-only oneDPL,
+> or pip wheels at **build** time (the verifier still runs offline with
+> `--network none`) and are verified in a separate `terminal-bench-verify-oneapi`
+> CI job so a heavy-image build cannot affect the core oneTBB job.
 
 ## Running a Task (Harbor)
 
@@ -76,6 +88,12 @@ docker build -t intel-hpc-bench/onetbb-parallel-sort:latest \
   terminal-bench-tasks/onetbb-parallel-sort/environment/
 docker build -t intel-hpc-bench/onetbb-nstream:latest \
   terminal-bench-tasks/onetbb-nstream/environment/
+
+# oneAPI-component tasks pull large dependencies at build time:
+docker build -t intel-hpc-bench/onemkl-dgemm:latest \
+  terminal-bench-tasks/onemkl-dgemm/environment/
+docker build -t intel-hpc-bench/sklearnex-classification:latest \
+  terminal-bench-tasks/sklearnex-classification/environment/
 ```
 
 ## Adding New Tasks
@@ -90,9 +108,24 @@ docker build -t intel-hpc-bench/onetbb-nstream:latest \
 
 ## Roadmap
 
-- [ ] `onetbb-parallel-reduce` — compute sum/max with `tbb::parallel_reduce`
-- [ ] `onetbb-flow-graph` — producer-consumer pipeline with `tbb::flow::graph`
-- [ ] `onemkl-dgemm` — matrix multiplication via cblas_dgemm, verify GFLOPS
-- [ ] `onemkl-fft` — FFT round-trip via DFTI
-- [ ] `oneccl-allreduce` — multi-process allreduce with oneCCL + MPI
-- [ ] `ipp-image-resize` — image resize with ippiResize, verify pixel accuracy
+Done:
+
+- [x] `onetbb-parallel-reduce` — aggregate with `tbb::parallel_reduce`
+- [x] `onetbb-flow-graph` — transform pipeline with `tbb::flow::graph`
+- [x] `onemkl-dgemm` — matrix multiply via `cblas_dgemm`
+- [x] `onemkl-fft` — FFT round-trip via DFTI
+- [x] `onedpl-transform-reduce` — parallel STL `transform_reduce`
+- [x] `ipp-dotprod` — signal-processing dot product via `ippsDotProd_64f`
+- [x] `sklearnex-classification` — accelerated scikit-learn workflow
+
+Next candidates (see [COVERAGE.md](./COVERAGE.md) for the full plan + validation
+strategies):
+
+- [ ] `onemkl-rng` — reproducible random number generation via the MKL VSL/RNG API
+- [ ] `onednn-gemm` or `onednn-relu` — a single oneDNN primitive vs a serial reference
+- [ ] `ipp-image-resize` — image resize with `ippiResize`, verify pixel accuracy
+- [ ] `ippcp-aes` — AES round-trip with IPP Cryptography
+- [ ] `openmp-reduce` — OpenMP parallel reduction (offline, stock `-fopenmp`)
+- [ ] `onedpl-sort` — `oneapi::dpl::sort` with a parallel policy
+- [ ] `oneccl-allreduce` — multi-process allreduce with oneCCL + MPI (needs
+      real-image iteration: MPI/oneCCL transport under `--network none`)
