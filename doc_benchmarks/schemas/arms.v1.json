@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/doc-benchmark/schemas/arms.v1.json",
+  "title": "Arms artifact v1",
+  "type": "object",
+  "required": [
+    "arms",
+    "answers"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "arms.v1"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "library_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provider": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "arms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "baseline_arm": {
+      "type": "string"
+    },
+    "total_questions": {
+      "type": "integer"
+    },
+    "answers": {
+      "type": "array"
+    },
+    "evaluations": {
+      "type": "array"
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "per_arm": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "avg_aggregate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "n": {
+                "type": "integer"
+              },
+              "delta_vs_baseline": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

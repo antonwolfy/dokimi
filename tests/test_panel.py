@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from doc_benchmarks.eval.panel import (
     DEFAULT_PANEL,
-    JUDGE_ROLES,
     ROLE_WEIGHTS,
     SCORE_FIELDS,
     JudgeConfig,

@@ -1,7 +1,7 @@
 """Concrete treatment arms for each evaluation scenario."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from doc_benchmarks.agent_profiles import AgentProfile
 from doc_benchmarks.skills import Skill

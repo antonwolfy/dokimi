@@ -11,7 +11,6 @@ track. These tools are read-only.
 """
 
 import logging
-from typing import Optional
 
 from doc_benchmarks.skills import Skill
 

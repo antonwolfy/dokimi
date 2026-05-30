@@ -323,6 +323,7 @@ class QuestionGenerator:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         output = {
+            "schema_version": "questions.v1",
             "generated_at": self._get_timestamp(),
             "model": self.model,
             "provider": self.provider,

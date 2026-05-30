@@ -1,0 +1,136 @@
+"""Benchmark spec loading, JSON Schema validation, and golden-manifest selection.
+
+The runtime contract for a benchmark spec is declared in
+``benchmarks/spec.schema.json``. This module enforces that contract at load
+time (not only in CI/Make) and resolves the document set from the spec's
+``golden_manifest`` instead of a hardcoded ``docs/`` glob.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+from pathlib import Path
+
+import yaml
+
+# Repo-root-relative default schema, resolved relative to this file so it works
+# regardless of the current working directory or install location.
+DEFAULT_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "benchmarks" / "spec.schema.json"
+
+
+class SpecValidationError(ValueError):
+    """Raised when a spec fails JSON Schema validation."""
+
+
+def is_full_spec(spec: dict) -> bool:
+    """Return True if ``spec`` is a complete v1 spec (vs. a minimal/legacy one).
+
+    Minimal specs (used by some unit tests and ad-hoc runs) only carry
+    ``weights``/``metrics`` and are not schema-validated. A spec opts into full
+    schema validation by declaring ``version: 1``. (Manifest *usage* is keyed
+    separately off the presence of ``golden_manifest`` in the runner.)
+    """
+    return spec.get("version") == 1
+
+
+def validate_spec(spec: dict, schema_path: Path | None = None) -> None:
+    """Validate ``spec`` against the JSON Schema, raising on the first errors.
+
+    Errors are aggregated into a single human-readable message.
+    """
+    import json
+
+    from jsonschema import Draft202012Validator
+
+    schema_path = schema_path or DEFAULT_SCHEMA_PATH
+    try:
+        schema = json.loads(Path(schema_path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise SpecValidationError(f"Failed to read spec schema: {schema_path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise SpecValidationError(f"Invalid JSON in spec schema: {schema_path}: {exc}") from exc
+
+    errors = sorted(Draft202012Validator(schema).iter_errors(spec), key=lambda e: list(e.path))
+    if errors:
+        details = "\n".join(
+            f"  - {'/'.join(map(str, e.path)) or '<root>'}: {e.message}" for e in errors
+        )
+        raise SpecValidationError(f"Benchmark spec validation failed:\n{details}")
+
+
+def load_spec(spec_path: Path, *, validate: bool = True) -> dict:
+    """Read a spec YAML and, for full v1 specs, validate it against the schema."""
+    try:
+        content = Path(spec_path).read_text(encoding="utf-8")
+    except OSError as exc:
+        raise RuntimeError(f"Failed to read spec file: {spec_path}: {exc}") from exc
+
+    try:
+        data = yaml.safe_load(content)
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"Invalid YAML in spec file: {spec_path}: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Spec root must be a mapping/object: {spec_path}")
+
+    if validate and is_full_spec(data):
+        validate_spec(data)
+
+    return data
+
+
+def _is_excluded(rel_path: str, patterns: list[str]) -> bool:
+    """Match a repo-relative posix path against exclude glob patterns.
+
+    Supports both file globs (``docs/*.md``) and directory-recursive patterns
+    (``docs/archive/**``), the latter excluding everything beneath the prefix.
+    """
+    for pattern in patterns:
+        # fnmatch's '*' already crosses '/', so collapse '**' to '*'.
+        if fnmatch.fnmatch(rel_path, pattern.replace("**", "*")):
+            return True
+        prefix = pattern.rstrip("/").removesuffix("/**").rstrip("/")
+        if prefix and (rel_path == prefix or rel_path.startswith(prefix + "/")):
+            return True
+    return False
+
+
+def select_docs(root: Path, manifest: dict) -> list[Path]:
+    """Resolve and bound the document set from a ``golden_manifest``.
+
+    Applies ``include``/``exclude`` globs (relative to ``root``) and enforces
+    ``min_docs``/``max_docs``. Raises ``ValueError`` if the resulting count
+    violates the manifest bounds.
+    """
+    root = Path(root)
+    root_resolved = root.resolve()
+    include = manifest.get("include") or ["docs/**/*.md"]
+    exclude = manifest.get("exclude") or []
+
+    selected: set[Path] = set()
+    for pattern in include:
+        for p in root.glob(pattern):
+            # Reject matches that escape root (e.g. via ".." in a pattern).
+            if p.is_file() and p.resolve().is_relative_to(root_resolved):
+                selected.add(p)
+
+    docs = sorted(
+        p for p in selected
+        if not _is_excluded(p.resolve().relative_to(root_resolved).as_posix(), exclude)
+    )
+
+    n = len(docs)
+    min_docs = manifest.get("min_docs")
+    max_docs = manifest.get("max_docs")
+    if min_docs is not None and n < min_docs:
+        raise ValueError(
+            f"golden_manifest violation: matched {n} document(s) under {root}, "
+            f"fewer than min_docs={min_docs}. include={include} exclude={exclude}"
+        )
+    if max_docs is not None and n > max_docs:
+        raise ValueError(
+            f"golden_manifest violation: matched {n} document(s) under {root}, "
+            f"more than max_docs={max_docs}. include={include} exclude={exclude}"
+        )
+
+    return docs

@@ -410,6 +410,7 @@ class Answerer:
                     total_usage[k] += v
 
         return {
+            "schema_version": "answers.v1",
             "generated_at": self._get_timestamp(),
             "model": self.model,
             "provider": self.provider,

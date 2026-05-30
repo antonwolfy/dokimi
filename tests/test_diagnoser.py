@@ -6,7 +6,6 @@ from doc_benchmarks.eval.diagnoser import (
     summarise_diagnoses,
     DOCS_HELPED,
     EMPTY_RETRIEVAL,
-    BELOW_THRESHOLD,
     LOW_RELEVANCE,
     KNOWLEDGE_SUFFICIENT,
     INSUFFICIENT_DATA,

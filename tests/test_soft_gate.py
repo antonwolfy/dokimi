@@ -1,6 +1,5 @@
 """Tests for soft gate logic."""
 
-import pytest
 from doc_benchmarks.gate.soft_gate import check_soft_gate
 
 

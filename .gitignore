@@ -32,3 +32,8 @@ node_modules/
 /personas/generated/
 /personas/*_generated.json
 /questions/*_code_tasks.json
+
+# Python packaging build metadata
+*.egg-info/
+build/
+dist/

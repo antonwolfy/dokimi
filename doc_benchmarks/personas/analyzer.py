@@ -6,7 +6,7 @@ from pathlib import Path
 import json
 
 try:
-    from github import Github, GithubException
+    from github import Github, GithubException  # noqa: F401  (re-exported for callers)
     GITHUB_AVAILABLE = True
 except ImportError:
     GITHUB_AVAILABLE = False
@@ -238,7 +238,7 @@ class PersonaAnalyzer:
         lines = readme.lower().split('\n')
         in_use_case_section = False
         
-        for i, line in enumerate(lines):
+        for line in lines:
             if any(keyword in line for keyword in ['use case', 'application', 'when to use']):
                 in_use_case_section = True
                 continue

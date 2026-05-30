@@ -6,7 +6,6 @@ import pytest
 
 from doc_benchmarks.eval.panel import (
     DEFAULT_PANEL,
-    ROLE_WEIGHTS,
     JudgeConfig,
     JudgePanel,
     JudgeVote,
@@ -69,7 +68,6 @@ def test_extract_json_markdown_fence():
 
 
 def test_extract_json_no_json_raises():
-    import pytest
     with pytest.raises((ValueError, Exception)):
         JudgePanel._extract_json("no json here at all")
 

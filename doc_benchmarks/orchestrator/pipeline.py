@@ -5,7 +5,6 @@ import logging
 import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-import tempfile
 
 from doc_benchmarks.mcp.factory import create_doc_source_client
 

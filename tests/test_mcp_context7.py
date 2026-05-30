@@ -2,8 +2,7 @@
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-import json
+from unittest.mock import Mock, patch
 
 from doc_benchmarks.mcp.context7 import Context7Client, create_context7_client
 from doc_benchmarks.mcp import MCPConnectionError, MCPLibraryNotFoundError

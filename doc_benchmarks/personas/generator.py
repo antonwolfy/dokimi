@@ -1,11 +1,11 @@
 """Generate persona proposals using LLM based on project analysis."""
 
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, Optional
 from pathlib import Path
 import json
 
-from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
+from doc_benchmarks.llm import ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
 logger = logging.getLogger(__name__)
 

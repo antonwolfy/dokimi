@@ -1,6 +1,5 @@
 """Tests for regression detection."""
 
-import pytest
 from doc_benchmarks.gate.regression import detect_regressions
 
 

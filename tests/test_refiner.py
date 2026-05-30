@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from doc_benchmarks.questions.refiner import QuestionRefiner, RefinementReport, _count_difficulty
+from doc_benchmarks.questions.refiner import QuestionRefiner, _count_difficulty
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

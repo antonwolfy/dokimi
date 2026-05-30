@@ -1,8 +1,7 @@
 """Tests for ChunkBasedQuestionGenerator."""
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import pytest
 
 from doc_benchmarks.questions.chunk_gen import (
     ChunkBasedQuestionGenerator,

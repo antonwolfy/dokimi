@@ -1,11 +1,8 @@
 """Tests for RagasSeedExtractor."""
 
 import json
-import sys
-import types
 import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 
 from doc_benchmarks.questions.ragas_seed import RagasSeedExtractor
 

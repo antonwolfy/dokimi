@@ -2,7 +2,7 @@
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from . import MCPClient, MCPConnectionError
 from .utils import strip_html, score_chunk

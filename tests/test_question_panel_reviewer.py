@@ -2,14 +2,12 @@
 import json
 from unittest.mock import patch
 
-import pytest
 
 from doc_benchmarks.questions.panel_reviewer import (
     DEFAULT_REVIEWERS,
     QuestionPanelReviewer,
     ReviewerVote,
     _build_report,
-    _review_to_dict,
 )
 
 

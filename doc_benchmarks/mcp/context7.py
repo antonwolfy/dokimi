@@ -164,14 +164,14 @@ class Context7Client(MCPClient):
             if e.response.status_code == 404:
                 raise MCPLibraryNotFoundError(
                     f"Library not found in Context7: {library_id}"
-                )
-            raise MCPConnectionError(f"Context7 HTTP error: {e}")
-        
-        except httpx.TimeoutException:
-            raise MCPConnectionError(f"Context7 request timeout after {self.timeout}s")
-        
+                ) from e
+            raise MCPConnectionError(f"Context7 HTTP error: {e}") from e
+
+        except httpx.TimeoutException as e:
+            raise MCPConnectionError(f"Context7 request timeout after {self.timeout}s") from e
+
         except Exception as e:
-            raise MCPConnectionError(f"Context7 request failed: {e}")
+            raise MCPConnectionError(f"Context7 request failed: {e}") from e
     
     def check_connection(self) -> bool:
         """

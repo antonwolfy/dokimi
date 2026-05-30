@@ -26,7 +26,13 @@ metrics:
   example_pass_rate:
     enabled: true
     weight: 0.20
-    timeout: 5
+    # Execution policy for fenced code examples. The default backend is "none"
+    # (no execution). These docs are self-owned and trusted, so we opt into
+    # host execution explicitly. For untrusted corpora use backend: docker.
+    execution:
+      backend: subprocess
+      allow_host: true
+      timeout: 5
   llm_eval:
     enabled: false
     weight: 0.0

@@ -1,0 +1,22 @@
+# Code ownership / review routing by subsystem.
+# See CONTRIBUTING.md for the subsystem map. Replace placeholders with real
+# GitHub handles or teams as ownership is assigned.
+
+# Default
+*                                   @napetrov
+
+# Static benchmark subsystem
+/doc_benchmarks/runner/             @napetrov
+/doc_benchmarks/metrics/            @napetrov
+/doc_benchmarks/ingest/             @napetrov
+/doc_benchmarks/gate/               @napetrov
+/benchmarks/                        @napetrov
+
+# LLM evaluation subsystem
+/doc_benchmarks/eval/               @napetrov
+/doc_benchmarks/questions/          @napetrov
+/doc_benchmarks/personas/           @napetrov
+/doc_benchmarks/treatments/         @napetrov
+
+# terminal-bench tasks subsystem
+/terminal-bench-tasks/              @napetrov

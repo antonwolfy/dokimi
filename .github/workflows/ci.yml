@@ -1,0 +1,104 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Ruff (lint + format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install ruff>=0.6
+      - name: ruff check
+        run: ruff check .
+
+  typecheck:
+    name: mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: pip install mypy>=1.8 types-PyYAML types-jsonschema
+      - name: mypy
+        run: mypy
+
+  schema:
+    name: Validate benchmark spec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install PyYAML jsonschema
+      - name: schema-check
+        run: python -m doc_benchmarks.schema_check benchmarks/spec.v1.yaml
+      - name: registry-drift-check
+        run: python -m doc_benchmarks.config_check
+
+  test:
+    name: Tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install deps
+        run: pip install -r requirements-test.txt
+      - name: Run tests
+        run: pytest --cov=doc_benchmarks --cov-report=term --cov-report=xml
+      - name: Upload coverage
+        if: ${{ always() && matrix.python-version == '3.11' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  package-smoke:
+    name: Package install smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build & install from sdist/wheel
+        run: |
+          python -m pip install --upgrade pip build
+          pip install .
+      - name: Console entry point works
+        run: doc-benchmark --help
+      - name: Module entry point works
+        run: python -m doc_benchmarks --help
+      - name: Core imports
+        run: python -c "import doc_benchmarks, doc_benchmarks.cli, doc_benchmarks.artifacts, doc_benchmarks.runner.spec"

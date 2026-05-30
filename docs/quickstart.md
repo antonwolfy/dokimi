@@ -25,9 +25,14 @@ export GITHUB_TOKEN="ghp_..."
 ### 2. Dependencies
 
 ```bash
+pip install -e ".[dev]"          # package + dev tooling (recommended)
+# or, dependencies only:
 pip install -r requirements.txt
-pip install -r requirements-test.txt
 ```
+
+This installs the `doc-benchmark` console entry point. The examples below use
+`python cli.py …`, which remains supported; `doc-benchmark …` and
+`python -m doc_benchmarks …` are equivalent.
 
 The pipeline degrades gracefully if optional deps are missing — see
 [Troubleshooting](#troubleshooting).
@@ -196,7 +201,7 @@ per answer in `answers/<product>.json`.
 
 | Symptom | Fix |
 | --- | --- |
-| `No module named langchain` | `pip install langchain-openai langchain-anthropic` |
+| LLM calls fail / wrong provider | All providers go through LiteLLM (`doc_benchmarks/llm.py`); set the matching `*_API_KEY` and pass `--provider`/`--model`. LangChain is no longer a dependency (dropped in PR #17). |
 | `No module named numpy` | Pipeline falls back to exact-text dedup; install numpy for embedding-based dedup |
 | `GitHub client not available` | Pipeline uses `gh` CLI fallback; `pip install PyGithub` to silence |
 | Context7 timeout | Raise `context7.timeout` in `config/products.yaml` |

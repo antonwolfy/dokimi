@@ -1,11 +1,10 @@
 """Tests for LibraryRegistry."""
-import textwrap
 from pathlib import Path
 
 import pytest
 import yaml
 
-from doc_benchmarks.registry import LibraryEntry, LibraryRegistry
+from doc_benchmarks.registry import LibraryRegistry
 
 
 def _write_registry(tmp_path: Path, data: dict) -> Path:

@@ -37,8 +37,8 @@ libraries:
       oneAPI Math Kernel Library (oneMKL) provides highly optimized routines:
       BLAS, LAPACK, FFT, sparse solvers, random number generators, and vector
       math. Supports CPU and GPU (SYCL/DPC++). Used in HPC, data science, ML.
-    repo: oneapi-src/oneMKL
-    context7_id: oneapi-src/onemkl
+    repo: uxlfoundation/oneMKL
+    context7_id: uxlfoundation/onemkl
     doc_sources:
       - url:https://spec.oneapi.io/versions/latest/elements/oneMKL/source/index.html
       - url:https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2024-2/overview.html
@@ -51,8 +51,8 @@ libraries:
       oneAPI Deep Neural Network Library (oneDNN) is a performance library for
       deep learning primitives: convolutions, pooling, batch normalization, RNN,
       attention. Used by TensorFlow, PyTorch, OpenVINO as a backend.
-    repo: oneapi-src/oneDNN
-    context7_id: oneapi-src/onednn
+    repo: uxlfoundation/oneDNN
+    context7_id: uxlfoundation/onednn
     doc_sources:
       - url:https://oneapi-src.github.io/oneDNN/
 

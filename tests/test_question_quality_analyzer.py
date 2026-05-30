@@ -1,14 +1,9 @@
 """Tests for QuestionQualityAnalyzer."""
 import json
-import math
-from dataclasses import asdict
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from doc_benchmarks.questions.quality_analyzer import (
-    QuestionClassification,
     QuestionQualityAnalyzer,
     QualityReport,
 )

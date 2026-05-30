@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -81,7 +80,7 @@ def test_run_benchmark_with_examples(tmp_path):
         "  example_pass_rate:\n    enabled: true\n    timeout: 5\n"
     )
 
-    ex_result = type("Ex", (), {"index": 0, "lang": "python", "passed": True, "error": None})
+    ex_result = type("Ex", (), {"index": 0, "lang": "python", "passed": True, "status": "passed", "error": None})
 
     with patch("doc_benchmarks.runner.run.discover_markdown", return_value=[root / "docs/a.md"]), \
          patch("doc_benchmarks.runner.run.load_docs", return_value={str(root / "docs/a.md"): "hello world"}), \

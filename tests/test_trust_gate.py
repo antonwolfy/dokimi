@@ -1,10 +1,7 @@
 """Tests for trust gate — 'Can we trust this run?' check."""
-import pytest
 from doc_benchmarks.gate.trust_gate import (
     evaluate_trust,
     format_trust_block,
-    TrustVerdict,
-    DEFAULTS,
 )
 
 

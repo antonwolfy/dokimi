@@ -1,7 +1,6 @@
 """Tests for LocalMarkdownClient."""
 
 import pytest
-from pathlib import Path
 from doc_benchmarks.mcp.local_markdown import LocalMarkdownClient
 
 

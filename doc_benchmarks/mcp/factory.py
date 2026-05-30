@@ -84,7 +84,6 @@ def create_doc_source_client(
         return URLClient(url=url, cache_dir=_cache)
 
     if doc_source.startswith("mcp:"):
-        from .mcp_protocol import MCPProtocolClient
         return _build_mcp_protocol_client(doc_source[len("mcp:"):])
 
     raise ValueError(

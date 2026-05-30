@@ -1,7 +1,7 @@
 """Tests for RagasEvaluator."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from doc_benchmarks.eval.ragas_eval import RagasEvaluator, RagasResult
 

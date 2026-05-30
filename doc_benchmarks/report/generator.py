@@ -3,9 +3,7 @@
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from pathlib import Path
 from collections import defaultdict
-import re
 
 from doc_benchmarks.gate.trust_gate import evaluate_trust, format_trust_block
 from doc_benchmarks.eval.diagnoser import (

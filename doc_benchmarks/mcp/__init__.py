@@ -1,7 +1,7 @@
 """MCP (Model Context Protocol) base interface and doc-source clients."""
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 __all__ = [
     "MCPClient",

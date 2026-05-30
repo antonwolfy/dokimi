@@ -8,7 +8,6 @@ Designed to be called from the report generator; no side-effects.
 
 from __future__ import annotations
 
-import math
 import statistics
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional

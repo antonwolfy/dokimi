@@ -1,6 +1,5 @@
 """Tests for hard gate logic."""
 
-import pytest
 from doc_benchmarks.gate.hard_gate import check_hard_gate
 
 

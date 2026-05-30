@@ -43,7 +43,7 @@ class LibraryRegistry:
             return
         libraries = data["libraries"]
         if not isinstance(libraries, dict):
-            logger.warning(f"Registry 'libraries' must be a mapping — skipping.")
+            logger.warning("Registry 'libraries' must be a mapping — skipping.")
             return
         for raw_key, cfg in libraries.items():
             if not isinstance(raw_key, str):

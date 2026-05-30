@@ -392,6 +392,7 @@ class Judge:
     def _build_evaluation_output(self, evaluations: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Build the serialisable output structure for a set of evaluations."""
         output = {
+            "schema_version": "eval.v1",
             "evaluated_at": self._get_timestamp(),
             "judge_model": self.model,
             "judge_provider": self.provider,

@@ -1,0 +1,97 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doc-benchmark"
+version = "0.1.0"
+description = "Documentation quality benchmarking and LLM-assisted evaluation harness"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Intel Corporation" }]
+keywords = ["documentation", "benchmark", "evaluation", "llm", "rag"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = [
+  "PyYAML>=6.0.1,<7",
+  "jsonschema>=4.20,<5",
+  "litellm>=1.74.0",
+  "httpx>=0.27.0",
+  "numpy>=1.24.0",
+  "beautifulsoup4>=4.12.0",
+  "PyGithub>=2.1.0",
+  "ragas~=0.2.0",
+  "datasets~=2.20",
+  "openai~=1.51",
+  "anthropic~=0.34",
+  "python-pptx~=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4.0",
+  "pytest-cov>=4.1.0",
+  "pytest-mock>=3.12.0",
+  "ruff>=0.6",
+  "mypy>=1.8",
+  "types-PyYAML",
+  "types-jsonschema",
+]
+ocr = ["docling>=2.0"]
+mcp = ["mcp>=1.0"]
+embeddings = ["sentence-transformers>=2.2"]
+
+[project.scripts]
+doc-benchmark = "doc_benchmarks.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/napetrov/doc-benchmark"
+Repository = "https://github.com/napetrov/doc-benchmark"
+
+[tool.setuptools]
+py-modules = ["cli"]
+
+[tool.setuptools.packages.find]
+include = ["doc_benchmarks*"]
+
+[tool.setuptools.package-data]
+doc_benchmarks = ["schemas/*.json"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["terminal-bench-tasks", "benchmarks", "answers", "eval", "questions", "baselines"]
+
+# Correctness-focused gate to start (pyflakes + bugbear + syntax). Stylistic
+# modernization (import sorting, PEP 585/604 hints) is deferred to a follow-up
+# so the initial gate is enforceable without a repo-wide reformat.
+[tool.ruff.lint]
+select = ["F", "B", "E9"]
+ignore = ["B008"]
+
+# Type checking is enforced on newly-typed modules to start; broadening
+# coverage across the legacy code is tracked as a follow-up.
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+disable_error_code = ["import-untyped"]
+warn_unused_ignores = false
+no_implicit_optional = true
+files = [
+  "doc_benchmarks/runner/spec.py",
+  "doc_benchmarks/runner/manifest.py",
+  "doc_benchmarks/artifacts.py",
+  "doc_benchmarks/schema_check.py",
+  "doc_benchmarks/metrics/example_runner.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

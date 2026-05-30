@@ -181,7 +181,7 @@ Status reports, phase plans, and other development-history notes do not belong i
 
 ## License
 
-This project does not yet ship an open-source license; the repository is
-currently maintained for internal Intel use. If you intend to consume,
-redistribute, or extend the code outside Intel, contact the maintainers
-before doing so.
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE)
+for attribution. Contributions are accepted under the same license — see
+[CONTRIBUTING.md](CONTRIBUTING.md). To report a security issue, see
+[SECURITY.md](SECURITY.md).

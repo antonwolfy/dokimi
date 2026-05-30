@@ -279,6 +279,7 @@ class ArmRunner:
     ) -> Dict[str, Any]:
         """Assemble the serialisable arms-comparison artifact."""
         out: Dict[str, Any] = {
+            "schema_version": "arms.v1",
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "library_name": library_name,
             "model": self.model,

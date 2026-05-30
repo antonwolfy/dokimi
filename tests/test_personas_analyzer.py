@@ -3,8 +3,7 @@
 import sys
 import types
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from pathlib import Path
+from unittest.mock import Mock, patch
 import json
 
 # Provide a mock 'github' module if PyGithub is not installed
@@ -14,7 +13,7 @@ if 'github' not in sys.modules:
     mock_github_module.GithubException = Exception
     sys.modules['github'] = mock_github_module
 
-from doc_benchmarks.personas.analyzer import PersonaAnalyzer, GITHUB_AVAILABLE
+from doc_benchmarks.personas.analyzer import PersonaAnalyzer
 
 
 @pytest.fixture
