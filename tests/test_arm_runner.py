@@ -26,7 +26,7 @@ def test_arm_runner_generates_per_arm(monkeypatch):
     captured = []
     _patch_llm(monkeypatch, captured)
 
-    skill = load_skill("skills/onetbb-quickstart")
+    skill = load_skill("data/skills/onetbb-quickstart")
     runner = ArmRunner([BaselineTreatment(), SkillTreatment(skill)])
     records = runner.run("oneTBB", QUESTIONS, concurrency=1)
 
@@ -58,7 +58,7 @@ def test_arm_runner_judge_computes_deltas(monkeypatch):
     captured = []
     _patch_llm(monkeypatch, captured)
 
-    skill = load_skill("skills/onetbb-quickstart")
+    skill = load_skill("data/skills/onetbb-quickstart")
     runner = ArmRunner([BaselineTreatment(), SkillTreatment(skill)])
     records = runner.run("oneTBB", QUESTIONS, concurrency=1)
 

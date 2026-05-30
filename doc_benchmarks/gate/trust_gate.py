@@ -84,7 +84,7 @@ def evaluate_trust(
     Compute trust verdict from a list of evaluation dicts.
 
     Args:
-        evaluations:   List of eval entries (as stored in eval/{product}.json)
+        evaluations:   List of eval entries (as stored in data/eval/{product}.json)
         thresholds:    Override any DEFAULTS key
         multirun_with_averages:  Per-run WITH-docs averages from N-run mode;
                                  if provided, variance check is included.

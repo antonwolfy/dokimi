@@ -2,7 +2,6 @@
 
 import os
 import logging
-import json
 from typing import List, Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -13,7 +12,7 @@ try:
 except ImportError:
     OPENAI_AVAILABLE = False
 
-from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
+from doc_benchmarks.llm import ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
 
 VALIDATION_PROMPT = """You are validating a technical question for documentation quality evaluation.
@@ -231,7 +230,7 @@ class QuestionValidator:
             logger.warning("numpy not available - using pure-python cosine similarity")
 
             def _cos(a, b):
-                dot = sum(x * y for x, y in zip(a, b))
+                dot = sum(x * y for x, y in zip(a, b, strict=False))
                 na = sum(x * x for x in a) ** 0.5
                 nb = sum(y * y for y in b) ** 0.5
                 if na == 0 or nb == 0:

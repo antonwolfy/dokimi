@@ -23,8 +23,15 @@ RECORD_KEY = {
 
 # Top-level metadata fields copied onto every row (when present).
 META_KEYS = (
-    "schema_version", "library", "library_id", "model", "provider",
-    "judge_model", "judge_provider", "generated_at", "evaluated_at",
+    "schema_version",
+    "library",
+    "library_id",
+    "model",
+    "provider",
+    "judge_model",
+    "judge_provider",
+    "generated_at",
+    "evaluated_at",
 )
 
 

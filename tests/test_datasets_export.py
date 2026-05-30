@@ -54,7 +54,7 @@ def test_export_real_fixture_jsonl(tmp_path):
 
 
 def test_dataset_card_contents():
-    card = dataset_card("questions", Path("questions/onetbb.json"), 5, ["id", "text"])
+    card = dataset_card("questions", Path("data/questions/onetbb.json"), 5, ["id", "text"])
     assert "questions.v1" in card
     assert "Rows:** 5" in card
 

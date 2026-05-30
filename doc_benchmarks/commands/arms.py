@@ -109,8 +109,8 @@ def register(sub, positive_int) -> None:
     arms_run_p.add_argument(
         "--arms", required=True,
         help="Comma-separated arm specs. Examples: "
-             "'baseline,docs', 'baseline,docs:local:./docs,profile:agent_profiles/concise_expert.md', "
-             "'baseline,mcp:http=https://mcp.context7.com/mcp,skill:skills/onetbb-quickstart'",
+             "'baseline,docs', 'baseline,docs:local:./docs,profile:data/agent_profiles/concise_expert.md', "
+             "'baseline,mcp:http=https://mcp.context7.com/mcp,skill:data/skills/onetbb-quickstart'",
     )
     arms_run_p.add_argument("--model", default="gpt-4o-mini", help="LLM for answering")
     arms_run_p.add_argument("--provider", default="openai",

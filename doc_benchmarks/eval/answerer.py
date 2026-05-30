@@ -11,7 +11,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-from doc_benchmarks.llm import llm_call, llm_call_with_usage, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
+from doc_benchmarks.llm import llm_call_with_usage, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
 from .reranker import SimpleReranker, SentenceTransformerReranker, SENTENCE_TRANSFORMERS_AVAILABLE
 
@@ -306,10 +306,10 @@ class Answerer:
             else:
                 # No docs passed threshold
                 metadata["fallback_triggered"] = True
-                logger.warning(f"No docs passed rerank threshold for question")
+                logger.warning("No docs passed rerank threshold for question")
                 return ([], metadata) if return_metadata else []
                 
-        except Exception as e:
+        except Exception:
             logger.exception("Doc retrieval failed")
             return ([], metadata) if return_metadata else []
     

@@ -73,7 +73,7 @@ def test_doc_query_tool_schema_and_call():
 
 
 def test_view_skill_tool():
-    skill = load_skill("skills/onetbb-quickstart")
+    skill = load_skill("data/skills/onetbb-quickstart")
     tool = ViewSkillTool(skill)
     assert tool.name.startswith("view_skill_")
     body = tool.call()
@@ -148,7 +148,7 @@ def test_mcp_agent_treatment_is_agentic():
 
 
 def test_skill_agent_treatment_is_agentic():
-    skill = load_skill("skills/onetbb-quickstart")
+    skill = load_skill("data/skills/onetbb-quickstart")
     t = SkillAgentTreatment(skill)
     cfg = t.prepare("q", "oneTBB")
     assert cfg.is_agentic
@@ -156,7 +156,7 @@ def test_skill_agent_treatment_is_agentic():
 
 
 def test_factory_builds_agentic_specs():
-    assert isinstance(create_treatment("skill-agent:skills/onetbb-quickstart"),
+    assert isinstance(create_treatment("skill-agent:data/skills/onetbb-quickstart"),
                       SkillAgentTreatment)
     # 'agent:<source>' with a nested colon must not be mis-parsed
     t = create_treatment("agent:context7")

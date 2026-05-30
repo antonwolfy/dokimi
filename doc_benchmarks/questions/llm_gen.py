@@ -7,7 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-from doc_benchmarks.llm import llm_call, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
+from doc_benchmarks.llm import ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 
 
 QUESTION_GENERATION_PROMPT = """You are generating technical questions for documentation quality evaluation.

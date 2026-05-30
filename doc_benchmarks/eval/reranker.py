@@ -147,7 +147,7 @@ class SentenceTransformerReranker:
         scores = util.cos_sim(q_emb, d_embs)[0].cpu().tolist()
 
         ranked = []
-        for score, doc in zip(scores, docs):
+        for score, doc in zip(scores, docs, strict=False):
             s = float(score)
             if s >= self.threshold:
                 doc_copy = doc.copy()

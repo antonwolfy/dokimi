@@ -30,7 +30,7 @@ Compare a candidate snapshot with a baseline:
 
 ```bash
 python cli.py compare \
-  --base baselines/baseline.json \
+  --base data/baselines/baseline.json \
   --candidate baselines/current.json \
   --spec benchmarks/spec.v1.yaml \
   --out-json reports/compare.json \
@@ -102,7 +102,7 @@ python cli.py eval ragas ...
 python cli.py dashboard generate ...
 ```
 
-Generated artifacts should normally go under `results/`, `reports/`, or `baselines/current.json` for temporary runs; those paths are ignored by default. Curated fixtures under `answers/`, `eval/`, `baselines/`, and `questions/` may be committed intentionally when they are part of a reproducible benchmark.
+Generated artifacts go under `results/`, `reports/`, or `baselines/current.json` for temporary runs; those paths are git-ignored. Curated, version-controlled fixtures live under `data/` (`data/questions/`, `data/answers/`, `data/eval/`, `data/baselines/`, `data/skills/`, `data/agent_profiles/`) — see [`data/README.md`](data/README.md).
 
 ## Executable oneTBB tasks
 
@@ -132,12 +132,13 @@ doc_benchmarks/          Main Python package
   runner/                Benchmark orchestration
   skills/                SKILL.md loader
   treatments/            Treatment-arm abstraction (docs/MCP/skills/profiles)
-agent_profiles/          Agent persona prompt fixtures
-skills/                  Agent skill (SKILL.md) fixtures
-answers/, eval/,         Curated fixtures used by the evaluation pipeline
-  questions/,
-  baselines/,
-  api_ground_truth/
+data/                    Curated, version-controlled benchmark fixtures (see data/README.md)
+  questions/             Golden + sample question sets
+  answers/               Sample reference answer pairs
+  eval/                  Sample reference judge scores
+  baselines/             Static docs-benchmark baseline snapshot
+  skills/                Agent skill (SKILL.md) fixtures
+  agent_profiles/        Agent persona (system) prompt fixtures
 docs/                    Documentation
   README.md              Documentation index
   quickstart.md          End-to-end LLM evaluation pipeline

@@ -96,10 +96,10 @@ class EvaluationPipeline:
         self.output_dir = Path(output_dir)
 
         # Auto-discover golden questions for this product if not explicitly provided.
-        # Convention: questions/<product_lower>_golden.json next to the project root (two levels
+        # Convention: data/questions/<product_lower>_golden.json next to the project root (two levels
         # up from this file: doc_benchmarks/orchestrator/pipeline.py → doc_benchmarks/ → project root)
         _project_root = Path(__file__).resolve().parent.parent.parent
-        _auto_golden = _project_root / "questions" / f"{product.lower()}_golden.json"
+        _auto_golden = _project_root / "data" / "questions" / f"{product.lower()}_golden.json"
         if custom_questions_path:
             _custom_path = Path(custom_questions_path)
             if not _custom_path.exists():

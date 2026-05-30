@@ -54,7 +54,7 @@ def test_baseline_treatment():
 
 # ── agent profile arm ───────────────────────────────────────────────────
 def test_agent_profile_loads_and_prepares():
-    profile = load_agent_profile("agent_profiles/concise_expert.md")
+    profile = load_agent_profile("data/agent_profiles/concise_expert.md")
     assert isinstance(profile, AgentProfile)
     assert profile.id == "concise_expert"
     assert "senior" in profile.system_prompt.lower()
@@ -82,7 +82,7 @@ def test_agent_profile_blank_id_rejected(tmp_path):
 
 # ── skill arm ───────────────────────────────────────────────────────────
 def test_skill_loads_and_prepares():
-    skill = load_skill("skills/onetbb-quickstart")
+    skill = load_skill("data/skills/onetbb-quickstart")
     assert isinstance(skill, Skill)
     assert skill.name == "onetbb-quickstart"
     assert skill.description
@@ -167,10 +167,10 @@ def test_create_treatment_baseline():
 
 def test_create_treatment_profile_and_skill():
     assert isinstance(
-        create_treatment("profile:agent_profiles/concise_expert.md"), AgentProfileTreatment
+        create_treatment("profile:data/agent_profiles/concise_expert.md"), AgentProfileTreatment
     )
     assert isinstance(
-        create_treatment("skill:skills/onetbb-quickstart"), SkillTreatment
+        create_treatment("skill:data/skills/onetbb-quickstart"), SkillTreatment
     )
 
 

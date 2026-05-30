@@ -17,7 +17,7 @@ import math
 import re
 import textwrap
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from urllib.parse import urlparse
 from urllib.request import urlopen, Request
 

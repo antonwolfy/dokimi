@@ -10,11 +10,11 @@ coverage.json
 .venv/
 .env
 
-# Generated benchmark outputs and temporary reports
+# Generated benchmark outputs and temporary reports.
+# Curated, version-controlled fixtures live under data/; everything below is
+# scratch produced by CLI runs and must not be committed.
 /results/
 /reports/
-/baselines/current.json
-/baselines/eval/*.json
 /dashboard.json
 /jobs.json
 /cr.md
@@ -23,15 +23,17 @@ coverage.json
 *.log
 *.tar.gz
 
+# Default CLI output locations (curated copies are kept under data/).
+/answers/
+/eval/
+/questions/
+/personas/
+/baselines/
+
 # Downloaded/generated external content
 .cache/
 vendor_docs/
 node_modules/
-
-# Generated question/persona experiments that are not curated fixtures
-/personas/generated/
-/personas/*_generated.json
-/questions/*_code_tasks.json
 
 # Python packaging build metadata
 *.egg-info/

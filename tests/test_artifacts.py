@@ -27,10 +27,10 @@ def test_all_kinds_have_schema_files():
 def test_committed_fixtures_validate():
     """Real committed fixtures must satisfy their schemas (locks the contract)."""
     cases = [
-        ("questions", REPO / "questions" / "onetbb.json"),
-        ("questions", REPO / "questions" / "onedal.json"),
-        ("answers", REPO / "answers" / "onetbb.json"),
-        ("eval", REPO / "eval" / "onetbb.json"),
+        ("questions", REPO / "data" / "questions" / "onetbb.json"),
+        ("questions", REPO / "data" / "questions" / "onedal.json"),
+        ("answers", REPO / "data" / "answers" / "onetbb.json"),
+        ("eval", REPO / "data" / "eval" / "onetbb.json"),
     ]
     for kind, path in cases:
         assert path.exists(), f"missing committed fixture: {path}"

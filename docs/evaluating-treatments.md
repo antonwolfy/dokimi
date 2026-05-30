@@ -35,8 +35,8 @@ arm's average score and its delta vs the baseline arm.
 ```bash
 python cli.py arms run \
   --product oneTBB \
-  --questions questions/onetbb_golden.json \
-  --arms "baseline,docs,profile:agent_profiles/concise_expert.md,skill:skills/onetbb-quickstart" \
+  --questions data/questions/onetbb_golden.json \
+  --arms "baseline,docs,profile:data/agent_profiles/concise_expert.md,skill:data/skills/onetbb-quickstart" \
   --judge \
   --out-json results/arms/oneTBB.json \
   --out-md results/arms/oneTBB.md
@@ -60,10 +60,10 @@ Outputs default to `results/arms/<product>.{json,md}` (ignored by git).
   Options: `tool=` (docs tool name), `resolve=` (resolve tool), `id=` (fixed
   library id). Requires the optional `mcp` SDK: `pip install mcp`.
 - **`profile:<path>`** — a Markdown file; the body (frontmatter stripped) is the
-  system prompt. See [`agent_profiles/concise_expert.md`](../agent_profiles/concise_expert.md).
+  system prompt. See [`data/agent_profiles/concise_expert.md`](../data/agent_profiles/concise_expert.md).
 - **`skill:<path>`** — a `SKILL.md` file or its directory, following the Agent
   Skills convention (frontmatter `name`/`description` + Markdown body). See
-  [`skills/onetbb-quickstart/SKILL.md`](../skills/onetbb-quickstart/SKILL.md).
+  [`data/skills/onetbb-quickstart/SKILL.md`](../data/skills/onetbb-quickstart/SKILL.md).
 - **`agent[:<doc-source>]`** — agentic doc use. The model is given a
   `search_documentation` tool over `<doc-source>` (default `context7`) and
   chooses when and what to query. Tune the loop with `--max-iterations`.
@@ -74,7 +74,7 @@ Outputs default to `results/arms/<product>.{json,md}` (ignored by git).
 Example comparing injection vs agentic use of the same MCP server:
 
 ```bash
-python cli.py arms run --product oneTBB --questions questions/onetbb_golden.json \
+python cli.py arms run --product oneTBB --questions data/questions/onetbb_golden.json \
   --arms "baseline,mcp:http=https://mcp.context7.com/mcp,agent:mcp:http=https://mcp.context7.com/mcp" \
   --judge --max-iterations 6
 ```

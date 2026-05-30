@@ -4,7 +4,7 @@ import logging
 import hashlib
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

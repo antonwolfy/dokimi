@@ -59,7 +59,7 @@ def create_treatment(
         from doc_benchmarks.skills import load_skill
         path = spec[len("skill-agent:"):]
         if not path:
-            raise ValueError("'skill-agent:' arm requires a path, e.g. 'skill-agent:skills/onetbb-quickstart'")
+            raise ValueError("'skill-agent:' arm requires a path, e.g. 'skill-agent:data/skills/onetbb-quickstart'")
         return SkillAgentTreatment(load_skill(path))
 
     if spec == "agent" or spec.startswith("agent:"):
@@ -95,14 +95,14 @@ def create_treatment(
         from doc_benchmarks.agent_profiles import load_agent_profile
         path = spec[len("profile:"):]
         if not path:
-            raise ValueError("'profile:' arm requires a path, e.g. 'profile:agent_profiles/concise_expert.md'")
+            raise ValueError("'profile:' arm requires a path, e.g. 'profile:data/agent_profiles/concise_expert.md'")
         return AgentProfileTreatment(load_agent_profile(path))
 
     if spec.startswith("skill:"):
         from doc_benchmarks.skills import load_skill
         path = spec[len("skill:"):]
         if not path:
-            raise ValueError("'skill:' arm requires a path, e.g. 'skill:skills/onetbb-quickstart'")
+            raise ValueError("'skill:' arm requires a path, e.g. 'skill:data/skills/onetbb-quickstart'")
         return SkillTreatment(load_skill(path))
 
     raise ValueError(

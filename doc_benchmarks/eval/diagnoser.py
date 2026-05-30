@@ -30,7 +30,7 @@ insufficient_data
     Delta could not be computed (one or both answers missing).
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 # Keyword-overlap score below which retrieved docs are considered off-topic
 LOW_RELEVANCE_CUTOFF = 0.3

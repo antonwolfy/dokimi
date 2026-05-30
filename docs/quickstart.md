@@ -178,9 +178,10 @@ python cli.py evaluate --product $PRODUCT --repo $REPO
 | `reports/<product>.md` | Human-readable analysis (git-ignored) |
 | `DASHBOARD.md` | Cross-library summary |
 
-Curated fixtures under `answers/`, `eval/`, `questions/`, and `baselines/` can
-be committed when they are part of a reproducible benchmark; ad-hoc runs
-should stay under `reports/` and `results/` (both ignored).
+Curated fixtures live under `data/` (`data/questions/`, `data/answers/`,
+`data/eval/`, `data/baselines/`) and are committed when they are part of a
+reproducible benchmark; ad-hoc runs stay under the git-ignored `reports/` and
+`results/` directories. See [`data/README.md`](../data/README.md).
 
 ## Cost estimate
 

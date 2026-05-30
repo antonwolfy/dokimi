@@ -124,7 +124,7 @@ weighted total. The compare command picks it up automatically:
 
 ```bash
 python cli.py compare \
-  --base baselines/baseline.json \
+  --base data/baselines/baseline.json \
   --candidate baselines/current.json \
   --spec benchmarks/spec.v1.yaml \
   --out-md reports/compare.md
