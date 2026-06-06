@@ -1,5 +1,11 @@
 # Architecture overview
 
+> This document covers the `doc-benchmark` measurement engine. For how it fits
+> the larger build→measure→**package→discover** loop, see the umbrella
+> [architecture](../../software-packaging-for-agents/architecture.md): the
+> `Treatment`/`AgentConfig` abstraction described below doubles as the in-memory
+> representation of a shippable agent package.
+
 `doc-benchmark` ships two parallel evaluation tracks plus an optional
 executable-task suite. They share configuration (`config/products.yaml`,
 `libraries.yaml`) and a single CLI entry point (`cli.py`) but otherwise

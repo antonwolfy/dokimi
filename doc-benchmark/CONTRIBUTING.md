@@ -7,7 +7,7 @@ mechanics; for architecture and design context start with
 ## License of contributions
 
 By submitting a contribution you agree that it is licensed under the
-[Apache License 2.0](LICENSE), the same license as the project.
+[Apache License 2.0](../LICENSE), the same license as the project.
 
 ## Development setup
 

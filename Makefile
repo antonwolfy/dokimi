@@ -1,28 +1,30 @@
-.PHONY: validate-benchmark-spec benchmark-run benchmark-compare
+# Umbrella Makefile for the "Software Packaging for Agents" repository.
+#
+# This repo has two areas:
+#   software-packaging-for-agents/  framing & architecture (docs today)
+#   doc-benchmark/                  the measurement engine (runnable project)
+#
+# Most runnable targets delegate into doc-benchmark/. Run `make help` for the
+# current target list.
 
-benchmark-run:
-	python cli.py run --root . --spec benchmarks/spec.v1.yaml --out-json baselines/current.json --out-md reports/current.md
+BENCH_DIR := doc-benchmark
 
-benchmark-compare:
-	python cli.py compare --base data/baselines/baseline.json --candidate baselines/current.json --out-json reports/compare.json --out-md reports/compare.md
+.PHONY: help test benchmark-run benchmark-compare validate-benchmark-spec
 
-validate-benchmark-spec:
-	@command -v yq >/dev/null 2>&1 || { echo "ERROR: yq is not installed"; exit 1; }
-	@echo "Checking YAML parse for benchmarks/spec.v1.yaml"
-	@yq eval '.' benchmarks/spec.v1.yaml >/dev/null
-	@echo "Converting YAML -> JSON and validating against benchmarks/spec.schema.json"
-	@yq eval -o=json benchmarks/spec.v1.yaml > benchmarks/.spec.v1.tmp.json
-	@if command -v ajv >/dev/null 2>&1; then \
-		ajv validate -s benchmarks/spec.schema.json -d benchmarks/.spec.v1.tmp.json --spec=draft2020; \
-	elif command -v npx >/dev/null 2>&1; then \
-		mkdir -p .npm-cache; \
-		npm_config_cache=$(PWD)/.npm-cache npx --yes ajv-cli validate -s benchmarks/spec.schema.json -d benchmarks/.spec.v1.tmp.json --spec=draft2020; \
-	else \
-		echo "ERROR: neither 'ajv' nor 'npx' is installed"; \
-		echo "Install one of:"; \
-		echo "  npm i -g ajv-cli"; \
-		echo "  # or install Node.js/npm to use npx"; \
-		exit 1; \
-	fi
-	@rm -f benchmarks/.spec.v1.tmp.json
-	@echo "✅ Benchmark spec is valid"
+help:
+	@echo "Software Packaging for Agents — top-level targets:"
+	@echo "  make test                    Run the doc-benchmark test suite"
+	@echo "  make benchmark-run           Run the static docs-quality benchmark"
+	@echo "  make benchmark-compare       Compare benchmark snapshots"
+	@echo "  make validate-benchmark-spec Validate the benchmark spec schema"
+	@echo ""
+	@echo "All runnable targets currently delegate into $(BENCH_DIR)/."
+	@echo "See $(BENCH_DIR)/Makefile for the full benchmark target list."
+
+# Run the benchmark test suite from its own directory.
+test:
+	$(MAKE) -C $(BENCH_DIR) test 2>/dev/null || (cd $(BENCH_DIR) && python -m pytest -q)
+
+# Delegate benchmark targets into the benchmark project's own Makefile.
+benchmark-run benchmark-compare validate-benchmark-spec:
+	$(MAKE) -C $(BENCH_DIR) $@
