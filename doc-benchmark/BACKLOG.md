@@ -4,6 +4,49 @@
 
 ---
 
+### #59 — Evaluation beyond MCP docs: artifacts as subjects, model × harness, tasks for every project
+**Scope:** Evaluation architecture / coverage
+**Status:** PROPOSED
+
+Extend the treatment-arm framework (#56) and the executable-task track so that
+the things we actually want to ship — skills, agent profiles, bundles — are
+**first-class evaluation subjects**, not just arms layered on a doc question; so
+that **base model and agent harness** are explicit, swept dimensions (for coding
+tasks they usually dominate the doc/skill delta); and so that **every project
+carries both a question set (awareness) and a task set (work)**, not questions
+alone.
+
+Motivation, composition, and rollout order in the umbrella index
+[docs/decisions/2026-06-10-evaluation-beyond-mcp-docs.md](docs/decisions/2026-06-10-evaluation-beyond-mcp-docs.md);
+each phase is its own ADR (detailed design, alternatives, consequences, open
+questions). Builds on the `treatments/` framework, `eval/arm_runner.py`, the
+terminal-bench track, and feeds the packaging scorecard (#58d/#58i).
+
+Phases (each independently shippable; existing `arms run` / two-arm doc flow stay
+working):
+- **Phase A — Coverage contract**
+  ([ADR](docs/decisions/2026-06-10-questions-and-tasks-coverage-contract.md)).
+  Per-product contract in config + a product × {questions, tasks} matrix in
+  `terminal-bench-tasks/COVERAGE.md`; dashboard gains awareness vs work columns.
+  Makes "text-only" products a visible TODO. No new eval machinery.
+- **Phase B — Model × harness dimension**
+  ([ADR](docs/decisions/2026-06-10-model-harness-dimension.md)). Promote answer
+  model to a reported axis; name + record the harness (`single-shot` / `agent` /
+  `terminal-bench:<agent>`); `matrix:` config block + `(model, harness)` key
+  through `arm_runner`, report, dashboard; a `terminal-bench` harness adapter so
+  task pass-rate is an arm outcome. Cost-gated, single-cell default.
+- **Phase C — Subjects**
+  ([ADR](docs/decisions/2026-06-10-artifacts-as-evaluation-subjects.md)).
+  `subjects/` descriptor + loader, `cli.py subjects run` wrapping `arm_runner` +
+  the task adapter, `report/subject_report.py`, and a versioned per-subject
+  scorecard schema — the object #58d/#58i serialize/sign.
+
+Each ADR carries its own open questions (harness invocation boundary,
+subject-vs-package overlap, default matrix size, soft vs hard coverage
+enforcement, …).
+
+---
+
 ### #58 — Software-packaging-for-agents track (summonable Intel expert)
 **Scope:** Project framing / packaging / discovery / serving
 **Status:** FRAMING (docs landed; code deferred)
