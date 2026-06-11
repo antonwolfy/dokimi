@@ -7,10 +7,15 @@
 > packaging and shipping. The packaging & discovery half lives in
 > [`../software-packaging-for-agents/`](../software-packaging-for-agents/).
 
-`doc-benchmark` is a toolkit for measuring and improving technical documentation quality. It supports two complementary workflows:
+`doc-benchmark` is a toolkit for measuring whether documentation and other agent-facing context improve model performance. It started as a technical documentation quality benchmark and now supports a broader evaluation pattern: compare a model or coding agent with and without a controlled context layer.
+
+Current context layers include product documentation, local Markdown/URL sources, Context7-backed docs, curated golden question sets, skills, agent profiles, prompt packs, MCP/doc-source arms, and executable task environments.
+
+It supports three complementary workflows:
 
 1. **Static documentation quality checks** over Markdown/code examples: coverage, freshness, readability, example execution, gates, and regression detection.
-2. **LLM-assisted product documentation evaluation**: persona and question generation, answer generation with/without documentation context, LLM-as-judge scoring, multi-judge panels, RAGAS meta-evaluation, dashboards, and executable terminal-bench-style tasks.
+2. **LLM-assisted context evaluation**: persona and question generation, answer generation with/without context, LLM-as-judge scoring, multi-judge panels, RAGAS meta-evaluation, treatment arms, trust gates, baselines, dashboards, and reproducibility metadata.
+3. **Executable agent tasks**: Terminal-Bench/Harbor-style tasks that require an agent to edit code, compile, run, and pass correctness/performance verifiers.
 
 The repository is currently focused on Intel library documentation quality experiments, especially oneTBB, oneDAL, and oneMKL.
 
@@ -92,30 +97,40 @@ The default static benchmark is configured in `benchmarks/spec.v1.yaml` and curr
 
 Weights are normalized across enabled metrics. The benchmark also supports soft gates, hard gates, critical bands, and regression thresholds. Hard gates and critical bands are enforced only when `--strict` is passed.
 
-## LLM evaluation workflow
+## LLM and treatment evaluation workflow
 
-The LLM workflow is designed to answer a practical question: does documentation improve model answers for real developer tasks?
+The LLM workflow is designed to answer a practical question: does documentation, a skill, an MCP source, or an agent profile improve model answers and task outcomes?
 
-A typical flow is:
+A typical one-command benchmark flow is:
 
 ```bash
-python cli.py personas discover ...
-python cli.py questions generate ...
-python cli.py questions refine ...
-python cli.py answers generate ...
-python cli.py eval score ...
-python cli.py eval panel-score ...
-python cli.py eval ragas ...
-python cli.py dashboard generate ...
+python cli.py benchmark run \
+  --library onetbb \
+  --model gpt-4o-mini \
+  --judge-model claude-sonnet-4 \
+  --judge-provider anthropic \
+  --multi-run 3
+```
+
+The pipeline discovers or loads personas, generates or reuses questions, answers each question in `with_docs` and `without_docs` conditions, scores both answers with an independent judge, and writes model metadata, token usage, `question_set_hash`, reports, and trust-gate signals.
+
+For fair multi-model comparisons, generate one question set and reuse it:
+
+```bash
+python cli.py benchmark run --library onedal --output-dir results/onedal_seed
+python cli.py benchmark run --library onedal --questions-from results/onedal_seed --model gpt-4o
+python cli.py benchmark run --library onedal --questions-from results/onedal_seed --model claude-sonnet-4 --provider anthropic
 ```
 
 Generated artifacts go under `results/`, `reports/`, or `baselines/current.json` for temporary runs; those paths are git-ignored. Curated, version-controlled fixtures live under `data/` (`data/questions/`, `data/answers/`, `data/eval/`, `data/baselines/`, `data/skills/`, `data/agent_profiles/`) — see [`data/README.md`](data/README.md).
 
+See [docs/decisions/benchmark-methodology.md](docs/decisions/benchmark-methodology.md) for the detailed model roles, question types, difficulty levels, task workflow, and trust checks.
+
 ## Executable oneTBB tasks
 
-The repository includes terminal-bench-style tasks under `terminal-bench-tasks/`. These tasks validate not just text answers but working code and measurable behavior. Current CI verifies oracle solutions for the included oneTBB task.
+The repository includes terminal-bench-style tasks under `terminal-bench-tasks/`. These tasks validate not just text answers but working code and measurable behavior. Current CI builds the task containers and verifies oracle solutions with network disabled.
 
-Planned next work is to derive additional oneTBB executable tasks from [ParRes/Kernels](https://github.com/ParRes/Kernels), with provenance/license checks before adapting code. Good first candidates are `nstream`, `stencil`, `transpose`, `sparse`, and shared-memory adaptations of `p2p` patterns.
+Included tasks cover oneTBB, oneMKL, oneDPL, IPP, and sklearnex examples. They are the executable side of the benchmark: they can test whether docs, skills, or an agent profile actually improve an agent's ability to produce correct and performant code.
 
 ## Repository layout
 

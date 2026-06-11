@@ -11,7 +11,7 @@ Unlike pure Q&A benchmarks, Terminal-Bench tasks require the agent to:
 - Compile and run it in an isolated Docker environment
 - Pass automated correctness **and** performance tests
 
-This complements the existing `eval/` Q&A benchmark with **coding-task evaluation**.
+This complements the existing `eval/` Q&A benchmark with **coding-task evaluation**. The same task set can compare a base agent against an agent given extra documentation, reusable skills, a different agent profile, or another context artifact.
 
 ## Task Structure
 

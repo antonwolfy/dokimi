@@ -49,3 +49,7 @@ current status.
   - [decisions/2026-06-10-artifacts-as-evaluation-subjects.md](decisions/2026-06-10-artifacts-as-evaluation-subjects.md)
     — promote skills/profiles/bundles from arms to first-class evaluation
     *subjects* emitting a per-subject scorecard. *(Phase C.)*
+- [decisions/benchmark-methodology.md](decisions/benchmark-methodology.md)
+  — current operational methodology for model roles, question types,
+  difficulty levels, answer generation, judging, trust checks, and executable
+  agent tasks.
