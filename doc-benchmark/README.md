@@ -55,7 +55,7 @@ Run the test suite:
 python -m pytest -q
 ```
 
-For the LLM evaluation pipeline (answers, judging, dashboard), see [docs/quickstart.md](docs/quickstart.md). A high-level architecture map is in [docs/architecture.md](docs/architecture.md), and [docs/README.md](docs/README.md) is the documentation index.
+For the LLM evaluation pipeline (answers, judging, dashboard), see [docs/quickstart.md](docs/quickstart.md). For benchmark invocation and comparison recipes, see [docs/benchmarking-and-comparison.md](docs/benchmarking-and-comparison.md). A high-level architecture map is in [docs/architecture.md](docs/architecture.md), and [docs/README.md](docs/README.md) is the documentation index.
 
 ## Main CLI areas
 
@@ -83,6 +83,11 @@ python cli.py questions --help
 python cli.py eval --help
 python cli.py dashboard generate --help
 ```
+
+For end-to-end benchmark and comparison commands, including static snapshots,
+LLM `with_docs` vs `without_docs` runs, fair multi-model comparisons, treatment
+arms, dashboards, and baselines, see
+[docs/benchmarking-and-comparison.md](docs/benchmarking-and-comparison.md).
 
 ## Static benchmark metrics
 

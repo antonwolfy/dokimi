@@ -8,6 +8,10 @@ CLI surface. The files in this directory go deeper:
 - [quickstart.md](quickstart.md) — end-to-end LLM evaluation pipeline:
   personas → questions → answers → judge → report. Includes troubleshooting
   and a cost estimate.
+- [benchmarking-and-comparison.md](benchmarking-and-comparison.md) — how to
+  run static benchmarks, LLM context benchmarks, fair multi-model comparisons,
+  treatment-arm comparisons, dashboards, baselines, and PR #60 comparison
+  scripts.
 - [adding-doc-source.md](adding-doc-source.md) — point the pipeline at local
   files, a single URL, a real MCP server, or a custom client.
 - [evaluating-treatments.md](evaluating-treatments.md) — compare
