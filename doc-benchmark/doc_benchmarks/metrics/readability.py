@@ -8,14 +8,15 @@ import re
 # Latin + Cyrillic are intentional here for multilingual readability scoring (RUF001-safe).
 SENTENCE_RE = re.compile(r"[.!?]+")
 WORD_RE = re.compile(r"[A-Za-zА-Яа-я0-9'-]+")
-VOWELS = set("aeiouyаеёиоуыэюяAEIOUYАЕЁИОУЫЭЮЯ")
+VOWELS = "aeiouyаеёиоуыэюяAEIOUYАЕЁИОУЫЭЮЯ"
+VOWEL_GROUP_RE = re.compile(rf"[{VOWELS}]+")
 CODE_BLOCK_RE = re.compile(r"```.*?```", re.S)
 INLINE_CODE_RE = re.compile(r"`[^`]+`")
 
 
 def _syllables(word: str) -> int:
-    """Approximate syllables by counting vowels."""
-    count = sum(1 for ch in word if ch in VOWELS)
+    """Approximate syllables by counting contiguous vowel groups."""
+    count = len(VOWEL_GROUP_RE.findall(word))
     return max(1, count)
 
 
