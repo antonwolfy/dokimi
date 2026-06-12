@@ -1,7 +1,7 @@
 # LLM evaluation pipeline — quickstart
 
 End-to-end recipe for running the LLM-assisted documentation evaluation:
-persona discovery → question generation → answer generation (WITH/WITHOUT docs)
+persona discovery → question generation → context-arm/baseline answer generation
 → judge scoring → analysis report.
 
 For the static documentation benchmark (`coverage`, `freshness`, `readability`,
@@ -79,7 +79,7 @@ LLM-validates them (threshold 60/100), and deduplicates via embeddings
 (similarity > 0.85). Expected output: ~30–50 unique questions in
 `questions/oneTBB.json`.
 
-### Step 3 — Generate answers (WITH + WITHOUT docs)
+### Step 3 — Generate context-arm and baseline answers
 
 ```bash
 python cli.py answers generate \
@@ -93,8 +93,8 @@ python cli.py answers generate \
   --debug-retrieval
 ```
 
-For each question, two answers are produced: WITH docs (retrieved via the
-configured `--doc-source`, default Context7) and WITHOUT docs (model knowledge
+For each question, two answers are produced: context arm (retrieved via the
+configured `--doc-source`, default Context7) and baseline (model knowledge
 only). Use `--doc-source local:<path>` or `--doc-source url:<url>` for
 alternative sources — see [adding-doc-source.md](adding-doc-source.md).
 

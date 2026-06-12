@@ -23,7 +23,7 @@ operate independently.
 │                │                          │                          │
 │ ingest/        │ Markdown files           │ personas/                │
 │   └─ chunking  │                          │ questions/               │
-│ metrics/       │ coverage, freshness,     │ mcp/      (doc retrieval)│
+│ metrics/       │ coverage, freshness,     │ mcp/      (context fetch) │
 │   └─ scoring   │ readability, examples    │ eval/     (judges, RAGAS)│
 │ gate/          │ soft/hard/critical gates │ report/   (analysis)     │
 │ runner/        │ orchestration + compare  │ dashboard/(aggregation)  │

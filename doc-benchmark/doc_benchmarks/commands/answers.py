@@ -11,7 +11,7 @@ from doc_benchmarks.commands.evaluate import _run_ragas_eval
 
 
 def cmd_answers_generate(args: argparse.Namespace) -> None:
-    """Generate answers (WITH and WITHOUT docs) for questions."""
+    """Generate context-arm and baseline answers for questions."""
     import yaml
     from doc_benchmarks.eval import Answerer
     from doc_benchmarks.mcp.factory import create_doc_source_client
@@ -100,7 +100,7 @@ def register(sub, positive_int) -> None:
     answers_sub = answers_p.add_subparsers(dest="answers_cmd", required=True)
 
     # answers generate
-    gen_a_p = answers_sub.add_parser("generate", help="Generate answers (WITH and WITHOUT docs)")
+    gen_a_p = answers_sub.add_parser("generate", help="Generate context-arm and baseline answers")
     gen_a_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
     gen_a_p.add_argument("--questions", required=True, help="Path to questions JSON file")
     gen_a_p.add_argument("--run-id", default=None, dest="run_id",

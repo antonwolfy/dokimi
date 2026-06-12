@@ -242,8 +242,8 @@ def _fake_answers(n=2):
         {
             "question_id": f"q{i}",
             "question": f"Question {i}?",
-            "with_docs": {"answer": f"Answer {i} with docs.", "retrieved_docs": []},
-            "without_docs": {"answer": f"Answer {i} without docs."},
+            "with_docs": {"answer": f"Answer {i} with context.", "retrieved_docs": []},
+            "without_docs": {"answer": f"Answer {i} baseline."},
         }
         for i in range(n)
     ]

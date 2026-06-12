@@ -173,7 +173,7 @@ class Judge:
         concurrency: int = 1,
     ) -> List[Dict[str, Any]]:
         """
-        Evaluate all answers (WITH and WITHOUT docs).
+        Evaluate all context-arm and baseline answers.
 
         Args:
             library_name: Library name for context
@@ -239,8 +239,8 @@ class Judge:
             avg_without = sum((e.get("without_docs") or {}).get("aggregate", 0) for e in valid) / len(valid)
             avg_delta = sum(e["delta"] for e in valid) / len(valid)
             print("\n✓ Evaluation complete:", flush=True)
-            print(f"  WITH docs avg:    {avg_with:.1f}", flush=True)
-            print(f"  WITHOUT docs avg: {avg_without:.1f}", flush=True)
+            print(f"  Context avg:      {avg_with:.1f}", flush=True)
+            print(f"  Baseline avg:     {avg_without:.1f}", flush=True)
             print(f"  Average delta:    {avg_delta:.1f}", flush=True)
         return evaluations
     
@@ -249,11 +249,11 @@ class Judge:
         library_name: str,
         answer: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Evaluate a single answer pair (WITH and WITHOUT)."""
+        """Evaluate a single context-arm/baseline answer pair."""
         question_text = answer["question_text"]
         ground_truth = answer.get("ground_truth_chunk")  # present for chunk-grounded questions
 
-        # Evaluate WITH docs
+        # Evaluate context arm
         with_docs_eval = None
         if answer.get("with_docs") and answer["with_docs"].get("answer"):
             context = self._format_context(answer["with_docs"].get("retrieved_docs", []))
@@ -265,7 +265,7 @@ class Judge:
                 ground_truth=ground_truth,
             )
 
-        # Evaluate WITHOUT docs
+        # Evaluate baseline
         without_docs_eval = None
         if answer.get("without_docs") and answer["without_docs"].get("answer"):
             without_docs_eval = self._judge_answer(

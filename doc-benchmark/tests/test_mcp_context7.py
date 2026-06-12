@@ -65,7 +65,7 @@ class TestContext7Client:
     
     @patch('httpx.get')
     def test_get_library_docs_success(self, mock_get):
-        """Test successful doc retrieval."""
+        """Test successful context retrieval."""
         # Mock HTTP response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -91,7 +91,7 @@ class TestContext7Client:
     
     @patch('httpx.get')
     def test_get_library_docs_with_cache(self, mock_get, tmp_path):
-        """Test doc retrieval with caching."""
+        """Test context retrieval with caching."""
         cache_dir = tmp_path / "cache"
         
         # Mock HTTP response

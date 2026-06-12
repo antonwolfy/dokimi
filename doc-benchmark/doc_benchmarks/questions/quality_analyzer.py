@@ -153,7 +153,7 @@ class QuestionQualityAnalyzer:
         advanced_pct = dist.get("advanced", 0) / total * 100
         if trivial_pct > 20:
             recs.append(
-                f"{trivial_pct:.0f}% of questions are trivial (answerable without docs). "
+                f"{trivial_pct:.0f}% of questions are trivial (answerable without extra context). "
                 "Consider regenerating with stricter persona constraints."
             )
         if beginner_pct > 60:
