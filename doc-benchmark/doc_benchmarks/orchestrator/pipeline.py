@@ -267,8 +267,8 @@ class EvaluationPipeline:
                 "delta_avg": round(sum(deltas) / len(deltas), 1)
             }
             print(f"✓ Evaluated {len(evaluations)} answers: "
-                  f"WITH={results['steps']['evaluation']['summary']['with_avg']}, "
-                  f"WITHOUT={results['steps']['evaluation']['summary']['without_avg']}, "
+                  f"context={results['steps']['evaluation']['summary']['with_avg']}, "
+                  f"baseline={results['steps']['evaluation']['summary']['without_avg']}, "
                   f"delta={results['steps']['evaluation']['summary']['delta_avg']:+.1f}")
         else:
             print(f"✓ Evaluated {len(evaluations)} answers (summary unavailable)")

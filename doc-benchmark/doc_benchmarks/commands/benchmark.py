@@ -109,7 +109,7 @@ def cmd_benchmark_run(args: argparse.Namespace) -> None:
             import statistics as _stats
             std = _stats.stdev(run_averages) if len(run_averages) > 1 else 0.0
             mean = _stats.mean(run_averages)
-            print(f"\n📊 Multi-run summary ({n_runs} runs): WITH-docs avg {mean:.1f} ± {std:.2f}")
+            print(f"\n📊 Multi-run summary ({n_runs} runs): context-arm avg {mean:.1f} ± {std:.2f}")
             if std > 5.0:
                 print("   ⚠️  High variance — scores are unstable (std > 5)")
 

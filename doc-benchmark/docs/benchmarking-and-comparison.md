@@ -9,8 +9,9 @@ results. Run all commands from `doc-benchmark/`.
 
 - **Static snapshot comparison**: compare documentation quality snapshots from
   `python cli.py run`.
-- **LLM context comparison**: compare one answer model with and without a
-  controlled context layer (`with_docs` vs `without_docs`).
+- **LLM context comparison**: compare one answer model's context-arm and
+  baseline answers. Persisted JSON keeps the legacy `with_docs` and
+  `without_docs` keys for compatibility.
 - **Multi-model comparison**: run multiple answer models on the same question
   set and compare their evaluated JSON outputs.
 - **Treatment-arm comparison**: compare `baseline` against docs, MCP, skills,
@@ -85,7 +86,7 @@ The run writes:
 The comparison inside one run is always:
 
 ```text
-delta = with_docs score - without_docs score
+delta = context-arm score - baseline score
 ```
 
 Positive delta means the context helped on that judged question. Negative delta
@@ -105,7 +106,7 @@ python cli.py benchmark run \
 ```
 
 Multi-run mode creates numbered run directories and prints the mean and
-standard deviation of the `with_docs` average.
+standard deviation of the context-arm average.
 
 ## Fair multi-model comparison
 
@@ -145,11 +146,11 @@ python cli.py benchmark run \
 
 Interpret model comparisons using two separate signals:
 
-- **Absolute quality**: the `with_docs` average from each run.
+- **Absolute quality**: the context-arm average from each run.
 - **Context benefit**: the average `delta` from each run.
 
 Do not rank models by delta alone. A strong model can have a small delta because
-its `without_docs` baseline is already high.
+its baseline score is already high.
 
 Generate a cross-run dashboard when you have multiple eval files:
 
@@ -226,15 +227,15 @@ files:
 - `scripts/compare_models_combined.py`
 
 The intended input is one judged arms JSON file per model for regular questions
-and/or golden questions. The report extracts the `baseline_arm` score as
-`without_docs`, the first non-baseline arm score as `with_docs`, and computes:
+and/or golden questions. The report extracts the `baseline_arm` score as the
+baseline, the first non-baseline arm score as the context arm, and computes:
 
-- overall `with_docs`, `without_docs`, and delta per run,
-- statistical significance of `with_docs - without_docs`,
+- overall context-arm, baseline, and delta per run,
+- statistical significance of context-arm minus baseline,
 - golden/static vs dynamic breakdown when question IDs use a `*-QNNN` pattern,
 - difficulty breakdown on common question IDs,
 - head-to-head winners on common question IDs,
-- ranking by absolute `with_docs` score and by delta.
+- ranking by absolute context-arm score and by delta.
 
 Intended usage:
 

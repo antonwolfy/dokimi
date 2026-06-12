@@ -20,11 +20,11 @@ DEFAULTS = {
     "min_questions": 10,
     # Maximum fraction of questions with score == 0 (both modes)
     "max_zero_fraction": 0.20,
-    # Minimum mean WITH-docs score (0-100)
+    # Minimum mean context-arm score (0-100)
     "min_with_docs_avg": 30.0,
-    # Minimum delta (WITH minus WITHOUT); if docs don't help at all, suspicious
+    # Minimum delta (context arm minus baseline); if context doesn't help at all, suspicious
     "min_delta": -5.0,
-    # Maximum coefficient of variation (std/mean) of WITH-docs scores — high CV = noisy
+    # Maximum coefficient of variation (std/mean) of context-arm scores — high CV = noisy
     "max_cv": 0.60,
     # Minimum inter-rater agreement fraction (when panel judge used)
     "min_agreement": 0.50,
@@ -86,7 +86,7 @@ def evaluate_trust(
     Args:
         evaluations:   List of eval entries (as stored in data/eval/{product}.json)
         thresholds:    Override any DEFAULTS key
-        multirun_with_averages:  Per-run WITH-docs averages from N-run mode;
+        multirun_with_averages:  Per-run context-arm averages from N-run mode;
                                  if provided, variance check is included.
     Returns:
         TrustVerdict
@@ -125,7 +125,7 @@ def evaluate_trust(
         severity="fail",
     ))
 
-    # ── 3. Minimum WITH-docs average ──────────────────────────────────────
+    # ── 3. Minimum context-arm average ────────────────────────────────────
     with_scores = [e["with_docs"]["aggregate"] for e in valid]
     with_avg = statistics.mean(with_scores)
     checks.append(TrustCheck(
@@ -133,11 +133,11 @@ def evaluate_trust(
         passed=with_avg >= cfg["min_with_docs_avg"],
         value=round(with_avg, 1),
         threshold=cfg["min_with_docs_avg"],
-        message=f"WITH-docs avg = {with_avg:.1f} (min {cfg['min_with_docs_avg']})",
+        message=f"Context-arm avg = {with_avg:.1f} (min {cfg['min_with_docs_avg']})",
         severity="warn",
     ))
 
-    # ── 4. Minimum delta (WITH − WITHOUT) ─────────────────────────────────
+    # ── 4. Minimum delta (context arm minus baseline) ─────────────────────
     without_scores = [e["without_docs"]["aggregate"] for e in valid]
     delta_avg = statistics.mean(with_scores) - statistics.mean(without_scores)
     checks.append(TrustCheck(
@@ -145,7 +145,7 @@ def evaluate_trust(
         passed=delta_avg >= cfg["min_delta"],
         value=round(delta_avg, 1),
         threshold=cfg["min_delta"],
-        message=f"Avg delta (WITH−WITHOUT) = {delta_avg:+.1f} (min {cfg['min_delta']:+})",
+        message=f"Avg delta (context arm minus baseline) = {delta_avg:+.1f} (min {cfg['min_delta']:+})",
         severity="warn",
     ))
 
@@ -205,7 +205,7 @@ def evaluate_trust(
             value=round(multirun_std, 2),
             threshold=cfg["max_multirun_std"],
             message=(
-                f"Multi-run WITH-docs std = {multirun_std:.2f} across {len(multirun_with_averages)} runs "
+                f"Multi-run context-arm std = {multirun_std:.2f} across {len(multirun_with_averages)} runs "
                 f"(max {cfg['max_multirun_std']})"
             ),
             severity="fail",

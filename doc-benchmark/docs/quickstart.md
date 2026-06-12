@@ -111,7 +111,7 @@ python cli.py eval score \
 
 LLM-as-judge scores each answer on five 0–100 dimensions
 (correctness, completeness, specificity, code_quality, actionability), then
-computes an aggregate and the WITH–WITHOUT delta.
+computes an aggregate and the context-arm minus baseline delta.
 
 Multi-judge panel (see [BACKLOG.md](../BACKLOG.md) #29):
 
@@ -133,7 +133,7 @@ python cli.py report generate \
   --format markdown
 ```
 
-`reports/oneTBB.md` contains summary stats (min/max/avg WITH/WITHOUT/delta),
+`reports/oneTBB.md` contains summary stats (min/max/avg context-arm/baseline/delta),
 top-N best and worst answers, top improvements and degradations, topic and
 persona clustering, and recommendations. The `reports/` directory is
 git-ignored.
@@ -173,7 +173,7 @@ python cli.py evaluate --product $PRODUCT --repo $REPO
 | --- | --- |
 | `personas/<product>.json` | 5–8 user personas |
 | `questions/<product>.json` | Validated, deduped questions |
-| `answers/<product>.json` | WITH/WITHOUT answer pairs + retrieval metadata + token counts |
+| `answers/<product>.json` | Context-arm/baseline answer pairs + retrieval metadata + token counts |
 | `eval/<product>.json` | Per-question scores (5 dimensions) + aggregates + deltas |
 | `reports/<product>.md` | Human-readable analysis (git-ignored) |
 | `DASHBOARD.md` | Cross-library summary |
@@ -191,7 +191,7 @@ For 35 questions on `gpt-4o` + `claude-sonnet-4`:
 | --- | --- | --- |
 | Persona discovery | a few | $0.50 |
 | Question generation | ~35 | $0.50 |
-| Answer generation | ~70 (WITH + WITHOUT) | $5 |
+| Answer generation | ~70 (context arm + baseline) | $5 |
 | Judge scoring | ~70 | $7 |
 | **Total** | | **~$13** |
 

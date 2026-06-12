@@ -1,7 +1,7 @@
 """Failure diagnosis for documentation benchmark evaluations.
 
-For each evaluated question, determines *why* the WITH-docs answer
-scored differently from the WITHOUT-docs answer.
+For each evaluated question, determines *why* the context-arm answer
+scored differently from the baseline answer.
 
 Diagnosis categories
 --------------------

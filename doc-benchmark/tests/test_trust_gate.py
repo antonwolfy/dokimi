@@ -133,6 +133,9 @@ class TestFormatTrustBlock:
         assert "## Can We Trust This Run?" in md
         assert "✅ PASS" in md or "⚠️ WARN" in md or "❌ FAIL" in md
         assert "| Check |" in md
+        assert "Context-arm avg" in md
+        assert ("WITH" + "-docs") not in md
+        assert ("WITH" + "−" + "WITHOUT") not in md
 
     def test_shows_failures(self):
         v = evaluate_trust(_evals(5))  # fails min_questions

@@ -227,7 +227,7 @@ def cmd_eval_grounding(args: argparse.Namespace) -> None:
 
     summary = result["summary"]
     gs = summary["grounding_score"]
-    print(f"Grounding over {summary['n_evaluated']} with-docs answers:")
+    print(f"Grounding over {summary['n_evaluated']} context-arm answers:")
     if gs["mean"] is not None:
         print(f"  grounding_score : {gs['mean']:.3f}  (95% CI {gs['lo']:.3f}–{gs['hi']:.3f})")
     print(f"  citation_rate   : {summary['citation_rate']:.3f}  (threshold {summary['threshold']})")

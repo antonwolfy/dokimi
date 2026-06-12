@@ -44,7 +44,7 @@ class ReportGenerator:
             eval_data: Loaded eval JSON (from Judge)
             questions_data: Loaded questions JSON (for clustering)
             output_format: "markdown" or "json"
-            multirun_with_averages: Per-run WITH-docs means from N-run mode
+            multirun_with_averages: Per-run context-arm means from N-run mode
             trust_thresholds: Override default trust gate thresholds
         """
         evaluations = eval_data.get("evaluations", [])
@@ -388,7 +388,7 @@ class ReportGenerator:
             "",
             "## Top 10: Biggest Improvements (context helped most)",
             "",
-            "| Question ID | Delta | WITH | WITHOUT | Question Text |",
+            "| Question ID | Delta | Context Arm | Baseline | Question Text |",
             "|-------------|-------|------|---------|---------------|",
         ])
         
@@ -403,9 +403,9 @@ class ReportGenerator:
             "",
             "---",
             "",
-            "## Bottom 10: Biggest Degradations (docs hurt most)",
+            "## Bottom 10: Biggest Degradations (context hurt most)",
             "",
-            "| Question ID | Delta | WITH | WITHOUT | Question Text |",
+            "| Question ID | Delta | Context Arm | Baseline | Question Text |",
             "|-------------|-------|------|---------|---------------|",
         ])
         
@@ -422,7 +422,7 @@ class ReportGenerator:
             "",
             "## Performance by Topic/Persona",
             "",
-            "| Topic | Count | WITH Avg | WITHOUT Avg | Delta |",
+            "| Topic | Count | Context Arm Avg | Baseline Avg | Delta |",
             "|-------|-------|----------|-------------|-------|",
         ])
         
@@ -441,7 +441,7 @@ class ReportGenerator:
                 "",
                 "## Performance by Question Source",
                 "",
-                "| Source Type | Count | WITH Avg | WITHOUT Avg | Delta |",
+                "| Source Type | Count | Context Arm Avg | Baseline Avg | Delta |",
                 "|-------------|-------|----------|-------------|-------|",
             ])
             for src in sources_summary:

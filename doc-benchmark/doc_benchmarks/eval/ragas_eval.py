@@ -352,6 +352,6 @@ class RagasResult:
             if ar_with is not None and ar_without is not None:
                 delta = ar_with - ar_without
                 sign = "+" if delta >= 0 else ""
-                lines.append(f"\n  answer_relevancy delta (with−without): {sign}{delta:.3f}")
+                lines.append(f"\n  answer_relevancy delta (context arm minus baseline): {sign}{delta:.3f}")
 
         return "\n".join(lines)

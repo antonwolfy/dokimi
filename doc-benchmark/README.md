@@ -85,8 +85,8 @@ python cli.py dashboard generate --help
 ```
 
 For end-to-end benchmark and comparison commands, including static snapshots,
-LLM `with_docs` vs `without_docs` runs, fair multi-model comparisons, treatment
-arms, dashboards, and baselines, see
+LLM context-arm vs baseline runs, fair multi-model comparisons, treatment arms,
+dashboards, and baselines, see
 [docs/benchmarking-and-comparison.md](docs/benchmarking-and-comparison.md).
 
 ## Static benchmark metrics
@@ -117,7 +117,7 @@ python cli.py benchmark run \
   --multi-run 3
 ```
 
-The pipeline discovers or loads personas, generates or reuses questions, answers each question in `with_docs` and `without_docs` conditions, scores both answers with an independent judge, and writes model metadata, token usage, `question_set_hash`, reports, and trust-gate signals.
+The pipeline discovers or loads personas, generates or reuses questions, answers each question in context-arm and baseline conditions, scores both answers with an independent judge, and writes model metadata, token usage, `question_set_hash`, reports, and trust-gate signals. For compatibility, persisted answer/evaluation JSON still uses the legacy `with_docs` and `without_docs` keys for those two conditions.
 
 For fair multi-model comparisons, generate one question set and reuse it:
 
