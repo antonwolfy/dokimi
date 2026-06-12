@@ -14,7 +14,9 @@ the things we actually want to ship — skills, agent profiles, bundles — are
 that **base model and agent harness** are explicit, swept dimensions (for coding
 tasks they usually dominate the doc/skill delta); and so that **every project
 carries both a question set (awareness) and a task set (work)**, not questions
-alone.
+alone. Runtime **plugins** such as a Caveman-style output reducer are explicit
+cell modifiers, so their token/cost gains can be measured against quality and
+task-success trade-offs instead of being hidden inside model or harness effects.
 
 Motivation, composition, and rollout order in the umbrella index
 [docs/decisions/2026-06-10-evaluation-beyond-mcp-docs.md](docs/decisions/2026-06-10-evaluation-beyond-mcp-docs.md);
@@ -35,7 +37,13 @@ working):
   `terminal-bench:<agent>`); `matrix:` config block + `(model, harness)` key
   through `arm_runner`, report, dashboard; a `terminal-bench` harness adapter so
   task pass-rate is an arm outcome. Cost-gated, single-cell default.
-- **Phase C — Subjects**
+- **Phase C — Plugin-aware cells**
+  ([ADR](docs/decisions/2026-06-11-plugin-and-harness-aware-benchmarks.md)).
+  Extend `matrix:` to explicit cells where each harness can declare supported
+  model/plugin combinations; record `plugin_set`, plugin versions/config hashes,
+  and cost/length metrics; report plugin deltas separately from treatment deltas
+  (for example Caveman: completion-token reduction vs quality/pass-rate tax).
+- **Phase D — Subjects**
   ([ADR](docs/decisions/2026-06-10-artifacts-as-evaluation-subjects.md)).
   `subjects/` descriptor + loader, `cli.py subjects run` wrapping `arm_runner` +
   the task adapter, `report/subject_report.py`, and a versioned per-subject

@@ -1,6 +1,6 @@
 # ADR: Artifacts as first-class evaluation subjects
 
-**Status:** PROPOSED. One of three decisions under the
+**Status:** PROPOSED. One of four decisions under the
 [evaluation-beyond-MCP-docs umbrella](2026-06-10-evaluation-beyond-mcp-docs.md)
 (BACKLOG #59). Builds on the treatment-arm framework
 ([2026-05-29](2026-05-29-evaluating-mcp-skills-personas.md);
@@ -9,8 +9,8 @@ the packaging scorecard (#58d/#58i).
 
 **Date:** 2026-06-10
 
-**Phase:** C in the umbrella rollout (land after the coverage contract and the
-model × harness dimension).
+**Phase:** D in the umbrella rollout (land after coverage, model × harness, and
+plugin-aware cells).
 
 ---
 
@@ -102,7 +102,7 @@ pre-ship.
 |---|---|
 | `doc_benchmarks/subjects/` (new) | `loader.py` (parse + validate the descriptor, glob `products`/`tasks`, resolve `kind`→arms), `models.py` (`Subject`, `Suite`, `Scorecard` dataclasses). |
 | `doc_benchmarks/eval/arm_runner.py` | unchanged interface; called once per `(suite-cell, matrix-cell)` by the subject runner. |
-| `doc_benchmarks/report/subject_report.py` (new) | renders a per-subject scorecard (Markdown + JSON) keyed by `(model, harness)`, awareness delta and work pass-rate delta side by side. |
+| `doc_benchmarks/report/subject_report.py` (new) | renders a per-subject scorecard (Markdown + JSON) keyed by `(model, harness, plugin_set)`, awareness delta and work pass-rate delta side by side. |
 | `doc_benchmarks/cli` (`commands/`) | `subjects run` / `subjects show` / `subjects list`; `arms run` untouched. |
 | `doc_benchmarks/artifacts.py` | add a versioned `Scorecard` artifact schema (`schema_version`) reusing `question_set_hash` and `runner/manifest.py` provenance. |
 | `subjects/` (new top-level dir) | committed subject descriptors, parallel to `data/skills/`, `data/agent_profiles/`. |

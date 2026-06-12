@@ -1,10 +1,10 @@
 # Evaluation beyond MCP docs — overview and decision index
 
-**Status:** PROPOSED (umbrella). This is the index for three related decisions
+**Status:** PROPOSED (umbrella). This is the index for four related decisions
 that together extend the benchmark beyond its doc-centric framing as the project
 moves toward packaging a *summonable Intel expert* (umbrella #58). Each decision
 is recorded and reviewable on its own; this file states the shared motivation,
-how the three fit together, and the rollout order. Tracked as BACKLOG #59.
+how the decisions fit together, and the rollout order. Tracked as BACKLOG #59.
 
 **Date:** 2026-06-10
 
@@ -26,24 +26,25 @@ delta; behavioral signal lives in a separate handful of terminal-bench tasks.
 
 That substrate is right, but it is still organized around **documentation as the
 thing under test**, on **one implicit model and harness**, with **awareness
-measured everywhere and work measured almost nowhere**. Three structural gaps
+measured everywhere and work measured almost nowhere**. Four structural gaps
 follow, and each is large enough — in design surface, in data-model impact, and
 in the open questions it raises — to warrant its own decision record. A single
 shared section would obscure the distinct trade-offs reviewers must weigh
 independently, which is why this file is an index rather than one combined
 proposal.
 
-## 2. The three decisions
+## 2. The four decisions
 
 | ADR | Decision | Core question it answers |
 |---|---|---|
 | [Artifacts as evaluation subjects](2026-06-10-artifacts-as-evaluation-subjects.md) | Promote the **skill / profile / bundle** from an arm to the *subject* under test, measured across a portfolio and emitting a per-subject **scorecard**. | "Is *this artifact* worth shipping?" — the credential the packaging track signs. |
 | [Base model × harness dimension](2026-06-10-model-harness-dimension.md) | Make the **answer model** and the **agent harness** explicit, swept, reported axes; deltas are only comparable within one `(model, harness)` cell. | "How big is the model/harness effect vs the doc/skill effect, especially for coding?" |
 | [Questions-and-tasks coverage contract](2026-06-10-questions-and-tasks-coverage-contract.md) | Require every project to carry both a **question set (awareness)** and a **task set (work)**, with the gap surfaced as a checked matrix. | "Can the model *do the work*, not just *describe the API*?" |
+| [Plugin and harness-aware benchmark dimensions](2026-06-11-plugin-and-harness-aware-benchmarks.md) | Add **plugins** as explicit runtime behavior modifiers and allow explicit matrix cells where each harness can declare its supported model/plugin combinations. | "What does a plugin like Caveman trade off: fewer tokens and shorter output for how much quality or task-success loss?" |
 
 ## 3. How they compose
 
-The three are deliberately layered, not independent features bolted on:
+The decisions are deliberately layered, not independent features bolted on:
 
 ```text
             ┌───────────────────────────────────────────────┐
@@ -62,18 +63,25 @@ The three are deliberately layered, not independent features bolted on:
    │  Matrix = models × harnesses   (ADR: model × harness)         │
    │  single-shot · agent · terminal-bench:<agent>                 │
    └──────────────────────────────────────────────────────────────┘
+                   │ optionally modified by
+                   ▼
+   ┌──────────────────────────────────────────────────────────────┐
+   │  Plugins = none · caveman · memory · tool middleware          │
+   │  (ADR: plugin and harness-aware dimensions)                   │
+   └───────────────┬──────────────────────────────────────────────┘
                    │ yields
                    ▼
-        per-(subject, model, harness) scorecard:
+        per-(subject, model, harness, plugin_set) scorecard:
         awareness delta  +  work pass-rate delta
 ```
 
 A **subject** needs a **suite** to be measured against, and the suite's *work*
 half is exactly what the **coverage contract** guarantees exists. Both the
 awareness and work measurements are only interpretable inside a fixed `(model,
-harness)` **cell** from the matrix decision. So the dependency order is:
-coverage gives subjects something real to stand on, the matrix makes any number
-read meaningfully, and subjects assemble both into the shippable credential.
+harness, plugin_set)` **cell** from the matrix and plugin decisions. So the
+dependency order is: coverage gives subjects something real to stand on, the
+matrix makes any number read meaningfully, plugins make runtime behavior
+modifiers explicit, and subjects assemble those into the shippable credential.
 
 ## 4. Rollout order
 
@@ -83,8 +91,11 @@ read meaningfully, and subjects assemble both into the shippable credential.
 2. **[Model × harness](2026-06-10-model-harness-dimension.md)** next — makes
    every existing and future delta comparable and adds the `terminal-bench`
    harness adapter that turns task pass-rate into an arm outcome.
-3. **[Subjects](2026-06-10-artifacts-as-evaluation-subjects.md)** last — assembles
-   the two beneath it into the per-subject scorecard the packaging track
+3. **[Plugin-aware cells](2026-06-11-plugin-and-harness-aware-benchmarks.md)**
+   next — extends the matrix from a simple Cartesian product to explicit cells
+   with harness-specific model support and plugin sets (`none`, `caveman`, ...).
+4. **[Subjects](2026-06-10-artifacts-as-evaluation-subjects.md)** last — assembles
+   the layers beneath it into the per-subject scorecard the packaging track
    (#58d/#58i) serializes and signs.
 
 Each leaves the existing two-arm doc flow and `arms run` working, and each is

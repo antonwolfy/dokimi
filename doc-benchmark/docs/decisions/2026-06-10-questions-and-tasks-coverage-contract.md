@@ -1,6 +1,6 @@
 # ADR: A questions-and-tasks coverage contract for every project
 
-**Status:** PROPOSED. One of three decisions under the
+**Status:** PROPOSED. One of four decisions under the
 [evaluation-beyond-MCP-docs umbrella](2026-06-10-evaluation-beyond-mcp-docs.md)
 (BACKLOG #59). Touches `config/products.yaml`, `libraries.yaml`,
 `terminal-bench-tasks/COVERAGE.md`, the dashboard, and the executable
@@ -8,8 +8,8 @@
 
 **Date:** 2026-06-10
 
-**Phase:** A in the umbrella rollout (land first — cheapest, unblocks the other
-two).
+**Phase:** A in the umbrella rollout (land first -- cheapest, unblocks the later
+matrix, plugin, and subject layers).
 
 ---
 
