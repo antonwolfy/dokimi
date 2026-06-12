@@ -218,56 +218,77 @@ python cli.py arms run \
 The `baseline` arm is the control. Every other arm is compared against it. Keep
 the answer model and judge fixed when comparing arms.
 
-## PR #60 multi-model comparison scripts
+## Multi-model comparison
 
-PR #60 proposes standalone helpers for comparing judged treatment-arm JSON
-files:
-
-- `scripts/compare_models.py`
-- `scripts/compare_models_combined.py`
+Use `report model-compare` to compare judged treatment-arm JSON files from
+multiple models.
 
 The intended input is one judged arms JSON file per model for regular questions
 and/or golden questions. The report extracts the `baseline_arm` score as the
-baseline, the first non-baseline arm score as the context arm, and computes:
+baseline and the treatment arm as the context arm, then computes:
 
 - overall context-arm, baseline, and delta per run,
-- statistical significance of context-arm minus baseline,
-- golden/static vs dynamic breakdown when question IDs use a `*-QNNN` pattern,
+- statistical significance of context-arm minus baseline (paired t-test,
+  Wilcoxon, Cohen\u2019s d_z) when scipy is installed,
 - difficulty breakdown on common question IDs,
 - head-to-head winners on common question IDs,
 - ranking by absolute context-arm score and by delta.
 
-Intended usage:
+**All summary, significance, difficulty, and head-to-head metrics use only the
+common question set** (intersection of question IDs across all runs).
 
 ```bash
-python scripts/compare_models.py \
+python cli.py report model-compare \
   --regular-runs results/arms/dpnp_regular_sonnet46.json results/arms/dpnp_regular_opus48.json \
-  --golden-runs results/arms/dpnp_golden_sonnet46.json results/arms/dpnp_golden_opus48.json \
+  --golden-runs  results/arms/dpnp_golden_sonnet46.json  results/arms/dpnp_golden_opus48.json \
   --run-ids sonnet46,opus48 \
   --out results/dpnp_compare.md
 ```
 
-Current evaluation notes for PR #60:
+Regular and golden options may be used independently:
 
-- `compare_models.py` is the usable script to document. It accepts
-  `--regular-runs`, `--golden-runs`, `--run-ids`, and `--out`.
-- `compare_models_combined.py` should not be used as-is: it calls
-  `compare_models.py --runs`, but `compare_models.py` has no `--runs`
-  argument.
-- Score extraction should be hardened before CI or release use. Missing
-  aggregate scores, failed judge entries, or absent treatment scores can crash
-  the script instead of producing a skipped-question diagnostic.
-- The scripts assume each input file has exactly one non-baseline treatment arm.
-  If there are several treatment arms, the first non-baseline arm is used.
-- The scripts do not verify `question_set_hash` or judge/model consistency, so
-  the operator must verify that the compared runs used the same questions and
-  judge setup.
-- The overall summary uses each run's full extracted score set, while
-  head-to-head and difficulty tables use common question IDs. If runs have
-  different question coverage, call that out in the report interpretation.
+```bash
+# Regular questions only
+python cli.py report model-compare \
+  --regular-runs results/arms/dpnp_regular_sonnet46.json results/arms/dpnp_regular_opus48.json \
+  --run-ids sonnet46,opus48 \
+  --out results/dpnp_regular_compare.md
 
-Until those caveats are fixed, use these scripts for exploratory reports, not
-as a CI gate.
+# Golden questions only
+python cli.py report model-compare \
+  --golden-runs results/arms/dpnp_golden_sonnet46.json results/arms/dpnp_golden_opus48.json \
+  --run-ids sonnet46,opus48 \
+  --out results/dpnp_golden_compare.md
+```
+
+When a run contains more than one non-baseline arm, specify which one to score:
+
+```bash
+python cli.py report model-compare \
+  --regular-runs run_a.json run_b.json \
+  --run-ids a,b \
+  --treatment-arm with-skill \
+  --out compare.md
+```
+
+Consistency is validated before the report is written:
+
+- Different `baseline_arm` values across runs in the same group abort with an
+  error.
+- Diverging `question_set_hash` values (when present) produce a warning on
+  stderr.
+- Runs that share the same model and provider produce a warning (likely
+  duplicate rather than a real comparison).
+
+For programmatic use, import from the package directly:
+
+```python
+from agent_benchmarks.report.model_compare import (
+    check_run_consistency,
+    generate_combined_report,
+    load_run,
+)
+```
 
 ## Baselines
 

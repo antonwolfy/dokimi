@@ -1,12 +1,69 @@
-"""report subcommand group: eval, generate."""
+"""report subcommand group: eval, generate, model-compare."""
 
 from __future__ import annotations
 
 import argparse
+import sys
 import json
 from pathlib import Path
 
 from agent_benchmarks.report.markdown_report import write_compare_report, write_run_report
+
+
+def cmd_report_model_compare(args: argparse.Namespace) -> None:
+    """Compare multiple model runs and write a Markdown report."""
+    from agent_benchmarks.report.model_compare import (
+        check_run_consistency,
+        generate_combined_report,
+        load_run,
+    )
+
+    run_ids = [rid.strip() for rid in args.run_ids.split(",")]
+    if not run_ids or any(not rid for rid in run_ids) or len(set(run_ids)) != len(run_ids):
+        print("Error: --run-ids must contain unique, non-empty labels", file=sys.stderr)
+        raise SystemExit(1)
+
+    if not args.regular_runs and not args.golden_runs:
+        print("Error: must provide at least --regular-runs or --golden-runs", file=sys.stderr)
+        raise SystemExit(1)
+
+    for flag, paths in (("--regular-runs", args.regular_runs), ("--golden-runs", args.golden_runs)):
+        if paths and len(paths) != len(run_ids):
+            print(
+                f"Error: number of {flag} paths ({len(paths)}) must match "
+                f"number of run IDs ({len(run_ids)})",
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+    regular_runs = []
+    if args.regular_runs:
+        for run_id, path in zip(run_ids, args.regular_runs, strict=True):
+            print(f"Loading {run_id} (regular): {path}")
+            regular_runs.append((run_id, load_run(path)))
+
+    golden_runs = []
+    if args.golden_runs:
+        for run_id, path in zip(run_ids, args.golden_runs, strict=True):
+            print(f"Loading {run_id} (golden): {path}")
+            golden_runs.append((run_id, load_run(path)))
+
+    # Consistency checks — hard errors abort, warnings go to stderr
+    all_warnings: list[str] = []
+    if regular_runs:
+        all_warnings += check_run_consistency(regular_runs, "regular")
+    if golden_runs:
+        all_warnings += check_run_consistency(golden_runs, "golden")
+    for w in all_warnings:
+        print(w, file=sys.stderr)
+
+    generate_combined_report(
+        regular_runs,
+        golden_runs,
+        run_ids,
+        args.out,
+        treatment_arm=getattr(args, "treatment_arm", None),
+    )
 
 
 def cmd_report(args: argparse.Namespace) -> None:
@@ -87,3 +144,38 @@ def register(sub, positive_int) -> None:
     gen_r_p.add_argument("--output", default=None, help="Output file (default: reports/{product}.md)")
     gen_r_p.add_argument("--format", default="markdown", choices=["markdown", "json"], help="Output format")
     gen_r_p.set_defaults(func=cmd_report_generate)
+
+    # report model-compare
+    mc_p = report_sub.add_parser(
+        "model-compare",
+        help="Compare multiple model runs over a common question set and write a Markdown report",
+    )
+    mc_p.add_argument(
+        "--regular-runs",
+        nargs="+",
+        dest="regular_runs",
+        help="Paths to regular-question arms JSON files (one per model, same order as --run-ids)",
+    )
+    mc_p.add_argument(
+        "--golden-runs",
+        nargs="+",
+        dest="golden_runs",
+        help="Paths to golden-question arms JSON files (one per model, same order as --run-ids)",
+    )
+    mc_p.add_argument(
+        "--run-ids",
+        required=True,
+        dest="run_ids",
+        help="Comma-separated run labels (e.g. sonnet46,opus48)",
+    )
+    mc_p.add_argument("--out", required=True, help="Output Markdown file path")
+    mc_p.add_argument(
+        "--treatment-arm",
+        default=None,
+        dest="treatment_arm",
+        help=(
+            "Name of the treatment arm to use as the scored context arm. "
+            "Required when a run contains more than one non-baseline arm."
+        ),
+    )
+    mc_p.set_defaults(func=cmd_report_model_compare)
