@@ -5,7 +5,7 @@
 > and [`discovery.md`](discovery.md).
 
 The project is a **closed cycle** of six tracks. Only **measure** is built
-today (as [`../doc-benchmark/`](../doc-benchmark/)); the others are the subject
+today (as [`../agent-benchmark/`](../agent-benchmark/)); the others are the subject
 of this directory. The cycle matters more than any single track: artifacts are
 authored, proven, shipped, found, *used*, and the evidence from real use flows
 back to re-author and re-score them.
@@ -36,9 +36,9 @@ back to re-author and re-score them.
    [`authoring.md`](authoring.md).
 2. **Build** — assemble the authored artifacts into an agent configuration
    (`AgentConfig`: system prompt + skills + mcp + tools). Today these exist as
-   benchmark fixtures (`../doc-benchmark/data/agent_profiles/`,
-   `../doc-benchmark/data/skills/`).
-3. **Measure** — `doc-benchmark/`. The scorecard is the gate: only artifacts
+   benchmark fixtures (`../agent-benchmark/data/agent_profiles/`,
+   `../agent-benchmark/data/skills/`).
+3. **Measure** — `agent-benchmark/`. The scorecard is the gate: only artifacts
    that demonstrably improve answers/task outcomes get packaged. The scorecard
    carries *both* Q&A-judge deltas and behavioral terminal-bench pass-rates.
 4. **Package** — serialize the agent configuration (+ scorecard + provenance)
@@ -67,8 +67,8 @@ A scorecard stamped once at build time goes stale. The loop makes it **living**
 
 ## Key idea: AgentConfig is already a package
 
-`doc-benchmark`'s `Treatment` → `AgentConfig` abstraction
-(`../doc-benchmark/doc_benchmarks/treatments/base.py`) is
+`agent-benchmark`'s `Treatment` → `AgentConfig` abstraction
+(`../agent-benchmark/agent_benchmarks/treatments/base.py`) is
 `system_prompt + skills + tools + injected_context` — which is exactly a
 shippable agent. Packaging is largely *serializing and adapting* this existing
 representation, not inventing a new one.
@@ -90,4 +90,4 @@ Tracked in the branch plan; to be resolved with design docs:
 - Which runtimes to target first and how their adapters differ.
 - Graph technology and the intent/capability taxonomy.
 - Whether to ship an Intel **MCP server** or only consume third-party ones
-  (today `doc-benchmark` is an MCP *client*).
+  (today `agent-benchmark` is an MCP *client*).

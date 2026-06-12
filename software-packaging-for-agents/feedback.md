@@ -99,6 +99,6 @@ reproducible-and-dated foundation.
 ## 6. Relationship to the rest of the project
 
 Feedback is the arrow that turns the linear pipe into a cycle. It connects
-[serve](serving.md) back to [measure](../doc-benchmark/) and
+[serve](serving.md) back to [measure](../agent-benchmark/) and
 [author](authoring.md), and it is what lets [discover](discovery.md) honestly
 claim its rankings reflect *current* demonstrated value.

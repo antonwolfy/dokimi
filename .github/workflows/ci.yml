@@ -11,7 +11,7 @@ permissions:
 
 defaults:
   run:
-    working-directory: doc-benchmark
+    working-directory: agent-benchmark
 
 jobs:
   lint:
@@ -55,9 +55,9 @@ jobs:
           python-version: '3.11'
       - run: pip install PyYAML jsonschema
       - name: schema-check
-        run: python -m doc_benchmarks.schema_check benchmarks/spec.v1.yaml
+        run: python -m agent_benchmarks.schema_check benchmarks/spec.v1.yaml
       - name: registry-drift-check
-        run: python -m doc_benchmarks.config_check
+        run: python -m agent_benchmarks.config_check
 
   test:
     name: Tests (py${{ matrix.python-version }})
@@ -76,12 +76,12 @@ jobs:
       - name: Install deps
         run: pip install -r requirements-test.txt
       - name: Run tests
-        run: pytest --cov=doc_benchmarks --cov-report=term --cov-report=xml
+        run: pytest --cov=agent_benchmarks --cov-report=term --cov-report=xml
       - name: Upload coverage
         if: ${{ always() && matrix.python-version == '3.11' }}
         uses: codecov/codecov-action@v5
         with:
-          files: ./doc-benchmark/coverage.xml
+          files: ./agent-benchmark/coverage.xml
           flags: unittests
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
@@ -101,8 +101,8 @@ jobs:
           python -m pip install --upgrade pip build
           pip install .
       - name: Console entry point works
-        run: doc-benchmark --help
+        run: agent-benchmark --help
       - name: Module entry point works
-        run: python -m doc_benchmarks --help
+        run: python -m agent_benchmarks --help
       - name: Core imports
-        run: python -c "import doc_benchmarks, doc_benchmarks.cli, doc_benchmarks.artifacts, doc_benchmarks.runner.spec"
+        run: python -c "import agent_benchmarks, agent_benchmarks.cli, agent_benchmarks.artifacts, agent_benchmarks.runner.spec"

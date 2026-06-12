@@ -6,17 +6,17 @@
 *                                   @napetrov
 
 # Static benchmark subsystem
-/doc_benchmarks/runner/             @napetrov
-/doc_benchmarks/metrics/            @napetrov
-/doc_benchmarks/ingest/             @napetrov
-/doc_benchmarks/gate/               @napetrov
-/benchmarks/                        @napetrov
+/agent-benchmark/agent_benchmarks/runner/      @napetrov
+/agent-benchmark/agent_benchmarks/metrics/     @napetrov
+/agent-benchmark/agent_benchmarks/ingest/      @napetrov
+/agent-benchmark/agent_benchmarks/gate/        @napetrov
+/agent-benchmark/benchmarks/                   @napetrov
 
 # LLM evaluation subsystem
-/doc_benchmarks/eval/               @napetrov
-/doc_benchmarks/questions/          @napetrov
-/doc_benchmarks/personas/           @napetrov
-/doc_benchmarks/treatments/         @napetrov
+/agent-benchmark/agent_benchmarks/eval/        @napetrov
+/agent-benchmark/agent_benchmarks/questions/   @napetrov
+/agent-benchmark/agent_benchmarks/personas/    @napetrov
+/agent-benchmark/agent_benchmarks/treatments/  @napetrov
 
 # terminal-bench tasks subsystem
-/terminal-bench-tasks/              @napetrov
+/agent-benchmark/terminal-bench-tasks/         @napetrov

@@ -2,19 +2,19 @@
 #
 # This repo has two areas:
 #   software-packaging-for-agents/  framing & architecture (docs today)
-#   doc-benchmark/                  the measurement engine (runnable project)
+#   agent-benchmark/                  the measurement engine (runnable project)
 #
-# Most runnable targets delegate into doc-benchmark/. Run `make help` for the
+# Most runnable targets delegate into agent-benchmark/. Run `make help` for the
 # current target list.
 
-BENCH_DIR := doc-benchmark
+BENCH_DIR := agent-benchmark
 
 .PHONY: help test benchmark-run benchmark-compare validate-benchmark-spec
 
 help:
 	@echo "Software Packaging for Agents — top-level targets:"
-	@echo "  make test                    Run the doc-benchmark test suite"
-	@echo "  make benchmark-run           Run the static docs-quality benchmark"
+	@echo "  make test                    Run the agent-benchmark test suite"
+	@echo "  make benchmark-run           Run the static agent-quality benchmark"
 	@echo "  make benchmark-compare       Compare benchmark snapshots"
 	@echo "  make validate-benchmark-spec Validate the benchmark spec schema"
 	@echo ""

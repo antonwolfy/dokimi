@@ -11,27 +11,27 @@ coverage.json
 .env
 
 # Generated benchmark outputs and temporary reports.
-# Curated, version-controlled fixtures live under doc-benchmark/data/;
+# Curated, version-controlled fixtures live under agent-benchmark/data/;
 # everything below is scratch produced by CLI runs and must not be committed.
 # The benchmark now lives in a subdirectory of the umbrella repo, so these are
-# anchored to doc-benchmark/ (anchoring also keeps them from matching the
+# anchored to agent-benchmark/ (anchoring also keeps them from matching the
 # curated data/<name>/ dirs, which share names like baselines/ and answers/).
-/doc-benchmark/results/
-/doc-benchmark/reports/
-/doc-benchmark/dashboard.json
-/doc-benchmark/jobs.json
-/doc-benchmark/cr.md
-/doc-benchmark/docs-quality-report/
-/doc-benchmark/context7_comparison_results.json
+/agent-benchmark/results/
+/agent-benchmark/reports/
+/agent-benchmark/dashboard.json
+/agent-benchmark/jobs.json
+/agent-benchmark/cr.md
+/agent-benchmark/agent-quality-report/
+/agent-benchmark/context7_comparison_results.json
 *.log
 *.tar.gz
 
 # Default CLI output locations (curated copies are kept under data/).
-/doc-benchmark/answers/
-/doc-benchmark/eval/
-/doc-benchmark/questions/
-/doc-benchmark/personas/
-/doc-benchmark/baselines/
+/agent-benchmark/answers/
+/agent-benchmark/eval/
+/agent-benchmark/questions/
+/agent-benchmark/personas/
+/agent-benchmark/baselines/
 
 # Downloaded/generated external content
 .cache/

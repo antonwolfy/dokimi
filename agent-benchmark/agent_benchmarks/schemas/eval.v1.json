@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/agent-benchmark/schemas/eval.v1.json",
+  "title": "Eval artifact v1",
+  "type": "object",
+  "required": [
+    "evaluations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "eval.v1"
+    },
+    "evaluated_at": {
+      "type": "string"
+    },
+    "judge_model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "judge_provider": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "total_evaluations": {
+      "type": "integer"
+    },
+    "evaluations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "question_id"
+        ],
+        "properties": {
+          "question_id": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "question_text": {
+            "type": "string"
+          },
+          "with_docs": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "without_docs": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "delta": {
+            "type": [
+              "number",
+              "object",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -48,8 +48,8 @@ Markdown tables rather than being one queryable structure.
 
 | Graph element | Existing source in the repo |
 |---|---|
-| Library / product nodes | [`libraries.yaml`](../doc-benchmark/libraries.yaml) — 22 products with name, description, repo, doc sources, grouped by domain (Threading, Math & Numerics, …) |
-| API / concept nodes + "task covers API" edges | [`terminal-bench-tasks/COVERAGE.md`](../doc-benchmark/terminal-bench-tasks/COVERAGE.md) — per-component API/concept → task → verifier matrix |
+| Library / product nodes | [`libraries.yaml`](../agent-benchmark/libraries.yaml) — 22 products with name, description, repo, doc sources, grouped by domain (Threading, Math & Numerics, …) |
+| API / concept nodes + "task covers API" edges | [`terminal-bench-tasks/COVERAGE.md`](../agent-benchmark/terminal-bench-tasks/COVERAGE.md) — per-component API/concept → task → verifier matrix |
 | Skill nodes + trigger hints | `data/skills/*/SKILL.md` frontmatter `description` (the trigger hint) |
 | Agent-profile nodes | `data/agent_profiles/*.md` frontmatter `description` |
 | Package nodes + scorecards | the [agent package format](packaging.md) manifests |
@@ -106,7 +106,7 @@ behavior.
 
 ## 6. Build vs query (where embeddings come from)
 
-`doc-benchmark` already declares an optional `embeddings` extra
+`agent-benchmark` already declares an optional `embeddings` extra
 (`sentence-transformers`, see `pyproject.toml`) used for chunk reranking. The
 same dependency can embed capability/description text for the graph, so the
 discovery layer does not introduce a new heavy dependency by default.

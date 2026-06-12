@@ -16,7 +16,7 @@ This repository pursues that mission in two complementary halves:
 | Directory | Role | Status |
 |---|---|---|
 | [`software-packaging-for-agents/`](software-packaging-for-agents/) | **Framing & architecture** — the vision, the agent-package format, per-runtime distribution (Claude, Hermes, …), and the discovery layer. | Bootstrapping |
-| [`doc-benchmark/`](doc-benchmark/) | **Measurement engine** — evaluates whether a given skill / MCP doc source / agent profile actually improves agent answers and task outcomes. The evidence that justifies shipping an artifact. | Established |
+| [`agent-benchmark/`](agent-benchmark/) | **Measurement engine** — evaluates whether a given skill / MCP doc source / agent profile actually improves agent answers and task outcomes. The evidence that justifies shipping an artifact. | Established |
 
 ## The cycle
 
@@ -51,9 +51,9 @@ full framing and architecture.
 README.md                          This umbrella overview
 Makefile                           Delegates targets into each area
 software-packaging-for-agents/     Framing & architecture (author/package/discover/serve/feedback)
-doc-benchmark/                     The measurement engine (self-contained Python project)
+agent-benchmark/                     The measurement engine (self-contained Python project)
 LICENSE  NOTICE                    Apache-2.0 + attribution (repo-wide)
-.github/workflows/                 CI (runs inside doc-benchmark/)
+.github/workflows/                 CI (runs inside agent-benchmark/)
 ```
 
 ## Getting started
@@ -61,12 +61,12 @@ LICENSE  NOTICE                    Apache-2.0 + attribution (repo-wide)
 The runnable project today is the benchmark:
 
 ```bash
-make benchmark        # delegates into doc-benchmark/ (see its README)
-make test             # runs the doc-benchmark test suite
+make benchmark        # delegates into agent-benchmark/ (see its README)
+make test             # runs the agent-benchmark test suite
 ```
 
 For the benchmark's own quickstart, CLI surface, and architecture, see
-[`doc-benchmark/README.md`](doc-benchmark/README.md).
+[`agent-benchmark/README.md`](agent-benchmark/README.md).
 
 ## License
 

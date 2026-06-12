@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a problem with doc-benchmark
+about: Report a problem with agent-benchmark
 title: ""
 labels: bug
 assignees: ""
@@ -15,7 +15,7 @@ A clear description of what's wrong.
 Steps or the exact command(s):
 
 ```bash
-doc-benchmark ...
+agent-benchmark ...
 ```
 
 ## Expected vs actual
@@ -25,7 +25,7 @@ doc-benchmark ...
 
 ## Environment
 
-- doc-benchmark commit/version:
+- agent-benchmark commit/version:
 - Python version:
 - OS:
 - Relevant extras installed (ocr / mcp / embeddings):

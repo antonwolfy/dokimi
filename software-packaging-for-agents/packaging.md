@@ -18,9 +18,9 @@ runtime. It bundles the artifacts from the architecture mainline —
 The persona is the expert's *face*; the skills, MCP, and setup guide are what
 make that expert actually competent.
 
-The key observation: `doc-benchmark` already has the in-memory representation of
+The key observation: `agent-benchmark` already has the in-memory representation of
 exactly this. A treatment's
-[`AgentConfig`](../doc-benchmark/doc_benchmarks/treatments/base.py) is
+[`AgentConfig`](../agent-benchmark/agent_benchmarks/treatments/base.py) is
 
 ```python
 AgentConfig(
@@ -41,7 +41,7 @@ to *score* treatments; the package track serializes the winning configuration to
 
 A package is a directory with a `package.yaml` manifest plus the referenced
 artifact files. Proposed schema (illustrative — to be locked with a JSON Schema
-alongside `doc-benchmark`'s existing `benchmarks/spec.schema.json` convention):
+alongside `agent-benchmark`'s existing `benchmarks/spec.schema.json` convention):
 
 ```yaml
 schema_version: 1
@@ -67,9 +67,9 @@ setup_guide: setup/onetbb-env.sh               # executable, sandbox-verified en
 # ── Provenance & evidence ───────────────────────────────────────────────────
 provenance:
   source_libraries: [onetbb]                    # keys from libraries.yaml
-  built_from: doc-benchmark@<git-sha>
+  built_from: agent-benchmark@<git-sha>
 scorecard:                                       # the shipped credential (§4)
-  benchmark: doc-benchmark/arms
+  benchmark: agent-benchmark/arms
   question_set_hash: <sha>
   judge_model: <model>
   arms:
@@ -81,8 +81,8 @@ scorecard:                                       # the shipped credential (§4)
 
 Notes:
 - `agent_profile`, `skills`, and `mcp` map **1:1** onto the existing loaders
-  ([`load_agent_profile`](../doc-benchmark/doc_benchmarks/agent_profiles/loader.py),
-  [`load_skill`](../doc-benchmark/doc_benchmarks/skills/loader.py)) and the
+  ([`load_agent_profile`](../agent-benchmark/agent_benchmarks/agent_profiles/loader.py),
+  [`load_skill`](../agent-benchmark/agent_benchmarks/skills/loader.py)) and the
   `mcp:<ref>` doc source. Skill files already follow the Anthropic Agent Skills
   `SKILL.md` convention (frontmatter `name`/`description` + body), so they are
   portable as-is.
@@ -103,7 +103,7 @@ several options:
 - **Tier 1 — the skill (always available, thin).** A compact `SKILL.md` that
   states *when to engage*, the canonical idioms, and the few pitfalls that
   actually matter. The committed
-  [`onetbb-quickstart/SKILL.md`](../doc-benchmark/data/skills/onetbb-quickstart/SKILL.md)
+  [`onetbb-quickstart/SKILL.md`](../agent-benchmark/data/skills/onetbb-quickstart/SKILL.md)
   is exactly this shape: headers, the parallel-loop/reduce idioms, CMake wiring,
   and three pitfalls — nothing more.
 - **Tier 2 — MCP (on-demand, thick).** The skill tells the agent *when* to reach
@@ -111,7 +111,7 @@ several options:
   agent pays the token cost of detailed docs only when the skill says it's
   warranted.
 
-`doc-benchmark` already measures both halves of this and can validate the
+`agent-benchmark` already measures both halves of this and can validate the
 pattern empirically: the `skill-agent:` arm (progressive-disclosure skill view)
 and the `agent:`/`mcp:` arms (on-demand doc retrieval) are precisely Tier 1 and
 Tier 2 used agentically. Packaging *prescribes* the combination the benchmark
@@ -124,11 +124,11 @@ on-demand-MCP pairing is the BKM the catalog should default to and reward.
 
 ## 4. Evidence as a first-class part of the package
 
-The current `doc-benchmark` decision docs stop at *measuring* a treatment; they
+The current `agent-benchmark` decision docs stop at *measuring* a treatment; they
 never ask "how do we ship the winner?" This format closes that loop:
 
 - The benchmark's per-arm report
-  ([`report/arms_report.py`](../doc-benchmark/doc_benchmarks/report/arms_report.py))
+  ([`report/arms_report.py`](../agent-benchmark/agent_benchmarks/report/arms_report.py))
   produces each arm's average judge score and its delta vs baseline.
 - The package's `scorecard` block is a serialization of that result for *this*
   configuration.
@@ -161,7 +161,7 @@ runtimes — so Agent Skills is the recommended first exporter target.
 | **Claude plugin** | plugin manifest wrapping profile + skills + MCP server refs | Mirrors the existing intel-xpu-backend-for-triton Claude plugins. |
 | **Hermes / generic** | system prompt + tool/MCP descriptors in a generic JSON bundle | For runtimes without a native skill concept. |
 
-Proposed (future) CLI, living in the umbrella, reusing `doc-benchmark`'s loaders:
+Proposed (future) CLI, living in the umbrella, reusing `agent-benchmark`'s loaders:
 
 ```bash
 # Build a manifest from existing fixtures + a benchmark scorecard
@@ -181,7 +181,7 @@ catalog add packages/intel-onetbb-expert
 
 ## 6. The shipped-skill execution surface
 
-`doc-benchmark` deliberately keeps in-process skills **read-only** — running a
+`agent-benchmark` deliberately keeps in-process skills **read-only** — running a
 skill's bundled scripts is pushed to the sandboxed terminal-bench track. A
 *distributed* package can ship those bundled scripts (the `Skill.resources` the
 loader already records but does not execute). So packaging reintroduces an
@@ -199,15 +199,15 @@ execution/security surface the eval side deferred. Requirements:
   package/skill layout, or define our own and provide an adapter to it?
 - **Q6 — MCP server.** Do we ship an Intel **MCP doc server** (a new artifact
   with its own lifecycle), or only reference third-party ones (Context7)? Today
-  `doc-benchmark` is purely an MCP *client*.
+  `agent-benchmark` is purely an MCP *client*.
 - **Manifest schema authority.** One schema for both `package.yaml` and the
   embedded scorecard, versioned like `benchmarks/spec.schema.json`?
 - **Versioning.** How does a package version relate to the underlying library
   version and to the scorecard's question-set hash (re-score on doc changes)?
 
-## 8. Relationship to `doc-benchmark`
+## 8. Relationship to `agent-benchmark`
 
-| Package concept | Existing `doc-benchmark` piece |
+| Package concept | Existing `agent-benchmark` piece |
 |---|---|
 | `agent_profile` | `data/agent_profiles/*.md` + `load_agent_profile` |
 | `skills` | `data/skills/*/SKILL.md` + `load_skill` (+ `resources`) |

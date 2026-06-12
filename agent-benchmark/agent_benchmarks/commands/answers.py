@@ -1,0 +1,128 @@
+"""answers subcommand group: generate."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from agent_benchmarks.commands.evaluate import _run_ragas_eval
+
+
+def cmd_answers_generate(args: argparse.Namespace) -> None:
+    """Generate context-arm and baseline answers for questions."""
+    import yaml
+    from agent_benchmarks.eval import Answerer
+    from agent_benchmarks.mcp.factory import create_doc_source_client
+
+    # Load config
+    config_path = Path("config/products.yaml")
+    config: dict = {}
+    if config_path.exists():
+        try:
+            loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            print(f"Error: invalid YAML in {config_path}: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
+        if loaded is not None and not isinstance(loaded, dict):
+            print(f"Error: expected a mapping in {config_path}", file=sys.stderr)
+            raise SystemExit(1)
+        config = loaded or {}
+
+    _product_config = config.get("products", {}).get(args.product, {})
+    _retrieval_cfg = config.get("retrieval", {})
+    if args.top_k is None:
+        args.top_k = _retrieval_cfg.get("top_k", 3)
+
+    # Load questions
+    questions_data = json.loads(Path(args.questions).read_text())
+    questions = questions_data.get("questions", questions_data) if isinstance(questions_data, dict) else questions_data
+    if not isinstance(questions, list) or not all(isinstance(q, dict) for q in questions):
+        print(f"Error: expected a list of question objects in {args.questions}", file=sys.stderr)
+        raise SystemExit(1)
+    print(f"Loaded {len(questions)} questions from {args.questions}")
+
+    # Setup documentation source client
+    doc_source = getattr(args, "doc_source", "context7")
+    print(f"Documentation source: {doc_source}")
+    mcp_client = create_doc_source_client(doc_source)
+    context7_id = getattr(args, "context7_id", None)
+    if context7_id:
+        library_id = context7_id
+        print(f"Using explicit Context7 library ID: {library_id}")
+    else:
+        library_id = mcp_client.resolve_library_id(args.product)
+
+    print(f"Generating answers for {args.product} (library_id={library_id})")
+    print(f"Using model: {args.provider}/{args.model}")
+
+    # Generate answers
+    answerer = Answerer(
+        mcp_client=mcp_client,
+        model=args.model,
+        provider=args.provider,
+        top_k=args.top_k,
+        rerank_threshold=args.rerank_threshold,
+        debug_retrieval=args.debug_retrieval
+    )
+
+    if args.output:
+        output_path = Path(args.output)
+    elif getattr(args, "run_id", None):
+        output_path = Path(f"results/{args.product.lower()}_{args.run_id}/answers/{args.product}.json")
+    else:
+        output_path = Path(f"answers/{args.product}.json")
+
+    answers = answerer.generate_answers(
+        library_name=args.product,
+        library_id=library_id,
+        questions=questions,
+        max_tokens_per_question=args.max_tokens,
+        output_path=output_path,
+        concurrency=args.concurrency,
+    )
+
+    # generate_answers already saves incrementally to output_path after each
+    # question, so the final write here is a safety flush only (ensures the
+    # file reflects any last-second ordering fix).
+    answerer.save_answers(answers, output_path)
+    print(f"\n✅ Saved answers to {output_path}")
+
+    # Optional RAGAS meta-evaluation (--ragas flag)
+    if getattr(args, "ragas", False):
+        _run_ragas_eval(answers, output_path, args)
+
+
+def register(sub, positive_int) -> None:
+    """Add the `answers` subcommand group."""
+    answers_p = sub.add_parser("answers", help="Answer generation")
+    answers_sub = answers_p.add_subparsers(dest="answers_cmd", required=True)
+
+    # answers generate
+    gen_a_p = answers_sub.add_parser("generate", help="Generate context-arm and baseline answers")
+    gen_a_p.add_argument("--product", required=True, help="Product name (e.g., oneTBB)")
+    gen_a_p.add_argument("--questions", required=True, help="Path to questions JSON file")
+    gen_a_p.add_argument("--run-id", default=None, dest="run_id",
+                         help="Run tag for multi-model comparison (e.g. gpt4o). "
+                              "Sets output to results/{product}_{run_id}/answers/{product}.json")
+    gen_a_p.add_argument("--output", default=None, help="Output file (default: answers/{product}.json)")
+    gen_a_p.add_argument("--model", default="gpt-4o", help="LLM model for answering")
+    gen_a_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
+    gen_a_p.add_argument("--max-tokens", type=int, default=4000, help="Max tokens to retrieve per question")
+    gen_a_p.add_argument("--top-k", type=int, default=None, help="Number of docs to retrieve before reranking (default from config/products.yaml retrieval.top_k)")
+    gen_a_p.add_argument("--rerank-threshold", type=float, default=0.3, help="Min relevance score (0-1) to keep docs")
+    gen_a_p.add_argument("--debug-retrieval", action="store_true", help="Include retrieval metadata in output")
+    gen_a_p.add_argument("--concurrency", type=positive_int, default=5, help="Parallel API calls (default: 5)")
+    gen_a_p.add_argument("--doc-source", default="context7",
+                         help="Documentation source: 'context7' (default), 'local:<path>', 'url:<url>'")
+    gen_a_p.add_argument("--context7-id", default=None, dest="context7_id",
+                         help="Explicit Context7 library ID. Overrides auto-resolution.")
+    gen_a_p.add_argument("--ragas", action="store_true",
+                         help="Run RAGAS meta-evaluation after answer generation and save alongside answers.")
+    gen_a_p.add_argument("--ragas-model", default="gpt-4o-mini",
+                         help="LLM for RAGAS judge (default: gpt-4o-mini)")
+    gen_a_p.add_argument("--ragas-provider", default="openai",
+                         choices=["openai", "anthropic"],
+                         help="Provider for RAGAS judge LLM (default: openai)")
+    gen_a_p.set_defaults(func=cmd_answers_generate)

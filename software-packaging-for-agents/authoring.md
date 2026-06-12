@@ -11,7 +11,7 @@ To [spawn an Intel expert](serving.md) for any product, that expert needs a thin
 Tier-1 skill, the right MCP doc source, and — especially for hardware — a working
 **setup guide**. Today the repo has exactly **one** hand-written skill
 (`onetbb-quickstart`) and **one** profile (`concise_expert`). The catalog spans
-22+ software libraries in [`libraries.yaml`](../doc-benchmark/libraries.yaml)
+22+ software libraries in [`libraries.yaml`](../agent-benchmark/libraries.yaml)
 plus the hardware platforms (Gaudi, Xeon/AMX, GPU Max, NPUs). Hand-authoring does
 not scale to that. Authoring must become a **pipeline**, with the benchmark as
 its fitness function.
@@ -34,7 +34,7 @@ Produce a candidate Tier-1 `SKILL.md` automatically, then *prove and refine* it:
 library docs / MCP source
    │  distill (LLM): when-to-engage + canonical idioms + top pitfalls
    ▼
-candidate SKILL.md  ──►  MEASURE (doc-benchmark arms: skill: / skill-agent:)
+candidate SKILL.md  ──►  MEASURE (agent-benchmark arms: skill: / skill-agent:)
    ▲                         │  judge delta + task pass-rate vs baseline
    │      refine             ▼
    └──────────────────  accept when the scorecard plateaus
@@ -64,7 +64,7 @@ environment.
 - It is a first-class artifact in the [package manifest](packaging.md), alongside
   `skills` and `mcp`.
 - It is **verified by execution**, not by prose: the sandboxed terminal-bench
-  track (`../doc-benchmark/terminal-bench-tasks/`, Docker + oracle + `--network
+  track (`../agent-benchmark/terminal-bench-tasks/`, Docker + oracle + `--network
   none`) confirms the bootstrap produces a buildable/runnable environment. This
   is exactly where the deferred script-execution surface
   ([`packaging.md`](packaging.md) §6) earns its keep.
@@ -82,7 +82,7 @@ be authored per scope (per library, per hardware platform, per problem class) an
 A/B'd as profile arms (`profile:`) against one another. The authoring track keeps
 a small library of profile templates (e.g. a concise code-first expert, a
 setup-and-tune specialist) that the build track composes with skills and MCP;
-which templates exist is driven by what the [benchmark](../doc-benchmark/) and
+which templates exist is driven by what the [benchmark](../agent-benchmark/) and
 real [feedback](feedback.md) show works, not fixed up front.
 
 ## 5. Human-in-the-loop
@@ -108,4 +108,4 @@ persona/question *discover → approve* pattern.
 
 Author is the head of the cycle: it feeds [build](architecture.md) and is in turn
 fed by [feedback](feedback.md) (telemetry tells it what to distill or fix next).
-The benchmark ([measure](../doc-benchmark/)) is its fitness function throughout.
+The benchmark ([measure](../agent-benchmark/)) is its fitness function throughout.

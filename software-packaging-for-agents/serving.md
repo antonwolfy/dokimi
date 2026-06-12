@@ -71,7 +71,7 @@ BKM at runtime: thin skill always loaded; MCP queried on demand   (packaging.md 
 running expert  ──► answers / acts ──► emits telemetry   (feedback.md)
 ```
 
-`AgentConfig` (`../doc-benchmark/doc_benchmarks/treatments/base.py`) is again the
+`AgentConfig` (`../agent-benchmark/agent_benchmarks/treatments/base.py`) is again the
 in-memory shape: serving deserializes a package manifest back into an
 `AgentConfig` and runs it through the same tool-calling loop
 (`eval/agent_runner.py`) the benchmark already uses — the runtime and the

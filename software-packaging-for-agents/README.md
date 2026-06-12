@@ -2,7 +2,7 @@
 
 This directory holds the **vision and architecture** for packaging software so
 that *agentic AI consumers* — not just human developers — can discover, install,
-and use it effectively. The companion [`../doc-benchmark/`](../doc-benchmark/)
+and use it effectively. The companion [`../agent-benchmark/`](../agent-benchmark/)
 provides the measurement engine that decides whether a packaged artifact is
 actually worth shipping.
 
@@ -32,7 +32,7 @@ capabilities** and prove them:
 The mainline hypothesis: *documentation behaves as a general skill, and MCP (or
 an equivalent) is how an agent asks for the relevant part on demand* — a thin,
 always-available skill that knows when to reach for a thick doc source. The
-[benchmark](../doc-benchmark/) is the gate that makes the expert *vetted, not
+[benchmark](../agent-benchmark/) is the gate that makes the expert *vetted, not
 merely listed*.
 
 ## Prior art: Intel skills already shipping
@@ -88,10 +88,10 @@ developers. The planned discovery layer replaces keyword/trend ranking with a
 **capability/intent graph + semantic search**, using the benchmark scorecard as
 a *vetted* ranking signal. See [`discovery.md`](discovery.md).
 
-## Relationship to `doc-benchmark/`
+## Relationship to `agent-benchmark/`
 
-`doc-benchmark/` already contains the primitives this framing packages —
+`agent-benchmark/` already contains the primitives this framing packages —
 treatment arms for `agent_profile`, `skill`, and `mcp` (see
-[`../doc-benchmark/docs/evaluating-treatments.md`](../doc-benchmark/docs/evaluating-treatments.md)).
+[`../agent-benchmark/docs/evaluating-treatments.md`](../agent-benchmark/docs/evaluating-treatments.md)).
 Here those primitives are treated as **deliverables to ship**, not just
 benchmark inputs to score.

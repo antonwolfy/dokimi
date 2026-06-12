@@ -51,13 +51,13 @@ The repo already produces most of the provenance; attestation is making it
 
 | Field | Source today | Role in the credential |
 |---|---|---|
-| `benchmark` + version | `doc-benchmark` git SHA; `schema_version` (`doc_benchmarks/artifacts.py`) | which engine/version produced the claim |
+| `benchmark` + version | `agent-benchmark` git SHA; `schema_version` (`agent_benchmarks/artifacts.py`) | which engine/version produced the claim |
 | `question_set_hash` | already threaded through the pipeline | *what* was tested — pins the test set |
 | `judge_model` | eval config | *how* it was judged |
 | `arms` + deltas | `report/arms_report.py` | the result (baseline vs package) |
 | `task_results` | terminal-bench pass-rates (behavioral signal, see feedback.md §2.1) | hard outcome evidence, not just judge opinion |
 | `target_version` | library/hardware version under test | what the claim is valid *against* |
-| `run_manifest` | `doc_benchmarks/runner/manifest.py` | environment/inputs for reproducibility |
+| `run_manifest` | `agent_benchmarks/runner/manifest.py` | environment/inputs for reproducibility |
 | `generated` (date) | run time | when — drives staleness ([feedback.md](feedback.md)) |
 | `signature` | **new** | makes all of the above tamper-evident |
 
