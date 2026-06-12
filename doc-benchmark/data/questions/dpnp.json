@@ -1,0 +1,103 @@
+{
+  "library": "DPNP",
+  "library_id": "IntelPython/dpnp",
+  "description": "Data Parallel Extension for NumPy",
+  "questions": [
+    {
+      "id": "dpnp-gs-01",
+      "text": "How do I install dpnp and verify it works correctly?",
+      "persona": "Data scientist exploring Intel Python",
+      "category": "getting_started",
+      "difficulty": 1,
+      "expected_topics": ["conda install (Intel channel)", "pip install (Intel pip index)", "version check", "import test"]
+    },
+    {
+      "id": "dpnp-gs-02",
+      "text": "Show me a simple hello-world example: how do I replace numpy with dpnp in my code?",
+      "persona": "Python developer trying dpnp for the first time",
+      "category": "getting_started",
+      "difficulty": 1,
+      "expected_topics": ["import dpnp as np", "drop-in replacement", "basic array operations"]
+    },
+    {
+      "id": "dpnp-gs-03",
+      "text": "What array sizes and operations benefit most from using dpnp instead of NumPy?",
+      "persona": "Performance-conscious data scientist",
+      "category": "getting_started",
+      "difficulty": 2,
+      "expected_topics": ["array size thresholds", "operation types", "overhead considerations"]
+    },
+    {
+      "id": "dpnp-compat-01",
+      "text": "Which NumPy APIs are supported in dpnp? How do I check compatibility for my code?",
+      "persona": "ML engineer migrating NumPy codebase",
+      "category": "compatibility",
+      "difficulty": 2,
+      "expected_topics": ["API coverage", "compatibility checking", "unsupported features"]
+    },
+    {
+      "id": "dpnp-compat-02",
+      "text": "How do I mix dpnp and NumPy arrays in the same code? Can I convert between them?",
+      "persona": "Data engineer integrating dpnp into existing pipeline",
+      "category": "compatibility",
+      "difficulty": 2,
+      "expected_topics": ["asnumpy()", "array conversion", "interoperability", "performance impact"]
+    },
+    {
+      "id": "dpnp-compat-03",
+      "text": "Does dpnp work with pandas, scikit-learn, and other NumPy-based libraries?",
+      "persona": "Data scientist using standard ML stack",
+      "category": "compatibility",
+      "difficulty": 3,
+      "expected_topics": ["library compatibility", "integration patterns", "workarounds"]
+    },
+    {
+      "id": "dpnp-perf-01",
+      "text": "My dpnp code runs slower than NumPy. What are common performance pitfalls?",
+      "persona": "Developer debugging slow dpnp code",
+      "category": "performance",
+      "difficulty": 2,
+      "expected_topics": ["JIT compilation warmup", "data transfer overhead", "small array overhead", "profiling"]
+    },
+    {
+      "id": "dpnp-perf-02",
+      "text": "How do I profile dpnp code to understand where time is spent?",
+      "persona": "Performance engineer optimizing dpnp application",
+      "category": "performance",
+      "difficulty": 3,
+      "expected_topics": ["profiling tools", "timing methods", "bottleneck identification"]
+    },
+    {
+      "id": "dpnp-perf-03",
+      "text": "What are the performance differences between dpnp on CPU vs GPU?",
+      "persona": "HPC engineer evaluating hardware options",
+      "category": "performance",
+      "difficulty": 3,
+      "expected_topics": ["CPU vs GPU trade-offs", "device selection", "workload characteristics"]
+    },
+    {
+      "id": "dpnp-trouble-01",
+      "text": "I get import errors when trying to use dpnp. How do I troubleshoot installation issues?",
+      "persona": "Developer encountering setup problems",
+      "category": "troubleshooting",
+      "difficulty": 1,
+      "expected_topics": ["import errors", "dependency issues", "environment setup", "common fixes"]
+    },
+    {
+      "id": "dpnp-trouble-02",
+      "text": "My code throws 'NotImplementedError' for certain NumPy functions. What should I do?",
+      "persona": "Developer hitting API limitations",
+      "category": "troubleshooting",
+      "difficulty": 2,
+      "expected_topics": ["unsupported APIs", "fallback strategies", "workarounds", "alternative approaches"]
+    },
+    {
+      "id": "dpnp-adv-01",
+      "text": "How do I control which device (CPU/GPU) dpnp uses for computation?",
+      "persona": "Advanced user optimizing resource usage",
+      "category": "advanced",
+      "difficulty": 3,
+      "expected_topics": ["device selection", "device management", "SYCL context", "dpctl integration"]
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "library": "DPNP",
+  "library_id": "IntelPython/dpnp",
+  "description": "Golden regression set for DPNP - Data Parallel Extension for NumPy",
+  "version_or_doc_snapshot": "dpnp 0.17.0 documentation (intelpython.github.io/dpnp, accessed 2026-06-10) and IntelPython/dpnp GitHub repository issues",
+  "questions": [
+    {
+      "id": "dpnp-Q001",
+      "text": "Scenario: You replace numpy.unique(arr, sorted=False) with dpnp.unique(arr, sorted=False) in production code and get TypeError: unexpected keyword argument 'sorted'. This breaks your data pipeline. According to dpnp documentation, how should you check API compatibility before migration, and what's the recommended fallback pattern for unsupported parameters?",
+      "persona": "ml_engineer_migrating",
+      "category": "compatibility_pitfalls",
+      "difficulty": "medium",
+      "expected_topics": [
+        "dpnp implements a subset of NumPy - not all parameters supported even when function exists",
+        "the API reference lists supported functions but parameter-level coverage requires checking documentation for each function",
+        "recommended pattern: try dpnp operation, catch NotImplementedError or TypeError, fall back to numpy using asnumpy() conversion",
+        "proactive checking: test critical code paths with dpnp before production deployment",
+        "no automated compatibility checker currently available - must test manually"
+      ],
+      "metadata": {
+        "must_cite": [
+          "https://intelpython.github.io/dpnp/reference/"
+        ],
+        "why_it_matters": "This is a top-3 migration blocker. Users assume 'drop-in replacement' means full API parity, leading to production failures.",
+        "is_static_golden": true,
+        "original_id": "Q001",
+        "github_issue": "#2476"
+      }
+    },
+    {
+      "id": "dpnp-Q002",
+      "text": "Scenario: Your dpnp code works on your workstation with GPU but crashes on a cloud VM with 'Default device is unavailable'. You realize dpnp was trying to use GPU. According to dpnp documentation, how do you (a) check which device dpnp will use, (b) explicitly select CPU, and (c) handle environments where GPU is unavailable?",
+      "persona": "devops_engineer",
+      "category": "device_management",
+      "difficulty": "medium",
+      "expected_topics": [
+        "dpnp allocates memory on 'default SYCL device' - GPU if available, otherwise host CPU",
+        "check device: use dpctl.select_default_device() or inspect array.sycl_device property",
+        "force CPU: set device context using dpctl.device_context('cpu') or equivalent",
+        "graceful fallback: catch device errors and fall back to NumPy or explicitly use CPU device",
+        "environment-dependent behavior means code may work in development but fail in production"
+      ],
+      "metadata": {
+        "must_cite": [
+          "https://intelpython.github.io/dpnp/overview.html"
+        ],
+        "why_it_matters": "Cloud/container deployments frequently have no GPU. Silent device selection breaks portability.",
+        "is_static_golden": true,
+        "original_id": "Q002",
+        "github_issue": "#2617"
+      }
+    },
+    {
+      "id": "dpnp-Q003",
+      "text": "Scenario: You've migrated 80% of your NumPy code to dpnp successfully. Then at runtime in production, you hit NotImplementedError for a function you didn't test. According to dpnp documentation, what's the recommended strategy for (a) discovering unsupported APIs before deployment, (b) handling NotImplementedError gracefully, and (c) mixing dpnp and NumPy code safely?",
+      "persona": "software_engineer",
+      "category": "api_coverage",
+      "difficulty": "medium",
+      "expected_topics": [
+        "dpnp implements a subset of NumPy - comprehensive testing required before production",
+        "no static analysis tool to check compatibility - must test code paths",
+        "graceful handling pattern: try dpnp operation, catch NotImplementedError, fall back to numpy using asnumpy()",
+        "mixing dpnp and numpy is safe but has conversion cost - avoid repeated conversions in tight loops",
+        "incremental migration recommended: start with hot paths, keep fallback to numpy for edge cases"
+      ],
+      "metadata": {
+        "must_cite": [
+          "https://intelpython.github.io/dpnp/reference/"
+        ],
+        "why_it_matters": "Runtime errors in production are costly. Documentation must provide proactive testing strategy.",
+        "is_static_golden": true,
+        "original_id": "Q003",
+        "github_issue": "pattern across multiple issues"
+      }
+    },
+    {
+      "id": "dpnp-Q004",
+      "text": "Scenario: You need to checkpoint your ML model which includes dpnp arrays, but pickle.dump() or numpy.save() fails. According to dpnp documentation, what's the recommended approach for persisting dpnp arrays, and what's the trade-off?",
+      "persona": "ml_engineer",
+      "category": "serialization",
+      "difficulty": "medium",
+      "expected_topics": [
+        "dpnp arrays are not directly serializable due to SYCL device memory",
+        "recommended pattern: convert to NumPy with asnumpy() before saving, convert back to dpnp after loading",
+        "trade-off: serialization involves device-to-host copy, adding overhead",
+        "for frequent checkpointing, consider keeping NumPy copies or using device-aware serialization if available",
+        "this limitation affects model saving, distributed training, and any pipeline with persistence"
+      ],
+      "metadata": {
+        "must_cite": [
+          "https://intelpython.github.io/dpnp/reference/ndarray.html"
+        ],
+        "why_it_matters": "Checkpointing is critical for long-running training. Silent failure breaks workflows.",
+        "is_static_golden": true,
+        "original_id": "Q004",
+        "github_issue": "#2602"
+      }
+    },
+    {
+      "id": "dpnp-Q005",
+      "text": "Scenario: You replaced numpy with dpnp in a data preprocessing pipeline expecting automatic speedup. For small arrays (100-1000 elements) processed in tight loops, the code is now slower. The documentation says dpnp is 'optimized for data parallel devices' but doesn't specify when it's faster. What guidance should dpnp documentation provide about array sizes, overhead, and when NOT to use dpnp?",
+      "persona": "performance_engineer",
+      "category": "performance_expectations",
+      "difficulty": "medium",
+      "expected_topics": [
+        "dpnp has kernel dispatch and device memory overhead that can dominate for small operations",
+        "general rule: larger arrays (typically >10,000 elements) and math-heavy operations benefit most",
+        "tight loops with small arrays favor NumPy's lower overhead",
+        "first execution includes JIT compilation overhead - subsequent runs should be faster",
+        "selective adoption recommended: profile first, use dpnp for bottlenecks, keep NumPy for small-array hot paths"
+      ],
+      "metadata": {
+        "must_cite": [
+          "https://intelpython.github.io/dpnp/overview.html"
+        ],
+        "why_it_matters": "Unrealistic expectations lead to disappointment and abandonment. Documentation must set accurate expectations about performance characteristics.",
+        "is_static_golden": true,
+        "original_id": "Q005",
+        "github_issue": "inferred from user surprise patterns"
+      }
+    },
+    {
+      "id": "dpnp-Q006",
+      "text": "Scenario: You run 'pip install dpnp' expecting it to work like other Python packages, but encounter installation failures because the Intel package index or native runtime dependencies are missing. According to dpnp documentation, what installation method is recommended, when is pip acceptable, and what dependencies are required?",
+      "persona": "data_scientist_new_user",
+      "category": "installation",
+      "difficulty": "easy",
+      "expected_topics": [
+        "conda installation via Intel channel is the recommended path for most users",
+        "pip installation is available as an alternative when using Intel's pip index and compatible native dependencies",
+        "dpnp requires SYCL runtime and Intel oneAPI components that conda handles more consistently",
+        "building from source requires oneAPI DPC++ compiler and specific oneAPI libraries",
+        "conda installation ensures compatible versions of all dependencies"
+      ],
+      "metadata": {
+        "must_cite": [
+          "https://intelpython.github.io/dpnp/"
+        ],
+        "why_it_matters": "First installation failure creates high abandonment risk. Clear installation guidance prevents frustration.",
+        "is_static_golden": false,
+        "original_id": "Q006",
+        "github_issue": "#1766"
+      }
+    },
+    {
+      "id": "dpnp-Q007",
+      "text": "Scenario: You discover that dpnp.linalg.cholesky returns significantly different values than numpy.linalg.cholesky for the same input matrix (not just floating-point precision differences). According to dpnp best practices, how should you validate numerical correctness when migrating from NumPy, and what testing strategy ensures dpnp operations produce correct results?",
+      "persona": "scientific_computing_engineer",
+      "category": "numerical_correctness",
+      "difficulty": "hard",
+      "expected_topics": [
+        "dpnp aims for numerical equivalence with NumPy but bugs can cause differences",
+        "recommended practice: compare dpnp results against NumPy for critical operations during migration",
+        "use numpy.testing.assert_allclose() with appropriate tolerances to validate results",
+        "report significant discrepancies as bugs - they are not expected behavior",
+        "implement regression tests that compare dpnp vs NumPy outputs before production deployment",
+        "for mission-critical computations, consider dual-running dpnp and NumPy during validation phase"
+      ],
+      "metadata": {
+        "must_cite": [
+          "https://intelpython.github.io/dpnp/reference/linalg.html"
+        ],
+        "why_it_matters": "Silent incorrect results are the most dangerous class of bugs. Testing strategy prevents production disasters.",
+        "is_static_golden": false,
+        "original_id": "Q007",
+        "github_issue": "#489"
+      }
+    }
+  ]
+}
