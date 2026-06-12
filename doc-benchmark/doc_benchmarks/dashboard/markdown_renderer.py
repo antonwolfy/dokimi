@@ -41,7 +41,7 @@ def render_dashboard(data: DashboardData, top_n_bad_questions: int = 5) -> str:
 
     # ── Summary table ──────────────────────────────────────────────────────
     lines.append("## Overview\n")
-    lines.append("| Status | Product | Context Arm | Baseline | Delta | Questions | Evaluated |")
+    lines.append("| Status | Product | With Docs | Without Docs | Delta | Questions | Evaluated |")
     lines.append("|--------|---------|-----------|--------------|-------|-----------|-----------|")
 
     for p in data.sorted_by_score:
@@ -81,9 +81,9 @@ def _render_product_section(p: ProductSnapshot, top_n: int) -> list[str]:
     without_s = f"{p.avg_without_docs:.1f}/100" if p.avg_without_docs is not None else "—"
     delta_s = _fmt_delta(p.avg_delta)
 
-    lines.append(f"- **Context-arm score**: {with_s}")
-    lines.append(f"- **Baseline score**: {without_s}")
-    lines.append(f"- **Delta (context benefit)**: {delta_s}")
+    lines.append(f"- **Score with docs**: {with_s}")
+    lines.append(f"- **Score without docs**: {without_s}")
+    lines.append(f"- **Delta (docs benefit)**: {delta_s}")
     lines.append(f"- **Questions evaluated**: {p.total_questions}")
     lines.append(f"- **Judge model**: {p.judge_model}")
     lines.append(f"- **Evaluated**: {p.evaluated_at[:19] if p.evaluated_at else '—'}")
@@ -91,7 +91,7 @@ def _render_product_section(p: ProductSnapshot, top_n: int) -> list[str]:
     # By-source breakdown (if mixed persona + chunk questions)
     if p.by_source and len(p.by_source) > 1:
         lines.append("\n**Scores by question source:**\n")
-        lines.append("| Source | Count | Context Arm | Baseline | Delta | Grounded |")
+        lines.append("| Source | Count | With Docs | Without Docs | Delta | Grounded |")
         lines.append("|--------|------:|----------:|-------------:|------:|---------:|")
         for source, stats in sorted(p.by_source.items()):
             w = f"{stats['avg_with_docs']:.1f}" if stats["avg_with_docs"] is not None else "—"

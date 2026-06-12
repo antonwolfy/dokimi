@@ -121,7 +121,7 @@ def evaluate_trust(
         passed=zero_frac <= cfg["max_zero_fraction"],
         value=round(zero_frac, 3),
         threshold=cfg["max_zero_fraction"],
-        message=f"{zero_with}/{n} questions scored 0 in the context arm ({zero_frac:.1%})",
+        message=f"{zero_with}/{n} questions scored 0 WITH docs ({zero_frac:.1%})",
         severity="fail",
     ))
 

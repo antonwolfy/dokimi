@@ -75,7 +75,7 @@ class DocTreatment(Treatment):
                 library_id=lib_id, query=question_text, max_results=self.top_k
             )
         except Exception:
-            logger.exception("Context retrieval failed for arm %s", self.name)
+            logger.exception("Doc retrieval failed for arm %s", self.name)
             metadata["error"] = "retrieval_failed"
             return AgentConfig(metadata=metadata)
 

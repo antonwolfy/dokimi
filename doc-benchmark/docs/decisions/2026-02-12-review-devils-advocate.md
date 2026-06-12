@@ -11,7 +11,7 @@ versioning). Kept as a record of the original critique.
 
 - Two-track approach (raw doc scan + MCP output quality) addresses different aspects
 - Persona-driven testing mirrors real-world usage patterns
-- Baseline comparison against a context-augmented arm is a proper control group
+- Baseline comparison (with/without docs) is a proper control group
 
 ## Critical Issues
 

@@ -106,7 +106,7 @@ class RagasEvaluator:
         for ans in answers:
             q = ans.get("question_text", "")
 
-            # --- CONTEXT ARM ---
+            # --- WITH DOCS ---
             wd = ans.get("with_docs") or {}
             answer_with = wd.get("answer", "")
             docs = wd.get("retrieved_docs", [])
@@ -125,7 +125,7 @@ class RagasEvaluator:
                     row["ground_truth"] = gt
                 rows_with.append(row)
 
-            # --- BASELINE (answer_relevancy only) ---
+            # --- WITHOUT DOCS (answer_relevancy only) ---
             if include_without_docs and "answer_relevancy" in self._requested:
                 wod = ans.get("without_docs") or {}
                 answer_without = wod.get("answer", "")
@@ -332,16 +332,16 @@ class RagasResult:
         """Human-readable summary string."""
         lines = ["## RAGAS Meta-Evaluation\n"]
 
-        lines.append(f"**Evaluated:** {self.n_with} context-arm · {self.n_without} baseline\n")
+        lines.append(f"**Evaluated:** {self.n_with} with_docs · {self.n_without} without_docs\n")
 
         if self.summary_with_docs:
-            lines.append("### Context arm")
+            lines.append("### WITH docs")
             for metric, score in sorted(self.summary_with_docs.items()):
                 bar = "█" * int(score * 10) + "░" * (10 - int(score * 10))
                 lines.append(f"  {metric:<22} {bar}  {score:.3f}")
 
         if self.summary_without_docs:
-            lines.append("\n### Baseline (answer_relevancy only)")
+            lines.append("\n### WITHOUT docs (answer_relevancy only)")
             for metric, score in sorted(self.summary_without_docs.items()):
                 bar = "█" * int(score * 10) + "░" * (10 - int(score * 10))
                 lines.append(f"  {metric:<22} {bar}  {score:.3f}")

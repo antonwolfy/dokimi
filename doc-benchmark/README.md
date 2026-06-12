@@ -68,7 +68,7 @@ report              Render JSON reports to Markdown
 evaluate            Run the full evaluation pipeline
 personas            Discover and approve target user personas
 questions           Generate, analyze, refine, and panel-review questions
-answers             Generate context-arm and baseline answers
+answers             Generate answers with and without documentation context
 arms                Compare context-augmentation treatments (docs/MCP/skills/profiles)
 eval                Score answers, run RAGAS, or use a multi-judge panel
 library             List/show registered libraries

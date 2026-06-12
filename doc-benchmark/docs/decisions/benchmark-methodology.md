@@ -166,7 +166,7 @@ This is the right workflow when the benchmark question is not "did the answer so
 
 These tasks can be used to evaluate:
 
-- base agent vs context-augmented agent,
+- base agent vs agent with docs,
 - base agent vs agent with a skill/playbook,
 - different agent profiles on the same task set,
 - documentation changes that should improve coding success rate.

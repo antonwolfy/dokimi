@@ -54,7 +54,7 @@ __ANCHORS__
 Also flag any issues (pick all that apply, or empty list):
 - "wrong_terminology" — uses incorrect technical terms
 - "too_generic"       — could apply to any library, not specific to __LIBRARY__
-- "trivially_googleable" — answer is a one-liner easily found without extra context
+- "trivially_googleable" — answer is a one-liner easily found without docs
 - "ambiguous"         — question can be interpreted multiple ways
 
 Output ONLY JSON, no markdown:

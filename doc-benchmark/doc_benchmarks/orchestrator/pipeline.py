@@ -29,7 +29,7 @@ class EvaluationPipeline:
     1. Discover personas
     2. Generate questions (from personas + optional custom)
     3. Merge and deduplicate questions with source tracking
-    4. Generate context-arm and baseline answers
+    4. Generate answers (WITH + WITHOUT docs)
     5. Evaluate answers (LLM-as-judge)
     6. Generate report
     """
@@ -237,7 +237,7 @@ class EvaluationPipeline:
         print(f"  question_set_hash: {question_set_hash}")
 
         # Step 4: Generate answers
-        logger.info("Step 4/6: Generating context-arm and baseline answers...")
+        logger.info("Step 4/6: Generating answers (WITH + WITHOUT docs)...")
         answers = self._generate_answers(merged_questions, concurrency=concurrency,
                                          question_set_hash=question_set_hash)
         results["steps"]["answers"] = {
@@ -430,7 +430,7 @@ class EvaluationPipeline:
     
     def _generate_answers(self, questions: List[Dict[str, Any]], concurrency: int = 5,
                           question_set_hash: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Generate context-arm and baseline answers."""
+        """Generate answers WITH and WITHOUT docs."""
         from doc_benchmarks.eval import Answerer
 
         # Setup documentation source client

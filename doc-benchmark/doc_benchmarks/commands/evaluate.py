@@ -131,7 +131,7 @@ def cmd_eval_panel_score(args: argparse.Namespace) -> None:
         mean_agree = sum(r["with_docs"].get("agreement_score", 1) for r in valid) / len(valid)
         flagged = sum(1 for r in valid if r["with_docs"].get("disagreement_flag", False))
         print(f"\n{'─'*50}")
-        print(f"Panel score (context arm): {mean_score:.1f}/100")
+        print(f"Panel score (with docs):  {mean_score:.1f}/100")
         print(f"Mean agreement score:     {mean_agree:.3f}  (1.0 = perfect)")
         print(f"Disagreement flags:       {flagged}/{len(valid)} questions")
 
