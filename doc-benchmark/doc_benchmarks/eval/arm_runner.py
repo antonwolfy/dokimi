@@ -51,6 +51,8 @@ class ArmRunner:
         provider: str = "openai",
         api_key: Optional[str] = None,
         max_iterations: int = 6,
+        harness: str = "arms-runner",
+        plugin_set: Optional[Dict[str, Any]] = None,
     ):
         if not treatments:
             raise ValueError("ArmRunner requires at least one treatment arm")
@@ -59,6 +61,12 @@ class ArmRunner:
         self.provider = provider
         self.api_key = api_key
         self.max_iterations = max_iterations
+        self.harness = harness
+        self.plugin_set = plugin_set or {
+            "plugin_set": "none",
+            "plugin_set_id": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
+            "plugins": [],
+        }
 
     @property
     def arm_names(self) -> List[str]:
@@ -159,6 +167,9 @@ class ArmRunner:
         return {
             "answer": answer_text,
             "model": self.model,
+            "harness": self.harness,
+            "plugin_set": self.plugin_set["plugin_set"],
+            "plugin_set_id": self.plugin_set["plugin_set_id"],
             "used_system_prompt": bool(cfg.system_prompt),
             "context_chunks": [
                 {
@@ -197,6 +208,9 @@ class ArmRunner:
         return {
             "answer": result["answer"],
             "model": self.model,
+            "harness": self.harness,
+            "plugin_set": self.plugin_set["plugin_set"],
+            "plugin_set_id": self.plugin_set["plugin_set_id"],
             "agentic": True,
             "used_system_prompt": bool(cfg.system_prompt),
             "context_chunks": [],
@@ -284,6 +298,10 @@ class ArmRunner:
             "library_name": library_name,
             "model": self.model,
             "provider": self.provider,
+            "harness": self.harness,
+            "plugin_set": self.plugin_set["plugin_set"],
+            "plugin_set_id": self.plugin_set["plugin_set_id"],
+            "plugins": self.plugin_set["plugins"],
             "arms": self.arm_names,
             "baseline_arm": baseline_arm,
             "total_questions": len(records),

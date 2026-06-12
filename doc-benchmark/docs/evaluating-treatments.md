@@ -26,6 +26,12 @@ an `AgentConfig` (system prompt + injected context) per question. The answers
 are scored by the same LLM-as-judge used elsewhere, and the report shows each
 arm's average score and its delta vs the baseline arm.
 
+Runtime plugins are a separate run dimension, not arms. They modify every arm
+inside the same `(model, harness, plugin_set)` cell, and the JSON/Markdown
+outputs stamp `harness`, `plugin_set`, `plugin_set_id`, and concrete plugin
+metadata. The initial supported plugin is `plugin:caveman[:lite|full|ultra]`,
+which adds a brevity system instruction before answer generation.
+
 > **Naming:** an *agent profile* (`profile:`) is the answering agent's system
 > prompt. It is **not** a `persona` — in this repo a persona is a synthetic
 > *user* who asks questions (`doc_benchmarks/personas`).
@@ -44,6 +50,18 @@ python cli.py arms run \
 
 Without `--judge` the command only generates answers (cheap, no judge calls).
 Outputs default to `results/arms/<product>.{json,md}` (ignored by git).
+
+Example Caveman plugin cell:
+
+```bash
+python cli.py arms run \
+  --product oneTBB \
+  --questions data/questions/onetbb_golden.json \
+  --arms "baseline,docs,skill:data/skills/onetbb-quickstart" \
+  --plugins "plugin:caveman" \
+  --harness openclaw-agent \
+  --judge
+```
 
 ## Arm specs in detail
 

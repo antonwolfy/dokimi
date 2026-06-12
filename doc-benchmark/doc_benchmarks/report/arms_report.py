@@ -18,6 +18,8 @@ def render_arms_report(data: Dict[str, Any]) -> str:
     lines.append(f"# Treatment-arm comparison — {lib}")
     lines.append("")
     lines.append(f"- Model: `{data.get('provider', '?')}/{data.get('model', '?')}`")
+    lines.append(f"- Harness: `{data.get('harness', 'arms-runner')}`")
+    lines.append(f"- Plugin set: `{data.get('plugin_set', 'none')}` (`{data.get('plugin_set_id', '?')}`)")
     lines.append(f"- Arms: {', '.join(f'`{a}`' for a in arms)}")
     lines.append(f"- Baseline arm: `{baseline}`")
     lines.append(f"- Questions: {data.get('total_questions', 0)}")

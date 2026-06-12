@@ -22,6 +22,7 @@ Arm spec               Scenario
 
 The ``agent`` and ``skill-agent`` arms run through the tool-calling loop in
 ``doc_benchmarks/eval/agent_runner.py``; the rest are single-shot.
+Runtime plugins are applied as a separate run dimension via ``--plugins``.
 """
 
 from .base import AgentConfig, Treatment, Tool

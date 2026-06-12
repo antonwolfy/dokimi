@@ -13,6 +13,7 @@ def cmd_arms_run(args: argparse.Namespace) -> None:
     from doc_benchmarks.treatments import create_treatments
     from doc_benchmarks.eval.arm_runner import ArmRunner
     from doc_benchmarks.report.arms_report import render_arms_report
+    from doc_benchmarks.plugins import create_plugins, plugin_set_metadata, wrap_treatments
 
     specs = [s.strip() for s in args.arms.split(",") if s.strip()]
     if not specs:
@@ -33,25 +34,26 @@ def cmd_arms_run(args: argparse.Namespace) -> None:
         treatments = create_treatments(
             specs, top_k=args.top_k, rerank_threshold=args.rerank_threshold
         )
+        library_id = _resolve_doc_library_id(treatments, args.product, args.context7_id)
+        plugin_specs = [s.strip() for s in args.plugins.split(",") if s.strip()]
+        plugins = create_plugins(plugin_specs)
+        treatments = wrap_treatments(treatments, plugins)
+        plugin_set = plugin_set_metadata(plugins)
     except (ValueError, FileNotFoundError) as exc:
-        print(f"Error building arms: {exc}", file=sys.stderr)
+        print(f"Error building arms/plugins: {exc}", file=sys.stderr)
         sys.exit(1)
     print(f"Arms: {', '.join(t.name for t in treatments)}")
+    if plugin_set["plugins"]:
+        print(f"Plugins: {plugin_set['plugin_set']} ({plugin_set['plugin_set_id']})")
 
-    # Resolve a library id for any doc/MCP arms (best-effort; safe to skip).
-    library_id = args.context7_id
-    if library_id is None:
-        from doc_benchmarks.treatments.arms import DocTreatment
-        for t in treatments:
-            if isinstance(t, DocTreatment):
-                try:
-                    library_id = t.mcp_client.resolve_library_id(args.product)
-                except Exception:
-                    library_id = args.product
-                break
-
-    runner = ArmRunner(treatments, model=args.model, provider=args.provider,
-                       max_iterations=args.max_iterations)
+    runner = ArmRunner(
+        treatments,
+        model=args.model,
+        provider=args.provider,
+        max_iterations=args.max_iterations,
+        harness=args.harness,
+        plugin_set=plugin_set,
+    )
     records = runner.run(
         library_name=args.product,
         questions=questions,
@@ -115,6 +117,10 @@ def register(sub, positive_int) -> None:
     arms_run_p.add_argument("--model", default="gpt-4o-mini", help="LLM for answering")
     arms_run_p.add_argument("--provider", default="openai",
                             choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
+    arms_run_p.add_argument("--harness", default="arms-runner",
+                            help="Execution harness label stamped into output (default: arms-runner)")
+    arms_run_p.add_argument("--plugins", default="",
+                            help="Comma-separated plugin refs, e.g. 'plugin:caveman' or 'plugin:caveman:ultra'")
     arms_run_p.add_argument("--context7-id", default=None, dest="context7_id",
                             help="Explicit library id for doc/MCP arms (skips resolution)")
     arms_run_p.add_argument("--baseline-arm", default="baseline", dest="baseline_arm",
@@ -135,3 +141,20 @@ def register(sub, positive_int) -> None:
     arms_run_p.add_argument("--out-md", default=None, dest="out_md",
                             help="Output Markdown report path (default: results/arms/{product}.md)")
     arms_run_p.set_defaults(func=cmd_arms_run)
+
+
+def _resolve_doc_library_id(treatments, product: str, explicit_id=None):
+    """Resolve a library id for the first doc arm, before plugin wrapping."""
+    if explicit_id is not None:
+        return explicit_id
+
+    from doc_benchmarks.treatments.arms import DocTreatment
+
+    for treatment in treatments:
+        unwrapped = getattr(treatment, "inner", treatment)
+        if isinstance(unwrapped, DocTreatment):
+            try:
+                return unwrapped.mcp_client.resolve_library_id(product)
+            except Exception:
+                return product
+    return None

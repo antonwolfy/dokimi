@@ -4,6 +4,7 @@ import doc_benchmarks.eval.arm_runner as arm_runner_mod
 from doc_benchmarks.eval.arm_runner import ArmRunner
 from doc_benchmarks.treatments import BaselineTreatment, SkillTreatment
 from doc_benchmarks.skills import load_skill
+from doc_benchmarks.plugins import create_plugins, plugin_set_metadata, wrap_treatments
 
 
 def _patch_llm(monkeypatch, captured):
@@ -83,3 +84,25 @@ def test_build_output_without_evaluations(monkeypatch):
     output = runner.build_output("oneTBB", records)
     assert "summary" not in output
     assert output["arms"] == ["baseline"]
+
+
+def test_arm_runner_stamps_plugin_set_and_harness(monkeypatch):
+    captured = []
+    _patch_llm(monkeypatch, captured)
+    plugins = create_plugins(["plugin:caveman"])
+    plugin_set = plugin_set_metadata(plugins)
+    treatments = wrap_treatments([BaselineTreatment()], plugins)
+
+    runner = ArmRunner(
+        treatments,
+        harness="openclaw-agent",
+        plugin_set=plugin_set,
+    )
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+    output = runner.build_output("oneTBB", records)
+
+    assert "caveman style" in captured[0]["system"]
+    assert records[0]["arms"]["baseline"]["plugin_set"] == "caveman:full"
+    assert records[0]["arms"]["baseline"]["harness"] == "openclaw-agent"
+    assert output["plugin_set"] == "caveman:full"
+    assert output["harness"] == "openclaw-agent"
