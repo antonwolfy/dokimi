@@ -1,0 +1,6 @@
+# Overhead  Command  Shared Object  Symbol
+  58.42%    solver   solver         accumulate_scores
+  18.77%    solver   solver         worker_update_stats
+   7.11%    solver   libc.so.6      __memmove_avx_unaligned_erms
+   4.93%    solver   solver         parse_record
+   2.10%    solver   [kernel]       futex_wait_queue

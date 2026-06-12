@@ -49,6 +49,11 @@ See [COVERAGE.md](./COVERAGE.md) for the broader oneTBB API/concept coverage mat
 | [onedpl-transform-reduce](./onedpl-transform-reduce/) | oneDPL | medium | Parallel `transform_reduce` (`par_unseq`) on the oneTBB backend |
 | [ipp-dotprod](./ipp-dotprod/) | IPP | easy | Vector dot product with `ippsDotProd_64f` vs serial reference |
 | [sklearnex-classification](./sklearnex-classification/) | sklearnex | easy | KNN classifier accelerated with `patch_sklearn()`, accuracy vs stock sklearn |
+| [intel-perf-serial-accumulator](./intel-perf-serial-accumulator/) | Intel performance skills | medium | Diagnose low-IPC serial accumulator and rewrite with independent partial accumulators |
+| [intel-perf-false-sharing](./intel-perf-false-sharing/) | Intel performance skills | medium | Diagnose c2c/HITM false sharing and separate per-thread counters by cache line |
+| [intel-perf-shared-counter](./intel-perf-shared-counter/) | Intel performance skills | medium | Replace a hot global atomic statistics counter with local aggregation |
+| [intel-perf-missing-restrict](./intel-perf-missing-restrict/) | Intel performance skills | medium | Add a valid C `restrict` contract to remove aliasing/vectorization barriers |
+| [intel-perf-hotspot-report](./intel-perf-hotspot-report/) | Intel performance skills | medium | Produce a structured hotspot report from provided perf artifacts |
 
 > The oneTBB tasks build entirely from `ubuntu:22.04` + standard apt and are
 > verified in the `terminal-bench-verify` CI job. The oneMKL / oneDPL / IPP /
@@ -129,3 +134,11 @@ strategies):
 - [ ] `onedpl-sort` — `oneapi::dpl::sort` with a parallel policy
 - [ ] `oneccl-allreduce` — multi-process allreduce with oneCCL + MPI (needs
       real-image iteration: MPI/oneCCL transport under `--network none`)
+
+Intel performance skills tasks:
+
+- [x] `intel-perf-serial-accumulator` — low-IPC reduction dependency with a deterministic speedup verifier
+- [x] `intel-perf-false-sharing` — synthetic `perf c2c` evidence plus cache-line layout fix
+- [x] `intel-perf-shared-counter` — true-sharing statistics counter replaced by local aggregation
+- [x] `intel-perf-missing-restrict` — C aliasing contract and vectorization evidence
+- [x] `intel-perf-hotspot-report` — report-only interpretation of static perf artifacts

@@ -1,0 +1,14 @@
+Shared Data Cache Line Table
+
+  Address        Tot Hitm   Stores  Accessor
+  0x7f00abcd00   31.2%      95.0%   worker_thread
+
+Cache line 0x7f00abcd00 access map
+
+  Offset  CPU/thread  Access type  Symbol
+  0x00    thread 0    store        CounterSlot::value
+  0x08    thread 1    store        CounterSlot::value
+  0x10    thread 2    store        CounterSlot::value
+  0x18    thread 3    store        CounterSlot::value
+
+Different threads write different offsets on the same cache line: false sharing.

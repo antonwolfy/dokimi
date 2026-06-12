@@ -39,6 +39,22 @@ wheels at **build** time. The verifier still runs offline (`--network none`).
 > MPI transport needs iteration on a real image under `--network none`, which
 > couldn't be done in the authoring sandbox. It is tracked as a candidate below.
 
+## Intel performance skills
+
+These tasks evaluate `intel/intel-performance-skills` as an agent capability:
+the agent must interpret profile-like evidence, choose the right performance
+pattern, apply a safe fix or produce a report, and pass deterministic verifier
+checks. They intentionally avoid privileged `perf` in the first wave; static
+profile artifacts are shipped in the task environment.
+
+| Problem / concept | Task | Status | Verifier strategy |
+| --- | --- | --- | --- |
+| Serial accumulator / low IPC | `intel-perf-serial-accumulator` | implemented | Dot-product equality vs serial reference; speedup threshold; source marker for multiple partial accumulators |
+| False sharing / HITM | `intel-perf-false-sharing` | implemented | Final counter total; speedup vs false-sharing baseline; source marker for cache-line separation |
+| Shared statistics counter / true sharing | `intel-perf-shared-counter` | implemented | Exact total and checksum; speedup vs global atomic baseline; source marker for local aggregation |
+| Missing C `restrict` / alias preamble | `intel-perf-missing-restrict` | implemented | Checksum equality; `restrict` source marker; compiler vectorization evidence |
+| Hotspot report from perf artifacts | `intel-perf-hotspot-report` | implemented | Markdown structure checks; serial-accumulator and false-sharing observations; rejects fake fix claims |
+
 ### Candidate tasks per component
 
 | Component | Candidate task | Validation idea |

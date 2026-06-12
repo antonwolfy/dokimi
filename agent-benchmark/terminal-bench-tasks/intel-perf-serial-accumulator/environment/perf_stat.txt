@@ -1,0 +1,9 @@
+Performance counter stats for './dot_serial 24000000':
+
+        96,200,000      cycles
+        61,000,000      instructions              #    0.63  insn per cycle
+            44,100      cache-misses              #    0.18% of all cache refs
+           113,000      branch-misses             #    0.41% of all branches
+
+The workload is CPU-bound with low IPC and low cache/branch miss rates. A
+single loop-carried accumulator dependency is the primary suspect.

@@ -1,0 +1,14 @@
+Percent | Source / assembly for accumulate_scores
+
+      double accumulate_scores(const double *a, const double *b, size_t n)
+      {
+          double sum = 0.0;
+          for (size_t i = 0; i < n; ++i) {
+  76%         sum += a[i] * b[i];
+              // asm: vmulsd (%rdi,%rax,8),%xmm1,%xmm0
+              // asm: vaddsd %xmm0,%xmm2,%xmm2
+          }
+          return sum;
+      }
+
+Observation: the single scalar accumulator dominates the function.

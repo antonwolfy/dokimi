@@ -1,0 +1,13 @@
+Performance counter stats for './solver --input case1':
+
+      10,020.13 msec task-clock                #    3.91 CPUs utilized
+          20,004      context-switches
+  31,250,000,000      cycles
+  19,100,000,000      instructions             #    0.61  insn per cycle
+      11,200,000      cache-references
+         120,000      cache-misses             #    1.07% of all cache refs
+      80,400,000      branches
+       1,040,000      branch-misses            #    1.29% of all branches
+
+       2.561 seconds time elapsed
+       0.41 seconds in kernel                  #   16.0% kernel time

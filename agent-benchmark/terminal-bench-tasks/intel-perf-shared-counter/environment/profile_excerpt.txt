@@ -1,0 +1,13 @@
+perf annotate excerpt:
+
+  48.7%  lock xadd %rax,(global_packets)
+  21.4%  worker_loop
+   8.1%  std::thread::_State_impl
+
+perf c2c excerpt:
+
+  Address        Tot Hitm   Offset  Symbol
+  0x601080       22.5%      0x00    global_packets
+
+Many CPUs write the same counter offset. This is true sharing on a hot
+statistics counter, not false sharing.

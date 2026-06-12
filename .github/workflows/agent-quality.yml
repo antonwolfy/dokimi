@@ -33,7 +33,12 @@ jobs:
             onetbb-transpose \
             onetbb-parallel-reduce \
             onetbb-parallel-scan \
-            onetbb-flow-graph
+            onetbb-flow-graph \
+            intel-perf-serial-accumulator \
+            intel-perf-false-sharing \
+            intel-perf-shared-counter \
+            intel-perf-missing-restrict \
+            intel-perf-hotspot-report
           do
             docker build \
               -t "intel-hpc-bench/${task}:latest" \
@@ -50,7 +55,12 @@ jobs:
             onetbb-transpose \
             onetbb-parallel-reduce \
             onetbb-parallel-scan \
-            onetbb-flow-graph
+            onetbb-flow-graph \
+            intel-perf-serial-accumulator \
+            intel-perf-false-sharing \
+            intel-perf-shared-counter \
+            intel-perf-missing-restrict \
+            intel-perf-hotspot-report
           do
             mkdir -p "/tmp/logs/${task}"
             docker run --rm \

@@ -1,0 +1,14 @@
+Shared Data Cache Line Table
+
+  Address        Tot Hitm   Stores  Accessor
+  0x7fc0a040     17.8%      88.1%   worker_update_stats
+
+Cache line 0x7fc0a040 access map
+
+  Offset  CPU/thread  Access type  Symbol
+  0x00    thread 0    store        worker_update_stats stats[0].processed
+  0x08    thread 1    store        worker_update_stats stats[1].processed
+  0x10    thread 2    store        worker_update_stats stats[2].processed
+  0x18    thread 3    store        worker_update_stats stats[3].processed
+
+Different threads write different offsets on one cache line: false sharing.

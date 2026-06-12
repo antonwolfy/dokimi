@@ -1,0 +1,11 @@
+perf annotate excerpt:
+
+  6.1%  sub    %rsi,%rax
+  5.8%  cmp    $0x10,%rax
+  5.5%  jbe    scalar_fallback
+  38.4% vmulpd (%rdi,%rcx,8),%ymm1,%ymm0
+  31.0% vaddpd (%rsi,%rcx,8),%ymm0,%ymm0
+
+The pointer subtraction and conditional branch before the vector loop are an
+aliasing preamble. The caller contract says x, y, and out do not overlap, so a
+C restrict contract is valid.
