@@ -1,9 +1,9 @@
 # Product configuration for the LLM evaluation track.
 #
 # Canonical product *identity* (repo, context7 id, doc sources) lives in the
-# top-level `libraries.yaml` registry. The `products:` block below restates the
+# top-level `products.yaml` registry. The `products:` block below restates the
 # subset needed by the eval track; `python -m agent_benchmarks.config_check`
-# (run in CI) fails if the GitHub repo here drifts from libraries.yaml.
+# (run in CI) fails if the GitHub repo here drifts from products.yaml.
 # This file additionally owns LLM/runtime config (llm, context7, retrieval, …).
 
 products:

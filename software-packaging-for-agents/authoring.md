@@ -11,7 +11,7 @@ To [spawn an Intel expert](serving.md) for any product, that expert needs a thin
 Tier-1 skill, the right MCP doc source, and — especially for hardware — a working
 **setup guide**. Today the repo has exactly **one** hand-written skill
 (`onetbb-quickstart`) and **one** profile (`concise_expert`). The catalog spans
-22+ software libraries in [`libraries.yaml`](../agent-benchmark/libraries.yaml)
+22+ software libraries in [`products.yaml`](../agent-benchmark/products.yaml)
 plus the hardware platforms (Gaudi, Xeon/AMX, GPU Max, NPUs). Hand-authoring does
 not scale to that. Authoring must become a **pipeline**, with the benchmark as
 its fitness function.

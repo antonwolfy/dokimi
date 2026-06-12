@@ -8,11 +8,11 @@ from agent_benchmarks.config import (
     detect_registry_drift,
     load_products_config,
 )
-from agent_benchmarks.registry import LibraryRegistry
+from agent_benchmarks.registry import ProductRegistry
 
 
 def test_committed_configs_have_no_drift():
-    """libraries.yaml and config/products.yaml must agree on shared identity."""
+    """products.yaml and config/products.yaml must agree on shared identity."""
     assert detect_registry_drift() == []
 
 
@@ -22,10 +22,10 @@ def test_load_products_config():
     assert cfg.llm  # answerer/judge/generator block present
 
 
-def _registry(tmp_path, body: str) -> LibraryRegistry:
-    p = tmp_path / "libs.yaml"
+def _registry(tmp_path, body: str) -> ProductRegistry:
+    p = tmp_path / "products.yaml"
     p.write_text(body)
-    return LibraryRegistry(path=p)
+    return ProductRegistry(path=p)
 
 
 def test_drift_detected(tmp_path, monkeypatch):
@@ -33,7 +33,7 @@ def test_drift_detected(tmp_path, monkeypatch):
         tmp_path,
         textwrap.dedent(
             """
-            libraries:
+            products:
               foo:
                 name: Foo
                 description: x
@@ -50,7 +50,7 @@ def test_drift_detected(tmp_path, monkeypatch):
 
 
 def test_unregistered_product_is_not_drift(tmp_path):
-    reg = _registry(tmp_path, "libraries:\n  foo:\n    name: Foo\n    description: x\n    repo: org-a/foo\n")
+    reg = _registry(tmp_path, "products:\n  foo:\n    name: Foo\n    description: x\n    repo: org-a/foo\n")
     products = load_products_config()
     products.products = {"bar": {"github_repo": "org-b/bar"}}  # not in registry
     assert detect_registry_drift(registry=reg, products=products) == []

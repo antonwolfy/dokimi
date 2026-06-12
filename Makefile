@@ -2,7 +2,7 @@
 #
 # This repo has two areas:
 #   software-packaging-for-agents/  framing & architecture (docs today)
-#   agent-benchmark/                  the measurement engine (runnable project)
+#   agent-benchmark/                the measurement engine (runnable project)
 #
 # Most runnable targets delegate into agent-benchmark/. Run `make help` for the
 # current target list.

@@ -1,4 +1,4 @@
-"""Library registry — load and query known products from libraries.yaml."""
+"""Product registry — load and query known products from products.yaml."""
 
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ import yaml
 logger = logging.getLogger(__name__)
 
 # Default registry bundled with the package
-_DEFAULT_REGISTRY = Path(__file__).parent.parent / "libraries.yaml"
+_DEFAULT_REGISTRY = Path(__file__).parent.parent / "products.yaml"
 
 
 @dataclass
-class LibraryEntry:
+class ProductEntry:
     key: str                          # registry key, e.g. "onetbb"
     name: str                         # human name, e.g. "oneTBB"
     description: str
@@ -25,12 +25,16 @@ class LibraryEntry:
     doc_sources: List[str] = field(default_factory=lambda: ["context7"])
 
 
-class LibraryRegistry:
-    """Load and query the libraries.yaml registry."""
+class ProductRegistry:
+    """Load and query the products.yaml registry.
+
+    Accepts the canonical ``products:`` top-level key, plus the legacy
+    ``libraries:`` key for older registry files.
+    """
 
     def __init__(self, path: Optional[Path] = None):
         self._path = path or _DEFAULT_REGISTRY
-        self._entries: Dict[str, LibraryEntry] = {}
+        self._entries: Dict[str, ProductEntry] = {}
         self._load()
 
     def _load(self) -> None:
@@ -38,14 +42,14 @@ class LibraryRegistry:
             logger.warning(f"Registry not found: {self._path}")
             return
         data = yaml.safe_load(self._path.read_text()) or {}
-        if not isinstance(data, dict) or "libraries" not in data:
-            logger.warning(f"Registry {self._path} has no 'libraries' key — skipping.")
+        if not isinstance(data, dict) or not ("products" in data or "libraries" in data):
+            logger.warning(f"Registry {self._path} has no 'products' key — skipping.")
             return
-        libraries = data["libraries"]
-        if not isinstance(libraries, dict):
-            logger.warning("Registry 'libraries' must be a mapping — skipping.")
+        products = data.get("products", data.get("libraries"))
+        if not isinstance(products, dict):
+            logger.warning("Registry 'products' must be a mapping — skipping.")
             return
-        for raw_key, cfg in libraries.items():
+        for raw_key, cfg in products.items():
             if not isinstance(raw_key, str):
                 logger.warning(f"Registry key '{raw_key}' is not a string — skipping.")
                 continue
@@ -63,7 +67,7 @@ class LibraryRegistry:
             if not isinstance(doc_sources, list) or not doc_sources:
                 logger.warning(f"Registry entry '{raw_key}' has empty doc_sources — defaulting to context7.")
                 doc_sources = ["context7"]
-            self._entries[key] = LibraryEntry(
+            self._entries[key] = ProductEntry(
                 key=key,
                 name=cfg.get("name", raw_key),
                 description=str(cfg.get("description") or "").strip(),
@@ -71,17 +75,17 @@ class LibraryRegistry:
                 context7_id=cfg.get("context7_id"),
                 doc_sources=doc_sources,
             )
-        logger.info(f"Loaded {len(self._entries)} libraries from {self._path}")
+        logger.info(f"Loaded {len(self._entries)} products from {self._path}")
 
-    def get(self, key: str) -> LibraryEntry:
+    def get(self, key: str) -> ProductEntry:
         """Return entry by key (case-insensitive). Raises KeyError if not found."""
         entry = self._entries.get(key.lower())
         if entry is None:
             available = ", ".join(sorted(self._entries))
-            raise KeyError(f"Library '{key}' not found in registry. Available: {available}")
+            raise KeyError(f"Product '{key}' not found in registry. Available: {available}")
         return entry
 
-    def list(self) -> List[LibraryEntry]:
+    def list(self) -> List[ProductEntry]:
         return list(self._entries.values())
 
     def keys(self) -> List[str]:
@@ -89,3 +93,8 @@ class LibraryRegistry:
 
     def __contains__(self, key: str) -> bool:
         return key.lower() in self._entries
+
+
+# Backward-compatible aliases (pre-rename names, when products were "libraries")
+LibraryEntry = ProductEntry
+LibraryRegistry = ProductRegistry

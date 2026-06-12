@@ -1,14 +1,14 @@
-"""Tests for LibraryRegistry."""
+"""Tests for ProductRegistry."""
 from pathlib import Path
 
 import pytest
 import yaml
 
-from agent_benchmarks.registry import LibraryRegistry
+from agent_benchmarks.registry import LibraryRegistry, ProductRegistry
 
 
 def _write_registry(tmp_path: Path, data: dict) -> Path:
-    p = tmp_path / "libraries.yaml"
+    p = tmp_path / "products.yaml"
     p.write_text(yaml.dump(data))
     return p
 
@@ -19,7 +19,7 @@ def _write_registry(tmp_path: Path, data: dict) -> Path:
 
 def test_loads_all_entries(tmp_path):
     reg_path = _write_registry(tmp_path, {
-        "libraries": {
+        "products": {
             "onetbb": {
                 "name": "oneTBB",
                 "description": "Parallel library",
@@ -34,20 +34,34 @@ def test_loads_all_entries(tmp_path):
             },
         }
     })
-    reg = LibraryRegistry(path=reg_path)
+    reg = ProductRegistry(path=reg_path)
     assert len(reg.list()) == 2
     assert set(reg.keys()) == {"onetbb", "onemkl"}
 
 
+def test_legacy_libraries_key_still_loads(tmp_path):
+    """Registries written with the pre-rename 'libraries:' key keep working."""
+    reg_path = _write_registry(tmp_path, {
+        "libraries": {"onetbb": {"name": "oneTBB", "description": "x"}}
+    })
+    reg = ProductRegistry(path=reg_path)
+    assert set(reg.keys()) == {"onetbb"}
+
+
+def test_legacy_class_alias():
+    """LibraryRegistry remains importable as an alias of ProductRegistry."""
+    assert LibraryRegistry is ProductRegistry
+
+
 def test_missing_file_does_not_raise(tmp_path):
-    reg = LibraryRegistry(path=tmp_path / "nonexistent.yaml")
+    reg = ProductRegistry(path=tmp_path / "nonexistent.yaml")
     assert reg.list() == []
 
 
 def test_empty_file_does_not_raise(tmp_path):
     p = tmp_path / "empty.yaml"
     p.write_text("")
-    reg = LibraryRegistry(path=p)
+    reg = ProductRegistry(path=p)
     assert reg.list() == []
 
 
@@ -57,7 +71,7 @@ def test_empty_file_does_not_raise(tmp_path):
 
 def test_get_returns_entry(tmp_path):
     reg_path = _write_registry(tmp_path, {
-        "libraries": {
+        "products": {
             "onetbb": {
                 "name": "oneTBB",
                 "description": "desc",
@@ -67,7 +81,7 @@ def test_get_returns_entry(tmp_path):
             }
         }
     })
-    reg = LibraryRegistry(path=reg_path)
+    reg = ProductRegistry(path=reg_path)
     entry = reg.get("onetbb")
     assert entry.name == "oneTBB"
     assert entry.repo == "uxlfoundation/oneTBB"
@@ -77,30 +91,30 @@ def test_get_returns_entry(tmp_path):
 
 def test_get_case_insensitive(tmp_path):
     reg_path = _write_registry(tmp_path, {
-        "libraries": {"onetbb": {"name": "oneTBB", "description": "x"}}
+        "products": {"onetbb": {"name": "oneTBB", "description": "x"}}
     })
-    reg = LibraryRegistry(path=reg_path)
+    reg = ProductRegistry(path=reg_path)
     assert reg.get("ONETBB").key == "onetbb"
     assert reg.get("OneTBB").key == "onetbb"
 
 
 def test_get_missing_raises_key_error(tmp_path):
     reg_path = _write_registry(tmp_path, {
-        "libraries": {"onetbb": {"name": "oneTBB", "description": "x"}}
+        "products": {"onetbb": {"name": "oneTBB", "description": "x"}}
     })
-    reg = LibraryRegistry(path=reg_path)
+    reg = ProductRegistry(path=reg_path)
     with pytest.raises(KeyError, match="notexist"):
         reg.get("notexist")
 
 
 def test_get_key_error_lists_available(tmp_path):
     reg_path = _write_registry(tmp_path, {
-        "libraries": {
+        "products": {
             "onetbb": {"name": "oneTBB", "description": "x"},
             "onemkl": {"name": "oneMKL", "description": "y"},
         }
     })
-    reg = LibraryRegistry(path=reg_path)
+    reg = ProductRegistry(path=reg_path)
     with pytest.raises(KeyError) as exc_info:
         reg.get("nope")
     assert "onetbb" in str(exc_info.value)
@@ -113,9 +127,9 @@ def test_get_key_error_lists_available(tmp_path):
 
 def test_contains(tmp_path):
     reg_path = _write_registry(tmp_path, {
-        "libraries": {"onetbb": {"name": "oneTBB", "description": "x"}}
+        "products": {"onetbb": {"name": "oneTBB", "description": "x"}}
     })
-    reg = LibraryRegistry(path=reg_path)
+    reg = ProductRegistry(path=reg_path)
     assert "onetbb" in reg
     assert "missing" not in reg
 
@@ -123,15 +137,15 @@ def test_contains(tmp_path):
 def test_default_doc_sources(tmp_path):
     """Entry without explicit doc_sources defaults to ['context7']."""
     reg_path = _write_registry(tmp_path, {
-        "libraries": {"onetbb": {"name": "oneTBB", "description": "x"}}
+        "products": {"onetbb": {"name": "oneTBB", "description": "x"}}
     })
-    reg = LibraryRegistry(path=reg_path)
+    reg = ProductRegistry(path=reg_path)
     assert reg.get("onetbb").doc_sources == ["context7"]
 
 
 def test_multiple_doc_sources(tmp_path):
     reg_path = _write_registry(tmp_path, {
-        "libraries": {
+        "products": {
             "onemkl": {
                 "name": "oneMKL",
                 "description": "x",
@@ -139,25 +153,25 @@ def test_multiple_doc_sources(tmp_path):
             }
         }
     })
-    reg = LibraryRegistry(path=reg_path)
+    reg = ProductRegistry(path=reg_path)
     entry = reg.get("onemkl")
     assert len(entry.doc_sources) == 2
     assert "url:https://example.com/mkl" in entry.doc_sources
 
 
 # ---------------------------------------------------------------------------
-# Default registry (bundled libraries.yaml)
+# Default registry (bundled products.yaml)
 # ---------------------------------------------------------------------------
 
 def test_default_registry_loads():
-    reg = LibraryRegistry()
+    reg = ProductRegistry()
     keys = reg.keys()
     assert "onetbb" in keys
     assert len(keys) >= 4
 
 
 def test_default_registry_onetbb_has_repo():
-    reg = LibraryRegistry()
+    reg = ProductRegistry()
     entry = reg.get("onetbb")
     assert entry.repo is not None
     assert entry.context7_id is not None

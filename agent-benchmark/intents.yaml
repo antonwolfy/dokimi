@@ -1,0 +1,124 @@
+# Intent registry — the problem/task/intent space for agent-benchmark.
+#
+# `products.yaml` answers "what products exist"; this file answers "what user
+# problems exist and which products serve them". A domain is a broad scenario
+# area (data science, debugging, optimization, …) where a summoned expert may
+# need several products at once. Example intents are user-voiced problems that
+# seed discovery, question generation, and future cross-product evaluation.
+#
+# The product mapping lives HERE (one direction only) — product entries do not
+# repeat their domains, so there is a single source of truth. Every key under
+# `products:` below must exist in `products.yaml`;
+# `python -m agent_benchmarks.config_check` (run in CI) enforces this.
+
+domains:
+
+  parallel-programming:
+    name: Parallel Programming
+    description: >
+      Expressing task and data parallelism on multi-core CPUs: parallel loops,
+      reductions, pipelines, task graphs, concurrent containers, and choosing
+      between threading runtimes.
+    products: [onetbb, openmp, onedpl, icx]
+    example_intents:
+      - "Parallelize this C++ loop across all cores"
+      - "My parallel_reduce gives different results on every run"
+      - "Should I use OpenMP or TBB for this pipeline?"
+
+  numerical-computing:
+    name: Numerical Computing
+    description: >
+      Dense and sparse linear algebra, FFTs, random number generation, and
+      vector math — with attention to accuracy, reproducibility, and
+      performance on CPU and GPU.
+    products: [onemkl, onemath, ipp]
+    example_intents:
+      - "Speed up this large matrix multiplication"
+      - "Compute an FFT on batched signals"
+      - "My BLAS results differ between machines — why?"
+
+  machine-learning:
+    name: Machine Learning
+    description: >
+      Training and inference for classical ML and deep learning: accelerating
+      scikit-learn workflows, DNN primitives, and deploying optimized
+      inference on Intel hardware.
+    products: [onedal, sklearnex, onednn, openvino]
+    example_intents:
+      - "Make my scikit-learn training faster without rewriting it"
+      - "Deploy this ONNX model for low-latency CPU inference"
+      - "Why is my KMeans slow on a 96-core machine?"
+
+  data-science:
+    name: Data Science
+    description: >
+      NumPy/pandas-style array workflows, preprocessing, and analytics —
+      including drop-in acceleration and porting array code to GPUs.
+    products: [dpnp, sklearnex, onedal, dpctl]
+    example_intents:
+      - "Run my NumPy pipeline on an Intel GPU"
+      - "Accelerate PCA and clustering on a large dataframe"
+
+  gpu-and-heterogeneous-computing:
+    name: GPU & Heterogeneous Computing
+    description: >
+      Writing, porting, and debugging SYCL/offload code across CPU and GPU:
+      device selection, USM memory, kernels from Python or C++, and
+      GPU-side debugging.
+    products: [dpctl, dpnp, numba_dpex, onedpl, icx, gdb_intel]
+    example_intents:
+      - "Port this CUDA kernel to SYCL"
+      - "Write a GPU kernel in Python with explicit work-groups"
+      - "Set a breakpoint inside a SYCL kernel"
+
+  performance-optimization:
+    name: Performance Optimization
+    description: >
+      Finding and fixing performance problems: profiling hotspots, threading
+      and memory analysis, vectorization, roofline analysis, and
+      microarchitecture-level tuning.
+    products: [vtune, advisor, optimization_guide, icx]
+    example_intents:
+      - "Why is this code slow?"
+      - "Find the hotspots in my multithreaded application"
+      - "Is this loop vectorizing, and if not, why?"
+
+  debugging-and-correctness:
+    name: Debugging & Correctness
+    description: >
+      Diagnosing memory errors, data races, deadlocks, and GPU-kernel bugs in
+      native and offload code.
+    products: [inspector, gdb_intel]
+    example_intents:
+      - "Find the data race causing intermittent crashes"
+      - "Track down a memory leak in this C++ service"
+
+  distributed-computing:
+    name: Distributed Computing
+    description: >
+      Scaling across nodes: MPI communication, process pinning and fabric
+      tuning, and collective operations for distributed training.
+    products: [intelmpi, oneccl]
+    example_intents:
+      - "My MPI job slows down beyond 8 nodes"
+      - "Tune allreduce for multi-node PyTorch DDP training"
+
+  signal-and-image-processing:
+    name: Signal & Image Processing
+    description: >
+      Optimized signal/image processing, computer vision primitives,
+      compression, and cryptography with runtime SIMD dispatch.
+    products: [ipp]
+    example_intents:
+      - "Resize and filter images faster than OpenCV's baseline"
+      - "Accelerate this convolution-heavy DSP pipeline"
+
+  compilers-and-build:
+    name: Compilers & Build
+    description: >
+      Compiling and tuning C/C++/Fortran: optimization flags, vectorization
+      reports, IPO/PGO, OpenMP offload, and mixed-language builds.
+    products: [icx, ifort]
+    example_intents:
+      - "Which compiler flags should I use for AVX-512?"
+      - "Read this vectorization report and fix the blockers"

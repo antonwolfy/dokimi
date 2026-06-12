@@ -51,7 +51,7 @@ full framing and architecture.
 README.md                          This umbrella overview
 Makefile                           Delegates targets into each area
 software-packaging-for-agents/     Framing & architecture (author/package/discover/serve/feedback)
-agent-benchmark/                     The measurement engine (self-contained Python project)
+agent-benchmark/                   The measurement engine (self-contained Python project)
 LICENSE  NOTICE                    Apache-2.0 + attribution (repo-wide)
 .github/workflows/                 CI (runs inside agent-benchmark/)
 ```
@@ -61,12 +61,23 @@ LICENSE  NOTICE                    Apache-2.0 + attribution (repo-wide)
 The runnable project today is the benchmark:
 
 ```bash
-make benchmark        # delegates into agent-benchmark/ (see its README)
+make benchmark-run    # delegates into agent-benchmark/ (see its README)
 make test             # runs the agent-benchmark test suite
 ```
 
 For the benchmark's own quickstart, CLI surface, and architecture, see
 [`agent-benchmark/README.md`](agent-benchmark/README.md).
+
+## Where to start reading
+
+| You want to understand… | Read |
+|---|---|
+| The vision and the six-track cycle | [`software-packaging-for-agents/architecture.md`](software-packaging-for-agents/architecture.md) |
+| How discovery maps user problems to products | [`software-packaging-for-agents/discovery.md`](software-packaging-for-agents/discovery.md) and [`agent-benchmark/intents.yaml`](agent-benchmark/intents.yaml) |
+| What products are registered | [`agent-benchmark/products.yaml`](agent-benchmark/products.yaml) |
+| How the measurement engine works | [`agent-benchmark/docs/architecture.md`](agent-benchmark/docs/architecture.md) |
+| How to run an evaluation end to end | [`agent-benchmark/docs/quickstart.md`](agent-benchmark/docs/quickstart.md) |
+| The executable agent tasks | [`agent-benchmark/terminal-bench-tasks/README.md`](agent-benchmark/terminal-bench-tasks/README.md) |
 
 ## License
 

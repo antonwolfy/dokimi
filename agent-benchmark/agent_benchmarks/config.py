@@ -1,11 +1,11 @@
 """Products config loading + cross-registry drift detection.
 
-The repo has two registries: ``libraries.yaml`` (the canonical product-identity
-registry, loaded by :class:`agent_benchmarks.registry.LibraryRegistry`) and
+The repo has two registries: ``products.yaml`` (the canonical product-identity
+registry, loaded by :class:`agent_benchmarks.registry.ProductRegistry`) and
 ``config/products.yaml`` (LLM/runtime config for the eval track, which also
 restates product identity). The duplicated identity is a drift risk, so this
-module treats ``libraries.yaml`` as canonical and detects when the two
-disagree on the GitHub repo for a shared product.
+module treats the top-level ``products.yaml`` as canonical and detects when
+the two disagree on the GitHub repo for a shared product.
 """
 
 from __future__ import annotations
@@ -54,11 +54,11 @@ def detect_registry_drift(
     """Return human-readable drift issues between the two registries.
 
     Only products present in *both* registries are compared, on the canonical
-    identity field (GitHub repo, case-insensitive). ``libraries.yaml`` wins.
+    identity field (GitHub repo, case-insensitive). ``products.yaml`` wins.
     """
-    from agent_benchmarks.registry import LibraryRegistry
+    from agent_benchmarks.registry import ProductRegistry
 
-    registry = registry or LibraryRegistry()
+    registry = registry or ProductRegistry()
     products = products or load_products_config()
 
     issues: list[str] = []
@@ -70,7 +70,7 @@ def detect_registry_drift(
         repo_l = (entry.repo or "").strip()
         if repo_p and repo_l and repo_p.lower() != repo_l.lower():
             issues.append(
-                f"{name}: github_repo drift — products.yaml={repo_p!r} vs "
-                f"libraries.yaml={repo_l!r} (libraries.yaml is canonical)"
+                f"{name}: github_repo drift — config/products.yaml={repo_p!r} vs "
+                f"products.yaml={repo_l!r} (top-level products.yaml is canonical)"
             )
     return issues

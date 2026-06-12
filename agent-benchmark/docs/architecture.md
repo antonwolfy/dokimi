@@ -8,8 +8,8 @@
 
 `agent-benchmark` ships two parallel evaluation tracks plus an optional
 executable-task suite. They share configuration (`config/products.yaml`,
-`libraries.yaml`) and a single CLI entry point (`cli.py`) but otherwise
-operate independently.
+`products.yaml`, `intents.yaml`) and a single CLI entry point (`cli.py`) but
+otherwise operate independently.
 
 ```text
                        ┌──────────────┐
@@ -114,8 +114,13 @@ to add one.
 
 - `agent_benchmarks/llm.py` — provider-neutral LLM call wrapper (LiteLLM-based)
   with retry, token accounting, and concurrency.
-- `agent_benchmarks/registry.py` — library registry loaded from
-  `libraries.yaml`; powers `cli.py library` and `cli.py benchmark`.
+- `agent_benchmarks/registry.py` — product registry loaded from
+  `products.yaml`; powers `cli.py library` (alias `product`) and
+  `cli.py benchmark`.
+- `agent_benchmarks/intents.py` — intent registry loaded from `intents.yaml`:
+  the problem/intent space mapping domains (data science, debugging,
+  optimization, …) to the products that serve them. Consistency with
+  `products.yaml` is enforced by `python -m agent_benchmarks.config_check`.
 - `config/products.yaml` — per-product config: GitHub repo, Context7 ID,
   retrieval defaults, judge model, persona count.
 - `benchmarks/spec.v1.yaml` + `benchmarks/spec.schema.json` — declarative

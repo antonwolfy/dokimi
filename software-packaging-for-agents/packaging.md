@@ -66,7 +66,7 @@ setup_guide: setup/onetbb-env.sh               # executable, sandbox-verified en
 
 # ── Provenance & evidence ───────────────────────────────────────────────────
 provenance:
-  source_libraries: [onetbb]                    # keys from libraries.yaml
+  source_libraries: [onetbb]                    # keys from products.yaml
   built_from: agent-benchmark@<git-sha>
 scorecard:                                       # the shipped credential (§4)
   benchmark: agent-benchmark/arms

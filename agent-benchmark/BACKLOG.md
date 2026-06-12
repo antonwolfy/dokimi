@@ -85,7 +85,7 @@ Sub-epics (code, deferred to follow-up PRs pending open questions Q3–Q6):
   (+ a benchmark scorecard) into a `package.yaml` manifest; `package build` CLI.
 - **#58b — Per-runtime exporters.** Anthropic Agent Skills layout first
   (`SKILL.md` already conforms), then Claude plugin, then Hermes/generic.
-- **#58c — Discovery graph.** Consolidate `libraries.yaml` + `COVERAGE.md` +
+- **#58c — Discovery graph.** Consolidate `products.yaml` + `intents.yaml` + `COVERAGE.md` +
   fixtures into one capability graph; fit-based + scorecard ranking.
 - **#58d — Eval-scorecard-as-credential.** Wire `report/arms_report.py` output
   into the package manifest as the shipped, gating credential.

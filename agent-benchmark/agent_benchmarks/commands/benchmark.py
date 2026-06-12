@@ -10,7 +10,7 @@ from agent_benchmarks.commands.library import _load_registry
 
 
 def _run_single_library(entry, output_dir: str, model: str, provider: str, judge_model: str, judge_provider: str = "openai", doc_source_override=None, max_tokens_per_question: int = 4000, force_regen: bool = False, concurrency: int = 5, questions_from=None) -> dict:
-    """Run full evaluation pipeline for one LibraryEntry. Returns result dict."""
+    """Run full evaluation pipeline for one ProductEntry. Returns result dict."""
     from agent_benchmarks.orchestrator import EvaluationPipeline
     from pathlib import Path as _Path
 
@@ -190,7 +190,7 @@ def register(sub, positive_int) -> None:
     bench_run_p.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
     bench_run_p.add_argument("--judge-provider", default="openai", dest="judge_provider",
                              choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
-    bench_run_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
+    bench_run_p.add_argument("--registry", default=None, help="Path to custom products.yaml")
     bench_run_p.add_argument("--max-tokens", type=positive_int, default=4000, dest="max_tokens",
                              help="Max tokens to retrieve per question from doc source (default: 4000)")
     bench_run_p.add_argument("--concurrency", type=positive_int, default=5, dest="concurrency",
@@ -226,7 +226,7 @@ def register(sub, positive_int) -> None:
                                help="Max tokens to retrieve per question from doc source (default: 4000)")
     bench_batch_p.add_argument("--force-regen", action="store_true", dest="force_regen",
                                help="Regenerate personas/questions even if cached files exist")
-    bench_batch_p.add_argument("--registry", default=None, help="Path to custom libraries.yaml")
+    bench_batch_p.add_argument("--registry", default=None, help="Path to custom products.yaml")
     bench_batch_p.add_argument("--fail-fast", action="store_true", dest="fail_fast",
                                help="Stop on first failure (default: continue all)")
     bench_batch_p.set_defaults(func=cmd_benchmark_batch)

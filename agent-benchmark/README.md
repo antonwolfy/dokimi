@@ -71,7 +71,7 @@ questions           Generate, analyze, refine, and panel-review questions
 answers             Generate context-arm and baseline answers
 arms                Compare context-augmentation treatments (docs/MCP/skills/profiles)
 eval                Score answers, run RAGAS, or use a multi-judge panel
-library             List/show registered libraries
+library             List/show registered products and intent domains (alias: product)
 benchmark           Run registered library benchmarks
 dashboard           Generate dashboard Markdown/JSON
 ```
@@ -88,6 +88,31 @@ For end-to-end benchmark and comparison commands, including static snapshots,
 LLM context-arm vs baseline runs, fair multi-model comparisons, treatment arms,
 dashboards, and baselines, see
 [docs/benchmarking-and-comparison.md](docs/benchmarking-and-comparison.md).
+
+## Product and intent registries
+
+Two top-level YAML registries describe what the benchmark can evaluate:
+
+- **`products.yaml`** — *what products exist*: identity, description, repo, and
+  doc sources for each product (oneTBB, oneMKL, VTune, dpnp, …). Used by
+  `python cli.py library …` (alias: `product`) and `python cli.py benchmark …`.
+- **`intents.yaml`** — *what user problems exist*: broad scenario domains
+  (data science, machine learning, performance optimization, debugging, …),
+  each mapped to the products that serve it, with example user intents. A
+  domain may span several products — the seed of the discovery layer's
+  capability/intent graph (see
+  [`../software-packaging-for-agents/discovery.md`](../software-packaging-for-agents/discovery.md)).
+
+The domain→product mapping lives only in `intents.yaml`;
+`python -m agent_benchmarks.config_check` (run in CI) fails if it references an
+unregistered product, or if `config/products.yaml` drifts from `products.yaml`.
+Explore the mapping with:
+
+```bash
+python cli.py library intents                       # list domains + products
+python cli.py library list --domain data-science    # products for a domain
+python cli.py library show vtune                    # includes the product's domains
+```
 
 ## Static benchmark metrics
 
@@ -142,9 +167,10 @@ Included tasks cover oneTBB, oneMKL, oneDPL, IPP, and sklearnex examples. They a
 ```text
 cli.py                   Single entry point for all CLI commands
 benchmarks/              Static benchmark spec and schema
-config/                  Product/library configuration
-libraries.yaml           Registered libraries for the LLM evaluation pipeline
-agent_benchmarks/          Main Python package
+config/                  LLM/runtime configuration for the eval track
+products.yaml            Product registry: identity + doc sources per product
+intents.yaml             Intent registry: problem/task domains mapped to products
+agent_benchmarks/        Main Python package
   agent_profiles/        Agent persona prompt loader
   dashboard/             Dashboard aggregation/rendering
   eval/                  Answer generation, judges, panels, RAGAS, arm runner

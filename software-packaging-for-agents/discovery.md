@@ -48,7 +48,8 @@ Markdown tables rather than being one queryable structure.
 
 | Graph element | Existing source in the repo |
 |---|---|
-| Library / product nodes | [`libraries.yaml`](../agent-benchmark/libraries.yaml) — 22 products with name, description, repo, doc sources, grouped by domain (Threading, Math & Numerics, …) |
+| Library / product nodes | [`products.yaml`](../agent-benchmark/products.yaml) — 22 products with name, description, repo, doc sources, grouped by domain (Threading, Math & Numerics, …) |
+| Intent/domain seeds (`Capability` spine) | [`intents.yaml`](../agent-benchmark/intents.yaml) — problem domains (data science, debugging, optimization, …) → products, with example user intents |
 | API / concept nodes + "task covers API" edges | [`terminal-bench-tasks/COVERAGE.md`](../agent-benchmark/terminal-bench-tasks/COVERAGE.md) — per-component API/concept → task → verifier matrix |
 | Skill nodes + trigger hints | `data/skills/*/SKILL.md` frontmatter `description` (the trigger hint) |
 | Agent-profile nodes | `data/agent_profiles/*.md` frontmatter `description` |
@@ -66,7 +67,7 @@ collect new data.
 - `Capability` / `Intent` — the spine. A normalized statement of *what an agent
   wants to do* ("parallel reduction over a large array in C++", "forward FFT
   with round-trip accuracy guarantees"). Independent of any product name.
-- `Library` — from `libraries.yaml` (oneTBB, oneMKL, …).
+- `Library` — from `products.yaml` (oneTBB, oneMKL, …).
 - `API` / `Concept` — from `COVERAGE.md` (`parallel_reduce`, `cblas_dgemm`, `flow::graph`, …).
 - `Skill`, `AgentProfile`, `MCPSource` — the package artifacts.
 - `Package` — a shipped [agent package](packaging.md).
@@ -125,7 +126,9 @@ discovery layer does not introduce a new heavy dependency by default.
   `embeddings` extra, or a dedicated store? Kept open pending team decision.
 - **Capability taxonomy.** Hand-curate the initial `Capability` vocabulary from
   `COVERAGE.md`, or derive it from doc/skill embeddings and cluster? Likely a
-  seed-then-grow hybrid.
+  seed-then-grow hybrid. A first hand-curated layer now exists:
+  [`intents.yaml`](../agent-benchmark/intents.yaml) maps ten problem domains to
+  products with example intents.
 - **Re-scoring cadence.** A scorecard ages as docs/libraries change; how does the
   graph mark a scorecard stale and trigger re-evaluation?
 - **External federation.** Do we expose this graph so other catalogs can ingest

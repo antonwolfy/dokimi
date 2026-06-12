@@ -28,7 +28,7 @@ rest on a stale stamp. The loop must keep the credential current.
                                                              re-score → new scorecard)
 
    UPSTREAM docs change ── freshness signal ──► PACKAGE
-   (libraries.yaml sources)                     (mark scorecard stale, re-evaluate)
+   (products.yaml sources)                     (mark scorecard stale, re-evaluate)
 
    TELEMETRY ── gaps, mis-triggers, loops ──► AUTHOR
                                               (what to distill / fix next)
@@ -51,7 +51,7 @@ Production telemetry from [serving](serving.md) is exactly the input the
 The static benchmark already scores files by modification age
 (`freshness_lite`). Point it the other way:
 
-- When a library's tracked doc sources (`libraries.yaml`) change, mark every
+- When a library's tracked doc sources (`products.yaml`) change, mark every
   package that depends on it as **scorecard-stale** in the discovery graph.
 - CI re-evaluates stale packages and re-emits the scorecard; the catalog shows
   "last verified against oneTBB vX; docs unchanged since `<date>`".

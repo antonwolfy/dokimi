@@ -1,9 +1,14 @@
-# Library registry — known products for agent-benchmark
+# Product registry — known products for agent-benchmark.
+#
+# This file answers "what products exist" (identity: name, description, repo,
+# doc sources). The problem/intent space that maps these products to user
+# scenarios (data science, debugging, optimization, …) lives in `intents.yaml`.
+#
 # Run single:  python -m agent_benchmarks benchmark run --library <name>
 # Run batch:   python -m agent_benchmarks benchmark batch --libraries onetbb,onemkl
 #              python -m agent_benchmarks benchmark batch --all
 
-libraries:
+products:
 
   # ── Threading & Parallelism ──────────────────────────────────────────────
 
@@ -253,8 +258,6 @@ libraries:
       Works without recompilation. Integrates with VTune for full perf+correctness workflow.
     doc_sources:
       - url:https://www.intel.com/content/www/us/en/docs/inspector/user-guide/2024-2/overview.html
-
-  # ── Debugging ─────────────────────────────────────────────────────────────
 
   gdb_intel:
     name: Intel Distribution for GDB
