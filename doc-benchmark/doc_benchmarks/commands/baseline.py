@@ -158,7 +158,7 @@ def cmd_baseline_compare(args: argparse.Namespace) -> None:
 
     print(f"{'Metric':<20} {'Baseline':>10} {'Current':>10} {'Change':>8}")
     print("─" * 52)
-    for k, label in [("avg_with", "WITH docs avg"), ("avg_without", "WITHOUT avg"), ("avg_delta", "Avg delta")]:
+    for k, label in [("avg_with", "Context avg"), ("avg_without", "Baseline avg"), ("avg_delta", "Avg delta")]:
         b_val = base_summary.get(k, "?")
         c_val = cur_summary.get(k, "?")
         try:

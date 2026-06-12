@@ -73,8 +73,8 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         if "summary" in results["steps"]["evaluation"]:
             summary = results["steps"]["evaluation"]["summary"]
             print("\nResults:")
-            print(f"  WITH docs avg:    {summary['with_avg']}")
-            print(f"  WITHOUT docs avg: {summary['without_avg']}")
+            print(f"  Context avg:      {summary['with_avg']}")
+            print(f"  Baseline avg:     {summary['without_avg']}")
             print(f"  Delta:            {summary['delta_avg']:+.1f}")
 
         print(f"\n📊 View full report: cat {results['steps']['report']['path']}")

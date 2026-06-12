@@ -1,4 +1,4 @@
-"""Generate answers to questions using LLM (with and without documentation)."""
+"""Generate context-arm and baseline answers to questions using an LLM."""
 
 import logging
 import json
@@ -44,8 +44,8 @@ class Answerer:
     Generate answers to questions using LLM.
     
     Supports two modes:
-    - WITH docs: Retrieve docs via MCP, then answer with context
-    - WITHOUT docs: Answer from LLM knowledge only (baseline)
+    - Context arm: retrieve docs via MCP, then answer with context.
+    - Baseline: answer from LLM knowledge only.
     """
     
     def __init__(
@@ -60,7 +60,7 @@ class Answerer:
     ):
         """
         Args:
-            mcp_client: MCP client for doc retrieval (e.g., Context7Client)
+            mcp_client: MCP client for context retrieval (e.g., Context7Client)
             model: LLM model name
             provider: "openai" or "anthropic"
             api_key: Optional API key
@@ -118,7 +118,7 @@ class Answerer:
         concurrency: int = 1,
     ) -> List[Dict[str, Any]]:
         """
-        Generate answers for all questions (WITH and WITHOUT docs).
+        Generate context-arm and baseline answers for all questions.
 
         Args:
             library_name: Library name (e.g., "oneTBB")
@@ -187,8 +187,8 @@ class Answerer:
         errors = sum(1 for a in answers if a.get("error"))
 
         print("\n✓ Generated answers:", flush=True)
-        print(f"  WITH docs:    {ok_with}/{n}", flush=True)
-        print(f"  WITHOUT docs: {ok_without}/{n}", flush=True)
+        print(f"  Context arm:  {ok_with}/{n}", flush=True)
+        print(f"  Baseline:     {ok_without}/{n}", flush=True)
         if errors:
             print(f"  Errors:       {errors}", flush=True)
         return answers
@@ -200,7 +200,7 @@ class Answerer:
         question: Dict[str, Any],
         max_tokens: int
     ) -> Dict[str, Any]:
-        """Generate WITH and WITHOUT answers for a single question."""
+        """Generate context-arm and baseline answers for a single question."""
         question_text = (
             question.get("question")
             or question.get("text")
@@ -208,7 +208,7 @@ class Answerer:
         )
         qid = question.get("id") or question.get("question_id") or "unknown_q"
         
-        # WITH docs
+        # Context arm
         with_docs_answer = None
         if self.mcp_client is not None:
             retrieved_docs, retrieval_metadata = self._retrieve_docs(
@@ -216,7 +216,7 @@ class Answerer:
             )
             
             if retrieved_docs:
-                # Generate answer with retrieved docs
+                # Generate answer with retrieved context
                 with_docs_answer = self._generate_with_docs(
                     question_text, retrieved_docs, retrieval_metadata
                 )
@@ -234,9 +234,9 @@ class Answerer:
                     "retrieval_metadata": retrieval_metadata if self.debug_retrieval else None
                 }
         else:
-            logger.warning(f"No MCP client - skipping WITH docs for {qid}")
+            logger.warning(f"No MCP client - skipping context arm for {qid}")
         
-        # WITHOUT docs
+        # Baseline
         without_docs_answer = self._generate_without_docs(question_text)
         
         result = {
@@ -310,7 +310,7 @@ class Answerer:
                 return ([], metadata) if return_metadata else []
                 
         except Exception:
-            logger.exception("Doc retrieval failed")
+            logger.exception("Context retrieval failed")
             return ([], metadata) if return_metadata else []
     
     def _generate_with_docs(
@@ -319,7 +319,7 @@ class Answerer:
         docs: List[Dict[str, Any]],
         retrieval_metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Generate answer WITH documentation context."""
+        """Generate context-arm answer."""
         if not docs:
             return {
                 "answer": "[No documentation retrieved]",
@@ -377,7 +377,7 @@ class Answerer:
         return result
 
     def _generate_without_docs(self, question: str) -> Dict[str, Any]:
-        """Generate answer WITHOUT documentation (baseline)."""
+        """Generate baseline answer."""
         prompt = ANSWER_PROMPT_WITHOUT_DOCS.format(question=question)
 
         answer_text, usage = llm_call_with_usage(

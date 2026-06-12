@@ -150,8 +150,8 @@ def test_render_dashboard_contains_product():
 
 def test_render_dashboard_contains_table_headers():
     md = render_dashboard(_make_dashboard())
-    assert "With Docs" in md
-    assert "Without Docs" in md
+    assert "Context Arm" in md
+    assert "Baseline" in md
     assert "Delta" in md
 
 

@@ -181,8 +181,8 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
         "correctness, completeness, specificity, code quality, actionability. "
         "**Aggregate** is their weighted average.",
         "",
-        "**Delta = WITH docs − WITHOUT docs score**",
-        "Positive = docs helped. Zero/negative = model already knew the answer, or retrieved chunks were off-topic.",
+        "**Delta = context-arm score − baseline score**",
+        "Positive = context helped. Zero/negative = model already knew the answer, or retrieved chunks were off-topic.",
         "",
         "| Question type | Description |",
         "|---|---|",
@@ -191,8 +191,8 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
         "",
         "| Diagnosis | Meaning |",
         "|---|---|",
-        "| ✅ Docs helped | Delta > 0 — retrieval improved the answer |",
-        "| 🔵 Model knowledge sufficient | Delta ≤ 0 — model answered without needing docs |",
+        "| ✅ Context helped | Delta > 0 — retrieved context improved the answer |",
+        "| 🔵 Baseline sufficient | Delta ≤ 0 — model answered without extra context |",
         "| 🔴 Empty retrieval | No chunks retrieved |",
         "| 🟡 Low relevance | Retrieved chunks were off-topic |",
         "| ⚪ Insufficient data | Score or answer missing |",
@@ -202,7 +202,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     # Summary
     lines += [
         "## Summary",
-        "| Set | Count | WITH docs | WITHOUT docs | Delta |",
+        "| Set | Count | Context arm | Baseline | Delta |",
         "|---|---:|---:|---:|---:|",
         f'| **All** | {all_stats["count"]} | {all_stats["with_avg"]} | {all_stats["without_avg"]} | **{all_stats["delta_avg"]:+}** |',
         f'| Generated (dynamic) | {dyn_stats["count"]} | {dyn_stats["with_avg"]} | {dyn_stats["without_avg"]} | **{dyn_stats["delta_avg"]:+}** |',
@@ -236,7 +236,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     # Dynamic vs Static breakdown
     lines += [
         "## Breakdown: Dynamic vs Static",
-        "| Set | Count | WITH | WITHOUT | Delta | Improved | Degraded | Neutral |",
+        "| Set | Count | Context | Baseline | Delta | Improved | Degraded | Neutral |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for label, s in [
@@ -253,7 +253,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     # Difficulty breakdown
     lines += [
         "## Breakdown by Difficulty",
-        "| Difficulty | Count | WITH | WITHOUT | Delta | Improved | Degraded |",
+        "| Difficulty | Count | Context | Baseline | Delta | Improved | Degraded |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for d in DIFFICULTY_ORDER:
@@ -288,8 +288,8 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
 
     # Top 15 helped
     lines += [
-        "## Top 15 — Docs Helped Most",
-        "| QID | Source | Delta | WITH | WITHOUT | Difficulty | Question |",
+        "## Top 15 — Context Helped Most",
+        "| QID | Source | Delta | Context | Baseline | Difficulty | Question |",
         "|---|---|---:|---:|---:|---|---|",
     ]
     for e in sorted(valid_all, key=lambda x: x["delta"] if isinstance(x["delta"], (int, float)) else 0, reverse=True)[:15]:
@@ -306,7 +306,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     # Bottom 15 degradations
     lines += [
         "## Bottom 15 — Biggest Degradations",
-        "| QID | Source | Delta | WITH | WITHOUT | Difficulty | Question |",
+        "| QID | Source | Delta | Context | Baseline | Difficulty | Question |",
         "|---|---|---:|---:|---:|---|---|",
     ]
     for e in sorted(valid_all, key=lambda x: x["delta"] if isinstance(x["delta"], (int, float)) else 0)[:15]:
@@ -320,16 +320,16 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
         )
     lines.append("")
 
-    # Worst baseline (WITHOUT docs) by absolute score
+    # Worst baseline by absolute score
     baseline_sorted = [
         e for e in evals
         if e.get("without_docs") and e["without_docs"].get("aggregate") is not None
     ]
     lines += [
-        "## Baseline Weak Spots (WITHOUT docs absolute score)",
+        "## Baseline Weak Spots",
         "_Lowest absolute scores for the base model without retrieval context._",
         "",
-        "| QID | Source | WITHOUT score | WITH score | Difficulty | Question |",
+        "| QID | Source | Baseline score | Context score | Difficulty | Question |",
         "|---|---|---:|---:|---|---|",
     ]
     for e in sorted(baseline_sorted, key=lambda x: x["without_docs"]["aggregate"])[:15]:
@@ -344,7 +344,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     # Full Q&A — Static
     lines += [
         "## Full Q&A Table — Golden Static Questions",
-        "| QID | Difficulty | WITH | WITHOUT | Delta | Question |",
+        "| QID | Difficulty | Context | Baseline | Delta | Question |",
         "|---|---|---:|---:|---:|---|",
     ]
     for e in sorted(static_qs, key=lambda x: (x.get("difficulty", ""), x["question_id"])):
@@ -361,7 +361,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     # Full Q&A — Dynamic
     lines += [
         "## Full Q&A Table — Dynamic Generated Questions",
-        "| QID | Difficulty | WITH | WITHOUT | Delta | Question |",
+        "| QID | Difficulty | Context | Baseline | Delta | Question |",
         "|---|---|---:|---:|---:|---|",
     ]
     for e in sorted(dynamic_qs, key=lambda x: (x.get("difficulty", ""), x["question_id"])):
@@ -380,12 +380,12 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
         "## Key Observations & Recommendations",
         "",
         f'- **Overall delta: {all_stats["delta_avg"]:+}** — '
-        + ("documentation is helping." if all_stats["delta_avg"] > 2 else
-           "documentation is neutral or slightly harmful."),
+        + ("context arm is helping." if all_stats["delta_avg"] > 2 else
+           "context arm is neutral or slightly harmful."),
         f'- **Dynamic vs Static agreement:** {dyn_stats["delta_avg"]:+} vs {static_stats["delta_avg"]:+} — '
         + ("good consistency, benchmark is stable." if abs(dyn_stats["delta_avg"] - static_stats["delta_avg"]) < 3
            else "notable gap — investigate question quality."),
-        f'- **Win rate:** {round(all_stats["improvements"]/all_stats["count"]*100) if all_stats["count"] else 0}% questions improved with docs '
+        f'- **Win rate:** {round(all_stats["improvements"]/all_stats["count"]*100) if all_stats["count"] else 0}% questions improved with context '
         f'({all_stats["improvements"]}/{all_stats["count"]}).',
         f'- **Degradations:** {all_stats["degradations"]} questions '
         f'({round(all_stats["degradations"]/all_stats["count"]*100) if all_stats["count"] else 0}%).',

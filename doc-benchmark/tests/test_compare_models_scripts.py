@@ -57,9 +57,9 @@ def test_generate_section_report_uses_common_questions_and_context_labels():
 
     assert "Common questions evaluated: **1**" in text
     assert "| **run-a** | 1 |" in text
-    assert "Context-Arm Benefit" in text
-    assert "Doc Retrieval Benefit" not in text
-    assert "WITH docs" not in text
+    assert "## Context-Arm Benefit — Delta Comparison" in text
+    assert "Delta Comparison" in text
+    assert "Baseline vs treatment" not in text
 
 
 def test_load_run_reports_missing_file():
