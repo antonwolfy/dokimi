@@ -1,3 +1,108 @@
+# doc-benchmark: measure what actually helps an agent
+
+The idea in three points:
+
+- An agent is more than its model. It is **model + the context you give it**:
+  docs, skills, MCP servers, system prompts (agent profiles), plugins.
+- All of that is cheap to write — and easy to over-claim. Does it really help,
+  or does it just add tokens?
+- So we test it like an experiment: **change one thing, keep everything else
+  fixed, measure the delta — and check it is statistically significant.**
+
+```mermaid
+flowchart LR
+    Q([same questions]) --> M1[model]
+    Q --> M2[model + artifact]
+    M1 -- "answers → judge" --> S1([score A])
+    M2 -- "answers → judge" --> S2([score B])
+    S1 --> D{{"delta = B − A<br/>p-value: real or noise?"}}
+    S2 --> D
+```
+
+## What can be compared (arms)
+
+| Arm | What it tests |
+|---|---|
+| `baseline` | the bare model (control) |
+| `docs:` / `mcp:` | injected documentation (local files, URL, Context7, real MCP server) |
+| `skill:` | a skill (`SKILL.md`) injected as context |
+| `profile:` | an agent persona system prompt |
+| `agent:` / `skill-agent:` | **agentic** use — the model gets a tool and *decides* whether to fetch docs / load the skill |
+
+Two fine-print notes:
+
+- Plugins (e.g. `plugin:caveman`) are not arms — they go in via `--plugins`
+  and apply to every arm in the run.
+- Set `--judge-model` / `--judge-provider` to a different model than the
+  answerer; the CLI defaults both to the same model, and self-judging
+  inflates scores.
+
+## Example results
+
+One skill, four models, same golden question set:
+
+| Model | WITH skill | WITHOUT skill | Delta | p-value | Significant? |
+|---|---|---|---|---|---|
+| Haiku 4.5 | 66.3 | 56.8 | **+9.5** | 0.0024 | ✅ yes |
+| Opus 4.7 | 78.5 | 73.6 | +4.9 | 0.0842 | ❌ |
+| Sonnet 4.6 | 74.3 | 69.9 | +4.4 | 0.1797 | ❌ |
+| Opus 4.8 | 80.8 | 78.1 | +2.7 | 0.1530 | ❌ |
+
+What this table teaches:
+
+- **Value depends on the model.** The same skill is worth +9.5 to a small
+  model and +2.7 to a frontier one — stronger models already know more.
+- **No p-value, no claim.** Three deltas are positive but not significant —
+  at this sample size they may be judge noise.
+- **The conclusion is targeted.** Ship this skill where it provably helps
+  (smaller/cheaper models); gather more data for the rest.
+
+*Where the stats come from:* the two-arm (with/without) reports compute the
+paired t-test, Wilcoxon, and Cohen's d; the N-way `arms run` report shows
+average scores and deltas vs baseline (use `scripts/compare_models.py` for
+baseline-vs-one-treatment significance). The full `benchmark run` pipeline
+also records a `question_set_hash` to prove question-set reuse across runs.
+
+## How the evaluation flows
+
+```mermaid
+flowchart TD
+    S1["<b>1 · Questions</b><br/>personas (synthetic users) → generated questions,<br/>or curated golden sets"]
+    S2["<b>2 · Answers</b><br/>the same model answers every question once per arm;<br/>agentic arms also record whether the tool was used"]
+    S3["<b>3 · Judge</b><br/>a separate LLM scores all answers (0–100) on 5 dimensions;<br/>optional judge panel + RAGAS cross-checks"]
+    S4["<b>4 · Results</b><br/>deltas vs baseline · significance tests · gates · dashboards<br/>reported per (model × harness × plugins)"]
+    SC(["<b>scorecard</b>: worth +X on model M (p = …) — ship it or cut it"])
+    S1 --> S2 --> S3 --> S4 --> SC
+```
+
+Two more tracks back this up:
+
+- **Static track** — LLM-free checks on the docs themselves: structure,
+  freshness, readability, do the code examples run.
+- **Executable task track** — [`terminal-bench-tasks/`](../terminal-bench-tasks/):
+  the agent must edit code, compile, and pass tests in Docker. A judge can be
+  fooled by prose; a pytest verifier cannot.
+
+## Why this matters
+
+Marketplaces rank agent artifacts by popularity, which buries niche expert
+tooling (focus here: Intel performance libraries — oneTBB, oneDAL, oneMKL).
+Here, every shipped skill, doc source, or profile carries the **scorecard
+that earned it**, kept alive as models and docs change. See the
+[umbrella README](../../README.md) for the bigger
+author → build → **measure** → package → discover → serve cycle.
+
+## Explore
+
+- Run a comparison: [evaluating-treatments.md](evaluating-treatments.md) —
+  `cli.py arms run` with any mix of arms.
+- Full pipeline in one command: [quickstart.md](quickstart.md) — personas →
+  questions → answers → judge → report, with cost estimates.
+- Design rationale: [decisions/benchmark-methodology.md](decisions/benchmark-methodology.md)
+  and [decisions/2026-05-29-evaluating-mcp-skills-personas.md](decisions/2026-05-29-evaluating-mcp-skills-personas.md).
+
+---
+
 # Documentation index
 
 Start with the top-level [README](../README.md) for the project overview and
