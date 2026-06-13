@@ -1,0 +1,12 @@
+Samples: 63K of event 'cycles', Overhead  Command  Symbol
+
+  96.1%  sort_bad  std::sort<...>(...)  (introsort: quicksort + heapsort + insertion)
+   2.4%  sort_bad  fill
+   1.0%  sort_bad  emit
+
+The hot path is a comparison sort (`std::sort`) over a large array of a
+primitive numeric type (`float`). Stable ordering is not required here. This is
+a known pattern: a comparison sort can be replaced with a faster vectorized
+sort (e.g. x86-simd-sort) or a non-comparison radix sort over the bit pattern,
+provided the element type is supported and stability is not needed. Verify the
+result is sorted and is the same multiset before trusting the speedup.

@@ -47,13 +47,26 @@ pattern, apply a safe fix or produce a report, and pass deterministic verifier
 checks. They intentionally avoid privileged `perf` in the first wave; static
 profile artifacts are shipped in the task environment.
 
-| Problem / concept | Task | Status | Verifier strategy |
-| --- | --- | --- | --- |
-| Serial accumulator / low IPC | `intel-perf-serial-accumulator` | implemented | Dot-product equality vs serial reference; speedup threshold; source marker for multiple partial accumulators |
-| False sharing / HITM | `intel-perf-false-sharing` | implemented | Final counter total; speedup vs false-sharing baseline; source marker for cache-line separation |
-| Shared statistics counter / true sharing | `intel-perf-shared-counter` | implemented | Exact total and checksum; speedup vs global atomic baseline; source marker for local aggregation |
-| Missing C `restrict` / alias preamble | `intel-perf-missing-restrict` | implemented | Checksum equality; `restrict` source marker; compiler vectorization evidence |
-| Hotspot report from perf artifacts | `intel-perf-hotspot-report` | implemented | Markdown structure checks; serial-accumulator and false-sharing observations; rejects fake fix claims |
+| Problem / concept | Task | Level | Status | Verifier strategy |
+| --- | --- | --- | --- | --- |
+| Serial accumulator / low IPC | `intel-perf-serial-accumulator` | diagnosis | implemented | Dot-product equality vs serial reference; speedup threshold; source marker for multiple partial accumulators |
+| False sharing / HITM | `intel-perf-false-sharing` | diagnosis | implemented | Final counter total; speedup vs false-sharing baseline; source marker for cache-line separation |
+| Shared statistics counter / true sharing | `intel-perf-shared-counter` | diagnosis | implemented | Exact total and checksum; speedup vs global atomic baseline; source marker for local aggregation |
+| Missing C `restrict` / alias preamble | `intel-perf-missing-restrict` | diagnosis | implemented | Checksum equality; `restrict` source marker; compiler vectorization evidence |
+| Hotspot report from perf artifacts | `intel-perf-hotspot-report` | end_to_end | implemented | Markdown structure checks; serial-accumulator and false-sharing observations; rejects fake fix claims |
+| TAS spinlock cache-line bouncing | `intel-perf-ttas-spinlock` | diagnosis | implemented | Mutual exclusion (exact total at several thread counts); termination under high contention (no livelock); source marker for read-spin-before-exchange (TTAS) |
+| Read-mostly mutex serializes readers | `intel-perf-mutex-rwlock` | diagnosis | implemented | Array checksum equals mutex reference (write path correct); termination under read load; source marker for `shared_mutex`/`shared_lock` |
+| Condition-variable thundering herd | `intel-perf-cv-herd` | diagnosis | implemented | Exact job count + checksum at several worker counts; termination (no deadlock/lost wakeup); per-job path uses `notify_one`, not broadcast |
+| Single-accumulator CRC32C | `intel-perf-crc32c` | diagnosis | implemented | CRC equality vs reference + known vector; >=4x throughput (measured ~14x); source marker for hardware CRC intrinsic + dispatch + scalar fallback |
+| `std::sort` on primitives (stable not required) | `intel-perf-simd-sort` | diagnosis | implemented | Sortedness + same multiset signature vs reference; >=1.8x speedup (measured ~4x); rejects `std::sort` on the hot path |
+
+> Verifier-strategy note: the concurrency tasks (`ttas-spinlock`, `mutex-rwlock`,
+> `cv-herd`) gate on **correctness + structural source markers + termination**
+> rather than a wall-clock speedup threshold. Spinlock/lock fairness is highly
+> machine- and contention-dependent (measured TAS-vs-TTAS wall-clock ratio swung
+> 0.26–1.39 on a 224-core host pinned to 4 CPUs), so a tight speedup gate would
+> be flaky in CI. The deterministic single-thread throughput tasks (`crc32c`,
+> `simd-sort`) keep a conservative speedup gate well below the measured margin.
 
 ### Candidate tasks per component
 

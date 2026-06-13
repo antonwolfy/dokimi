@@ -5,6 +5,7 @@ author_name = "Nikolay Petrov"
 author_email = "nikolay.a.petrov@intel.com"
 difficulty = "medium"
 difficulty_explanation = "Requires producing a structured hotspot report from provided perf artifacts without applying fixes"
+level = "end_to_end"
 category = "debugging"
 tags = ["linux-perf", "hotspot-report", "profiling", "performance", "markdown"]
 

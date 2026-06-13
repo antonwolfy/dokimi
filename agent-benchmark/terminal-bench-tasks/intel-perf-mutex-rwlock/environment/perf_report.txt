@@ -1,0 +1,14 @@
+Samples: 78K of event 'cycles', Overhead  Command  Symbol
+
+  74.2%  rwlock_bad  __lll_lock_wait / pthread_mutex_lock / pthread_mutex_unlock
+  18.9%  rwlock_bad  Table::get   (reader path, serialized on the mutex)
+   3.1%  rwlock_bad  Table::bump
+   ...
+
+The critical section is read-dominated (~99.9% of operations are pure reads),
+but a plain std::mutex serializes readers against each other. Lock wait time
+dominates and grows with core count. This is the read-mostly mutex pattern:
+replace with a reader-writer lock (std::shared_mutex) so readers share the lock
+(std::shared_lock) and only the rare writers take it exclusively
+(std::unique_lock). Confirm reads do not mutate shared state, and beware writer
+starvation under heavy read load. Verify correctness and read-side scaling.

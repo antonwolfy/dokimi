@@ -1,0 +1,12 @@
+Samples: 71K of event 'cycles', Overhead  Command  Symbol
+
+  98.7%  crc_bad  crc32c_sw(unsigned char const*, unsigned long, unsigned int)
+   0.7%  crc_bad  fill
+   0.3%  crc_bad  main
+
+Annotate of crc32c_sw inner loop: a single serial `crc` accumulator updated
+one byte at a time with an 8-iteration shift/xor chain. No SIMD, no hardware
+CRC instruction, no interleaving. CRC32C (Castagnoli) is a known algorithm with
+a dedicated x86 instruction (`crc32`, SSE4.2) — use it with runtime CPU
+dispatch and keep the scalar version as a portable fallback. Verify against
+known output before trusting throughput numbers.

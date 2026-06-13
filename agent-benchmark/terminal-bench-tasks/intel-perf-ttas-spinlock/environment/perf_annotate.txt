@@ -1,0 +1,15 @@
+Samples: 84K of event 'cycles', annotating TasLock::lock():
+
+       │    TasLock::lock():
+       │      while (flag.exchange(1, acquire) == 1) {
+ 91.3% │ ┌──→ mov    $0x1,%eax
+       │ │    lock xchg %eax,(%rdi)        ← atomic write every spin iteration
+       │ │    cmp    $0x1,%eax
+       │ └──── je     <loop>
+       │      ret
+
+perf c2c summary (lock cache line):
+  HITM remote/local on the TasLock::flag line dominates; the line ping-pongs
+  between all waiting cores because each waiter issues `lock xchg` while
+  spinning. Converting to a read-only (test-and-test-and-set) spin keeps the
+  line shared while the lock is held and only writes on a real acquire attempt.

@@ -1,0 +1,18 @@
+perf stat (workers=64, njobs=200000) excerpt:
+
+       3,250,118      context-switches          # very high relative to job count
+       6,480,002      futex wakeups (futex_wake / try_to_wake_up dominant in perf report)
+            high      sched:sched_wakeup events
+         falling      IPC while CPU utilization stays high
+
+perf report top symbols:
+  41%  futex_wake / try_to_wake_up / schedule
+  22%  __pthread_cond_wait / __pthread_cond_broadcast
+   ...
+
+Diagnosis: the pool calls notify_all() on every submitted job, so each single
+job wakes the entire worker pool. All but one worker re-check the predicate and
+go back to sleep — a condition-variable thundering herd. Context switches and
+futex wakeups scale with pool size, not with useful work. Fix: wake only one
+worker per job (notify_one) while still waking all workers once at shutdown.
+Each job must still be processed exactly once.
