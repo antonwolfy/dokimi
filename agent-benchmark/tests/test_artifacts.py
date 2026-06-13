@@ -29,12 +29,30 @@ def test_committed_fixtures_validate():
     cases = [
         ("questions", REPO / "data" / "questions" / "onetbb.json"),
         ("questions", REPO / "data" / "questions" / "onedal.json"),
+        ("questions", REPO / "data" / "questions" / "intel_performance_skills_golden.json"),
         ("answers", REPO / "data" / "answers" / "onetbb.json"),
         ("eval", REPO / "data" / "eval" / "onetbb.json"),
     ]
     for kind, path in cases:
         assert path.exists(), f"missing committed fixture: {path}"
         load_artifact(kind, path)  # raises on failure
+
+
+def test_perf_golden_level_backfill():
+    """Lock the difficulty/level two-axis rubric on the perf golden set.
+
+    Every question carries a ``level`` from the schema enum, and the
+    ``negative_case`` flag (when present) is the boolean ``True`` convention
+    documented in docs/difficulty-rubric.md.
+    """
+    path = REPO / "data" / "questions" / "intel_performance_skills_golden.json"
+    data = load_artifact("questions", path)
+    questions = data["questions"]
+    valid_levels = {"triage", "diagnosis", "end_to_end"}
+    for q in questions:
+        assert q.get("level") in valid_levels, f"{q.get('id')}: bad/missing level {q.get('level')!r}"
+        flag = q.get("metadata", {}).get("negative_case")
+        assert flag in (None, True), f"{q.get('id')}: negative_case must be true or absent, got {flag!r}"
 
 
 def test_stamp_sets_version():

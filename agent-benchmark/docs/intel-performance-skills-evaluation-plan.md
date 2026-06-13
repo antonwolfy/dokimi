@@ -80,6 +80,13 @@ Minimum useful set:
 - At least 4 task types: source-only, profile-only, source+profile, PTS-style
 - Explicit negative cases where the right answer is "do not optimize yet"
 
+Difficulty and level are now two **independent, tagged axes** with a reproducible
+rubric in [`difficulty-rubric.md`](difficulty-rubric.md). Every question carries
+a top-level `level` field and negative cases carry `metadata.negative_case:
+true`. The coverage target is to fill the `level × difficulty` grid (≥4-6 items
+per cell), not to extend the current near-diagonal distribution. Report
+evaluation lift sliced by that grid.
+
 ## Evaluation Rubric
 
 Score answers separately on:

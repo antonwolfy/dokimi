@@ -10,6 +10,7 @@
       "text": "Scenario: A CPU-bound command `./encode --threads=1` is slow. `perf stat` reports IPC 0.55, cache miss rate 0.3%, branch miss rate 0.7%, and kernel time 2%. What performance regime should the agent infer, which workflow should it run next, and which premature conclusions should it avoid?",
       "category": "triage",
       "difficulty": "easy",
+      "level": "triage",
       "expected_topics": [
         "Low IPC with low cache, branch, and kernel signals points to a compute or dependency-chain stall rather than memory, branch, or syscall domination.",
         "Run hotspot profiling with `perf record`/`perf report` and then inspect annotated hot functions before proposing a code change.",
@@ -27,6 +28,7 @@
       "text": "Task: The user asks for source-line hotspots from a stripped production binary. Describe the safe profiling plan, including debug-symbol handling and what must happen to any existing `perf.data` after a rebuild.",
       "category": "profiling_setup",
       "difficulty": "easy",
+      "level": "triage",
       "expected_topics": [
         "Check for DWARF debug information before expensive collection using the skill's debug-symbol building block.",
         "If source is available, offer to rebuild with `-g` while preserving the existing optimization and build flags.",
@@ -44,6 +46,7 @@
       "text": "Scenario: Source contains `for (size_t i = 0; i < n; ++i) sum += a[i] * b[i];`. No profile has been collected yet. Should the agent wait for `perf annotate`, or invoke a pattern workflow now? Explain the expected diagnosis and verification.",
       "category": "source_pattern_detection",
       "difficulty": "easy",
+      "level": "diagnosis",
       "expected_topics": [
         "A single scalar accumulator in a hot loop is a strong source-level trigger for the serial accumulator pattern.",
         "Invoke the performance-patterns skill early and read the parallel-accumulator guidance before rewriting.",
@@ -61,6 +64,7 @@
       "text": "Scenario: `perf stat` reports IPC 0.7, cache miss rate 18%, branch miss rate 1%, and low kernel time. What should the agent conclude, and what classes of fixes are reasonable to investigate first?",
       "category": "counter_interpretation",
       "difficulty": "easy",
+      "level": "triage",
       "expected_topics": [
         "Low IPC plus high cache miss rate indicates a memory-bound workload.",
         "Investigate data layout, cache locality, blocking, prefetching, and working-set behavior before instruction-level tuning.",
@@ -78,6 +82,7 @@
       "text": "Task: A user says: \"Profile and optimize `pts/compress-zstd`.\" What should the agent do before running any manual `perf` or build command, and why?",
       "category": "pts_integration",
       "difficulty": "easy",
+      "level": "triage",
       "expected_topics": [
         "Immediately invoke the phoronix-test-suite skill when the target is a `pts/<name>` benchmark.",
         "Let that skill resolve/install/run the test and handle source extraction, rebuild flags, binary deployment, and result recording.",
@@ -95,6 +100,7 @@
       "text": "Scenario: A service scales from 1 to 4 cores but plateaus after 8 cores. At 32 cores, `perf report` shows `pthread_mutex_lock` and futex paths. What workflow should the agent run, and what evidence should it collect before proposing a lock change?",
       "category": "scaling_analysis",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Use the core-count scaling analysis workflow with threading inspection, scaling sweep, and dual 1-core versus N-core profiles.",
         "Identify jumping functions and connect them to lock, futex, or c2c evidence before classifying the bottleneck.",
@@ -112,6 +118,7 @@
       "text": "Scenario: `perf c2c` shows a cache line with 12% total HITM. Thread A writes offset 0 and thread B writes offset 8 in the same struct. How should the agent classify the problem, what fix shape should it propose, and how should it verify it?",
       "category": "cache_contention",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Different threads writing different offsets on the same hot cache line indicates false sharing.",
         "Use the structured false-sharing fix pattern: separate or align/pad independently written fields so they do not share a cache line.",
@@ -129,6 +136,7 @@
       "text": "Scenario: `perf annotate` shows a hot loop using `xmm` registers on a machine that supports AVX2 but not AVX-512. What should the agent inspect, which pattern applies, and what should it avoid recommending?",
       "category": "simd",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Check CPU capabilities to establish the supported vector-width tier.",
         "Classify the loop as narrow SIMD and apply SIMD upconversion guidance toward AVX2/YMM where semantics allow.",
@@ -146,6 +154,7 @@
       "text": "Scenario: `perf stat -e other_assists.avx_to_sse,other_assists.sse_to_avx` reports non-zero AVX-to-SSE assists, and annotate shows an extreme cost on the first SSE instruction after an AVX function. What is the likely pattern and the minimal verification loop?",
       "category": "simd_transition",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Classify this as a missing `vzeroupper` AVX-to-SSE transition penalty.",
         "Add `vzeroupper` or `_mm256_zeroupper()` at appropriate AVX exits before returning to SSE code, following the pattern detail file.",
@@ -163,6 +172,7 @@
       "text": "Scenario: A C function `void add(float *a, float *b, float *out, int n)` is called only with non-overlapping buffers. Annotate shows a scalar aliasing preamble and two loop versions. What should the agent propose, and what language/verification caveats matter?",
       "category": "compiler_vectorization",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Recognize missing `restrict` as the likely source of alias checks or scalar fallback.",
         "Only propose `restrict` when the non-overlap contract is true and document that this is C-specific; C++ uses non-standard `__restrict__` extensions.",
@@ -180,6 +190,7 @@
       "text": "Scenario: A spinlock uses a loop that repeatedly performs `lock cmpxchg` until it succeeds. Throughput declines as thread count rises. What should the agent diagnose and what evidence distinguishes this from an ordinary mutex bottleneck?",
       "category": "lock_contention",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Diagnose a test-and-set spinlock pattern causing cache-line bouncing under contention.",
         "Evidence includes `lock cmpxchg` or `lock xchg` density in annotate and a dual-profile jump at high core counts.",
@@ -197,6 +208,7 @@
       "text": "Scenario: A request path updates `atomic_fetch_add(&global_bytes, n)` for every packet. At 64 threads, this counter dominates. How should the agent classify the bottleneck, and why is this not automatically a false-sharing fix?",
       "category": "shared_counters",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Classify the bottleneck as a shared statistics counter or true-sharing counter hotspot.",
         "Propose per-CPU, per-thread, or batched aggregation rather than a single global atomic in the hot path.",
@@ -214,6 +226,7 @@
       "text": "Scenario: A worker pool calls `notify_all()` for each job. Profiles show `futex_wake`, `try_to_wake_up`, high context-switch rates, and collapsing IPC while CPU utilization remains high. What diagnosis should the agent make and how should it validate the fix?",
       "category": "scheduler_overhead",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Recognize condition-variable thundering herd rather than useful compute saturation.",
         "Reduce wakeups by waking only workers that have work or by using a bounded queue/work accounting design.",
@@ -231,6 +244,7 @@
       "text": "Scenario: A read-mostly cache is protected by `pthread_mutex_lock`; writes are rare, and readers dominate at high core counts. What information must the agent gather before recommending an rwlock, and what risks should it mention?",
       "category": "lock_design",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Confirm the critical section is genuinely read-heavy and that reads do not mutate shared state.",
         "Use profile/lock evidence to show reader serialization is the bottleneck before proposing mutex-to-rwlock.",
@@ -240,7 +254,8 @@
         "persona": "c_service_maintainer",
         "skill_under_test": "performance-patterns",
         "expected_workflow": "mutex-to-rwlock pattern",
-        "why_it_matters": "Avoids a common but unsafe blanket recommendation to replace every mutex with an rwlock."
+        "why_it_matters": "Avoids a common but unsafe blanket recommendation to replace every mutex with an rwlock.",
+        "negative_case": true
       }
     },
     {
@@ -248,6 +263,7 @@
       "text": "Scenario: A hot function named `crc32c_update` is dominated by a single `_mm_crc32_u64` accumulator. What should the agent infer and what does a robust replacement plan need to include?",
       "category": "known_algorithms",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Recognize fast CRC32C as a known performance pattern and avoid treating the single accumulator as memory-bound by default.",
         "Use a multi-accumulator or VPCLMULQDQ-based implementation with runtime CPU dispatch and a portable fallback.",
@@ -265,6 +281,7 @@
       "text": "End-to-end task: The user asks: \"Create a hotspot report for `./solver case1`.\" What should the final artifact contain, and where should the agent stop short if the user only asked for a report?",
       "category": "reporting",
       "difficulty": "hard",
+      "level": "end_to_end",
       "expected_topics": [
         "Run the hotspot report workflow: ensure debug symbols, collect/reuse perf record, optionally collect perf stat for short runs, and identify top functions.",
         "Produce a structured Markdown report with system-level summary, top functions, annotated source or assembly fallback, and pattern observations.",
@@ -282,6 +299,7 @@
       "text": "End-to-end task: The user asks: \"Optimize `pts/x265` and report the gain.\" List the required lifecycle from baseline to final report, including which skills own which steps.",
       "category": "benchmark_optimization",
       "difficulty": "hard",
+      "level": "end_to_end",
       "expected_topics": [
         "Use phoronix-test-suite to resolve/install/run the baseline, parse the score/unit, persist the baseline, and prepare source safely.",
         "Use linux-perf to profile the actual benchmark binary and performance-patterns to select evidence-backed optimizations.",
@@ -299,6 +317,7 @@
       "text": "End-to-end task: A user asks: \"Why does adding cores make this program slower?\" Describe a high-quality investigation plan and the stopping condition for iteration.",
       "category": "scaling_analysis",
       "difficulty": "hard",
+      "level": "end_to_end",
       "expected_topics": [
         "Start with threading inspection and a scaling sweep to locate the inflection point, collecting anchor profiles where useful.",
         "Compare 1-core and N-core profiles to find jumping functions, then use focused c2c/annotate evidence to classify each bottleneck.",
@@ -316,6 +335,7 @@
       "text": "Scenario: A profile shows the dominant hotspot in a system `.so` rather than the application binary, and the symbol is listed in the skill's known library-version table. What should the agent recommend and what should it avoid?",
       "category": "dependency_hotspots",
       "difficulty": "hard",
+      "level": "diagnosis",
       "expected_topics": [
         "Classify this as a library version upgrade opportunity when the symbol and DSO match the known table.",
         "Recommend an upgrade or controlled A/B experiment with a newer library version before changing application source.",
@@ -333,6 +353,7 @@
       "text": "Task: Review a new analytics path that repeatedly calls `std::sort` on large `float` arrays and does not require stable ordering. What performance opportunity should the agent consider, and what compatibility checks are needed before recommending it?",
       "category": "algorithm_replacement",
       "difficulty": "hard",
+      "level": "diagnosis",
       "expected_topics": [
         "Recognize SIMD sort as a known pattern for primitive numeric arrays.",
         "Check whether stable ordering is required, whether data types are supported, and which CPU ISA/dispatch path is available.",
@@ -350,6 +371,7 @@
       "text": "Scenario: `perf stat` shows high branch-miss rate above 8% while cache misses are low. The hot source has rare error checks inside a tight loop. What should the agent investigate before changing the algorithm?",
       "category": "branch_behavior",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Treat high branch misses with low cache misses as a branch-heavy signal that needs source/annotate confirmation.",
         "Inspect hot branches and compare dynamic branch behavior with static expectations where useful.",
@@ -367,6 +389,7 @@
       "text": "Task: A benchmark run is only 300 ms and has noisy counter values. What should the agent do to make `perf stat` evidence more trustworthy?",
       "category": "measurement_rigor",
       "difficulty": "easy",
+      "level": "triage",
       "expected_topics": [
         "Use repeated `perf stat -r N` runs for short workloads and report mean/variance rather than a single sample.",
         "Keep workload inputs and CPU affinity consistent where possible.",
@@ -384,6 +407,7 @@
       "text": "Scenario: A user asks to run hardware counter profiling but `/proc/sys/kernel/perf_event_paranoid` is 3. What should the agent do next?",
       "category": "permissions",
       "difficulty": "easy",
+      "level": "triage",
       "expected_topics": [
         "Explain that hardware events require elevated permissions at that paranoia level.",
         "Offer the documented options: run with sudo, lower paranoia level, or skip hardware counter collection.",
@@ -393,7 +417,8 @@
         "persona": "linux_operator",
         "skill_under_test": "linux-perf",
         "expected_workflow": "perf setup permission check",
-        "why_it_matters": "Checks safe operational behavior around privileged profiling."
+        "why_it_matters": "Checks safe operational behavior around privileged profiling.",
+        "negative_case": true
       }
     },
     {
@@ -401,6 +426,7 @@
       "text": "Scenario: The top hotspot is a tiny helper inlined into a larger request handler. How should the agent decide which source function is the real optimization candidate?",
       "category": "profile_interpretation",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Check inlining context with perf report/objdump/addr2line rather than optimizing the helper in isolation.",
         "If the inlinee is a thin wrapper around a lock or atomic, prioritize the outer calling pattern.",
@@ -418,6 +444,7 @@
       "text": "Task: A long-running workload takes 20 minutes. The user wants a hotspot report. How should the agent balance `perf record`, call graphs, and optional `perf stat` without wasting time?",
       "category": "reporting",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Ensure debug symbols before the expensive recording.",
         "Collect or reuse a valid `perf.data`; choose call graphs if needed and acceptable overhead is clear.",
@@ -435,6 +462,7 @@
       "text": "Scenario: A flamegraph shows a hot function named `cosine_similarity` over float vectors. The implementation is scalar. What should the agent do?",
       "category": "known_algorithms",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Recognize a known algorithm with optimized SIMD replacement potential.",
         "Check CPU ISA support and dispatch requirements before generating specialized code.",
@@ -452,6 +480,7 @@
       "text": "Scenario: The user asks for a fast Hamming distance routine for byte arrays on mixed Intel CPUs. What should a skill-aware implementation plan include?",
       "category": "known_algorithms",
       "difficulty": "hard",
+      "level": "end_to_end",
       "expected_topics": [
         "Use known Hamming/popcount algorithm guidance instead of inventing a naive byte loop.",
         "Provide CPU-dispatched variants where ISA support differs, plus a portable fallback.",
@@ -469,6 +498,7 @@
       "text": "Scenario: A hot loop uses `_mm_*` SSE intrinsics and hand-written unrolling. The target fleet includes AVX2 and older SSE-only hosts. How should the agent propose modernization?",
       "category": "simd",
       "difficulty": "hard",
+      "level": "diagnosis",
       "expected_topics": [
         "Identify narrow SIMD as an opportunity but preserve support for SSE-only machines.",
         "Use CPU dispatch or compiler target variants to select AVX2 where available and fallback otherwise.",
@@ -486,6 +516,7 @@
       "text": "Task: A PTS test has no source compilation step because it uses a prebuilt binary. The user still asks to edit and optimize the source. What should the agent report?",
       "category": "pts_integration",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Inspect the PTS install script/source preparation path to determine whether source editing is possible.",
         "If there is no compilation/source step, state that source editing is not possible through the PTS workflow.",
@@ -495,7 +526,8 @@
         "persona": "benchmark_owner",
         "skill_under_test": "phoronix-test-suite",
         "expected_workflow": "PTS source preparation guardrail",
-        "why_it_matters": "Prevents fake optimization claims on non-editable benchmark artifacts."
+        "why_it_matters": "Prevents fake optimization claims on non-editable benchmark artifacts.",
+        "negative_case": true
       }
     },
     {
@@ -503,6 +535,7 @@
       "text": "Scenario: A PTS benchmark score improves from 120 to 110 after a change, but its metadata says higher is better. How should the agent report the result?",
       "category": "benchmark_reporting",
       "difficulty": "easy",
+      "level": "diagnosis",
       "expected_topics": [
         "Use the PTS `hib` metadata to determine score direction.",
         "Report this as a regression when higher is better, even though the numeric value changed downward.",
@@ -520,6 +553,7 @@
       "text": "Scenario: A hot path calls `fprintf` and `abort` from inside a rarely-taken error branch in a function that otherwise dominates runtime. What should the agent investigate?",
       "category": "code_layout",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Recognize a possible cold-path annotation opportunity.",
         "Confirm the branch is rare using profile or branch probability evidence where available.",
@@ -537,6 +571,7 @@
       "text": "Task: The user gives only a `perf.data` file and no command line. What should the agent be able to do, and what limitations must it state?",
       "category": "profile_reuse",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Reuse a valid existing recording for top functions and annotation if it matches the current binary and debug symbols.",
         "State limitations around missing workload command, environment, repeatability, and stale address mappings.",
@@ -546,7 +581,8 @@
         "persona": "performance_consultant",
         "skill_under_test": "linux-perf",
         "expected_workflow": "perf.data reuse guardrails",
-        "why_it_matters": "Tests practical handling of partial artifacts."
+        "why_it_matters": "Tests practical handling of partial artifacts.",
+        "negative_case": true
       }
     },
     {
@@ -554,6 +590,7 @@
       "text": "Scenario: Flow D finds more than ten jumping functions at high core counts, making prioritization unclear. What should the agent do next?",
       "category": "scaling_analysis",
       "difficulty": "hard",
+      "level": "end_to_end",
       "expected_topics": [
         "Recognize that the delta is too broad to prioritize reliably.",
         "Collect or reuse a midpoint profile at N/2 cores and compare midpoint versus N-core to isolate late-scaling bottlenecks.",
@@ -571,6 +608,7 @@
       "text": "Task: A user asks the agent to apply a false-sharing fix immediately after seeing a c2c table, but source ownership is unclear. What should a safe response contain before editing code?",
       "category": "change_control",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Show the affected struct or fields and connect them to HITM offsets/functions.",
         "Explain the proposed layout change and possible ABI/memory footprint impact.",
@@ -580,7 +618,8 @@
         "persona": "library_maintainer",
         "skill_under_test": "performance-patterns",
         "expected_workflow": "false-sharing presentation protocol",
-        "why_it_matters": "Performance fixes can change ABI/layout; this tests safe edit discipline."
+        "why_it_matters": "Performance fixes can change ABI/layout; this tests safe edit discipline.",
+        "negative_case": true
       }
     },
     {
@@ -588,6 +627,7 @@
       "text": "Scenario: `perf report` shows high kernel time and syscall-heavy stacks, while user-space compute functions are not dominant. What diagnosis and next actions are appropriate?",
       "category": "syscall_overhead",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Interpret high kernel time as I/O or syscall-bound rather than CPU compute-bound.",
         "Investigate syscall frequency, batching, async I/O, buffering, or lock/futex wait paths depending on stacks.",
@@ -605,6 +645,7 @@
       "text": "Task: Write new performance-sensitive CRC32C code for a library that ships on old and new x86 systems. What should the agent include beyond the fastest kernel?",
       "category": "new_code",
       "difficulty": "hard",
+      "level": "end_to_end",
       "expected_topics": [
         "Use the fast CRC32C implementation guidance with multiple ISA-specific variants.",
         "Add runtime CPU dispatch and a plain portable fallback.",
@@ -622,6 +663,7 @@
       "text": "Scenario: An optimization improves `perf stat` IPC but makes the benchmark score worse. Which result should the agent trust and how should it explain the conflict?",
       "category": "benchmark_rigor",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Trust the benchmark's end metric for user-visible performance when it is valid and reproducible.",
         "Use perf counters to explain mechanisms, not as a substitute for the benchmark score.",
@@ -639,6 +681,7 @@
       "text": "Task: The agent is asked to optimize a program but no source is available. What useful work remains possible, and what claims are out of bounds?",
       "category": "black_box_profiling",
       "difficulty": "medium",
+      "level": "diagnosis",
       "expected_topics": [
         "Collect black-box perf stat/report evidence and identify whether hotspots are in application, libraries, kernel, or runtime.",
         "Suggest configuration, library version, environment, or rebuild-with-symbols experiments where supported.",
@@ -648,7 +691,8 @@
         "persona": "platform_engineer",
         "skill_under_test": "linux-perf",
         "expected_workflow": "black-box profiling with limits",
-        "why_it_matters": "Tests honest boundary setting under incomplete access."
+        "why_it_matters": "Tests honest boundary setting under incomplete access.",
+        "negative_case": true
       }
     },
     {
@@ -656,6 +700,7 @@
       "text": "Scenario: After fixing the top lock bottleneck, a new memory-bound function becomes dominant. What should the agent do according to the scaling workflow?",
       "category": "iteration",
       "difficulty": "hard",
+      "level": "end_to_end",
       "expected_topics": [
         "Treat this as expected bottleneck unmasking after the first fix.",
         "Re-profile the updated binary rather than relying on the stale pre-fix ranking.",
@@ -673,6 +718,7 @@
       "text": "Task: Design an answer rubric for evaluating whether an agent used intel-performance-skills correctly on a performance incident. What dimensions should the rubric score?",
       "category": "meta_evaluation",
       "difficulty": "hard",
+      "level": "end_to_end",
       "expected_topics": [
         "Score correct workflow selection, evidence collection, pattern classification, safe handoff between skills, and before/after verification.",
         "Penalize unsupported fixes, stale profiles after rebuilds, wrong score direction, missing CPU capability checks, and unsafe privileged actions.",

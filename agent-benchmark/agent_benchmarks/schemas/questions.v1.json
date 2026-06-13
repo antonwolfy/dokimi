@@ -59,6 +59,19 @@
               "null"
             ]
           },
+          "level": {
+            "description": "Workflow depth, independent of difficulty. See docs/difficulty-rubric.md.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "triage",
+              "diagnosis",
+              "end_to_end",
+              null
+            ]
+          },
           "expected_topics": {
             "type": "array"
           }
