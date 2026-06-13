@@ -957,6 +957,280 @@
         "why_it_matters": "Negative triage: the correct response sets a hard boundary instead of fabricating a line-level fix.",
         "negative_case": true
       }
+    },
+    {
+      "id": "intel-performance-skills-Q053",
+      "text": "Scenario: `perf c2c` shows one hot cache line where thread A writes a field at offset 0 and thread B writes a different field at offset 56 of the same struct. No other contention. Classify the pattern and name the fix shape.",
+      "category": "cache_contention",
+      "difficulty": "easy",
+      "level": "diagnosis",
+      "expected_topics": [
+        "Two threads writing different offsets on one cache line is textbook false sharing.",
+        "Separate the independently written fields onto distinct cache lines via alignment or padding.",
+        "Verify reduced HITM/c2c signal and improved throughput after the layout change."
+      ],
+      "metadata": {
+        "persona": "multicore_performance_engineer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "false-sharing pattern",
+        "why_it_matters": "Baseline single-pattern detection with no competing signal."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q054",
+      "text": "Scenario: Annotate of a hot `double` reduction loop shows a single accumulator and a long dependency chain on the add. The result has no bit-reproducibility requirement. Name the pattern and the fix shape.",
+      "category": "source_pattern_detection",
+      "difficulty": "easy",
+      "level": "diagnosis",
+      "expected_topics": [
+        "A single accumulator with a serial add dependency chain is the serial-accumulator pattern.",
+        "Split into multiple independent partial accumulators (or a SIMD-safe reduction) to break the chain.",
+        "Verify numeric equality within tolerance and measure before/after speedup."
+      ],
+      "metadata": {
+        "persona": "c_cpp_optimizer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "parallel-accumulator pattern",
+        "why_it_matters": "Clean diagnosis case; reproducibility constraint explicitly absent."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q055",
+      "text": "Scenario: `perf annotate` shows a hot loop using `xmm` registers on a host that supports AVX2. The loop is a simple elementwise float multiply with no cross-lane dependency. Name the pattern and the fix direction.",
+      "category": "simd",
+      "difficulty": "easy",
+      "level": "diagnosis",
+      "expected_topics": [
+        "A narrow-SIMD (SSE/xmm) loop on an AVX2-capable host is the SIMD-upconversion opportunity.",
+        "Widen to AVX2/YMM where semantics allow, since the elementwise op has no cross-lane dependency.",
+        "Verify output equality and measure speedup on the AVX2 path."
+      ],
+      "metadata": {
+        "persona": "simd_engineer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "simd-upconversion pattern",
+        "why_it_matters": "Single clear SIMD-width signal, capability already known."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q056",
+      "text": "Scenario: `perf report` shows ~70% of samples in `pthread_mutex_lock`/futex paths in a counter-update critical section that just does `count++`. Only one short field is touched. Name the most likely pattern and the fix shape.",
+      "category": "lock_contention",
+      "difficulty": "easy",
+      "level": "diagnosis",
+      "expected_topics": [
+        "A mutex guarding a trivial counter increment is lock contention on a shared counter.",
+        "Replace with an atomic increment or per-thread/per-CPU aggregation instead of a mutex around `count++`.",
+        "Verify exact final total and improved throughput at high thread counts."
+      ],
+      "metadata": {
+        "persona": "concurrency_engineer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "shared-counter / lock-elision pattern",
+        "why_it_matters": "Unambiguous mutex-around-counter detection."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q057",
+      "text": "Scenario: `perf stat` shows IPC 0.5 and frontend-bound stalls (high `idq_uops_not_delivered` / icache miss) while backend and cache signals are modest. The agent is asked whether to add SIMD. What regime is this and what should run next?",
+      "category": "counter_interpretation",
+      "difficulty": "medium",
+      "level": "triage",
+      "expected_topics": [
+        "High frontend-bound stalls indicate an instruction-supply/icache or decode bottleneck, not a data/backend compute problem.",
+        "Run hotspot profiling and inspect code size/layout, icache misses, and branch behavior before changing data-side compute.",
+        "Do not add SIMD to a frontend-bound loop; widening data compute does not fix instruction delivery."
+      ],
+      "metadata": {
+        "persona": "performance_triage_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "Flow A frontend-bound interpretation",
+        "why_it_matters": "Tests top-down regime separation, not generic 'low IPC -> vectorize'.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q058",
+      "text": "Scenario: A run is slow only intermittently. Steady-state `perf stat` looks healthy (IPC 1.8, low misses), but tail latency spikes. A teammate wants to optimize the hot function. What evidence should the agent collect before any code change?",
+      "category": "triage",
+      "difficulty": "hard",
+      "level": "triage",
+      "expected_topics": [
+        "Steady-state averages can hide tail/latency problems; an aggregate profile is the wrong lens for intermittent spikes.",
+        "Collect time-resolved or event-triggered evidence (per-interval stats, latency histograms, off-CPU/scheduler traces, page-fault/THP/NUMA or frequency events) during the spikes.",
+        "Do not optimize the steady-state hot function; first localize what differs during the slow intervals."
+      ],
+      "metadata": {
+        "persona": "systems_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "tail-latency triage with time-resolved evidence",
+        "why_it_matters": "Hard triage: averages mislead; correct move is targeted evidence, not a fix.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q059",
+      "text": "Scenario: A NUMA host shows IPC 0.6 and high LLC/remote-memory traffic. Threads were started before data was allocated and touched. The agent is asked to add cache blocking. What should it investigate first?",
+      "category": "counter_interpretation",
+      "difficulty": "hard",
+      "level": "triage",
+      "expected_topics": [
+        "High remote-memory traffic on a NUMA host points to placement/first-touch issues, not necessarily a blocking-friendly cache problem.",
+        "Check NUMA locality (node-local vs remote accesses), thread/memory affinity, and first-touch allocation before restructuring loops.",
+        "Do not apply cache blocking before confirming the misses are capacity/locality within a node rather than cross-node placement."
+      ],
+      "metadata": {
+        "persona": "hpc_scaling_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "NUMA-aware triage before cache-blocking",
+        "why_it_matters": "Hard: remote-memory cost is misread as a generic cache problem.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q060",
+      "text": "Scenario: Two `perf stat` runs of the same binary disagree: run 1 IPC 2.1, run 2 IPC 1.3, same input. CPU frequency governor is `ondemand` and the machine is shared. Before diagnosing a regression, what must the agent control for?",
+      "category": "measurement_rigor",
+      "difficulty": "hard",
+      "level": "triage",
+      "expected_topics": [
+        "Run-to-run IPC variance can come from frequency scaling, co-tenant load, and lack of CPU pinning, not from a code regression.",
+        "Pin CPU affinity, fix or record the frequency governor, isolate co-tenants, and use `perf stat -r N` with mean/variance before comparing.",
+        "Do not declare a regression from two single runs under a variable environment."
+      ],
+      "metadata": {
+        "persona": "benchmark_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "environment control before comparison",
+        "why_it_matters": "Hard triage: confounded environment, not a code change.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q061",
+      "text": "End-to-end task: A 2-second CPU-bound binary `./bin run` has source and builds in seconds. The user wants a hotspot report. List the minimal report-only lifecycle.",
+      "category": "reporting",
+      "difficulty": "easy",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Ensure debug symbols (rebuild with `-g` preserving existing flags since the build is cheap), then `perf record`/`perf report` the run.",
+        "Optionally collect a short `perf stat`, then produce a structured Markdown report: system summary, top functions, annotated hot source, observations.",
+        "Stop at the report; do not apply fixes in a report-only request."
+      ],
+      "metadata": {
+        "persona": "performance_consultant",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "Flow E short-run report",
+        "why_it_matters": "Procedural end-to-end with no diagnostic ambiguity."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q062",
+      "text": "End-to-end task: A `pts/<name>` benchmark is requested for a baseline run only (no optimization yet). Describe the lifecycle to produce a trustworthy baseline number.",
+      "category": "pts_integration",
+      "difficulty": "easy",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Invoke the phoronix-test-suite skill to resolve/install/run the test rather than running it by hand.",
+        "Run with repeats, read the test metadata for unit and higher/lower-is-better direction, and record mean and spread.",
+        "Persist the baseline (score, unit, direction, variance) for later comparison; do not modify source in a baseline-only request."
+      ],
+      "metadata": {
+        "persona": "benchmark_engineer",
+        "skill_under_test": "phoronix-test-suite",
+        "expected_workflow": "PTS baseline lifecycle",
+        "why_it_matters": "Clean PTS lifecycle without diagnosis."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q063",
+      "text": "End-to-end task: A false-sharing fix has already been written and compiled in `counter.cpp`. The user asks to verify it before merge. Describe the verification-and-report steps.",
+      "category": "reporting",
+      "difficulty": "easy",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Confirm the final counter total/checksum matches the baseline exactly (correctness preserved).",
+        "Measure before/after throughput with repeated runs and, where available, confirm reduced HITM/c2c signal.",
+        "Report correctness, speedup with variance, and the layout change made; flag any ABI/size impact from added padding."
+      ],
+      "metadata": {
+        "persona": "library_maintainer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "verify-and-report a written fix",
+        "why_it_matters": "Procedural verification of an already-applied change."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q064",
+      "text": "End-to-end task: The user wants a side-by-side before/after `perf stat` comparison for a single accumulator-to-multi-accumulator change that is already merged. Describe how to produce the comparison artifact.",
+      "category": "benchmark_reporting",
+      "difficulty": "easy",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Build both versions with identical flags plus `-g` and run each under `perf stat -r N` on a pinned CPU with the same input.",
+        "Report mean/variance for runtime and IPC for each version and the delta, attributing the IPC gain to the broken dependency chain.",
+        "Present counters as mechanism evidence alongside the wall-clock/benchmark result, not as a substitute for it."
+      ],
+      "metadata": {
+        "persona": "benchmark_owner",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "before/after perf stat comparison",
+        "why_it_matters": "Straightforward comparison-artifact production."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q065",
+      "text": "End-to-end task: The user asks to optimize a scaling regression and reports back after the first fix that scaling improved but is still below target. Describe the iteration loop and its stopping condition.",
+      "category": "iteration",
+      "difficulty": "medium",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Re-profile the rebuilt binary because the first fix unmasks a new dominant bottleneck; do not reuse the stale pre-fix ranking.",
+        "Recompare 1-core vs N-core (and N/2 if jumpers are broad) to find the next jumping function, classify it, fix, rebuild, rerun.",
+        "Add an iteration section per cycle; stop when no jumper exceeds threshold or the scaling target is met, not after the first attractive fix."
+      ],
+      "metadata": {
+        "persona": "hpc_scaling_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "Flow D iteration loop",
+        "why_it_matters": "Multi-cycle lifecycle with an explicit stopping rule."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q066",
+      "text": "End-to-end task: A `restrict`-based vectorization fix is proposed for a C kernel. The user approves applying it. Walk the apply-rebuild-verify loop including the contract audit that must precede the edit.",
+      "category": "change_control",
+      "difficulty": "medium",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Before editing, audit all call sites to confirm the non-overlap contract holds for every caller; abort or provide a separate entry point if any aliases.",
+        "Apply `restrict`, rebuild with the same flags plus `-g`, and confirm the alias preamble/fallback is gone in annotate.",
+        "Verify output equality against the pre-change reference and report the vectorization/perf improvement; note the C-vs-C++ keyword caveat."
+      ],
+      "metadata": {
+        "persona": "c_maintainer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "missing-restrict apply-rebuild-verify with caller audit",
+        "why_it_matters": "End-to-end execution gated on a safety precondition."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q067",
+      "text": "End-to-end task: The user wants a SIMD-sort replacement shipped for a primitive-array sort hotspot. Describe the build-verify-report lifecycle including the compatibility gates that decide whether it ships at all.",
+      "category": "algorithm_replacement",
+      "difficulty": "medium",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Gate on stability-not-required, supported element type, and CPU ISA/dispatch availability before committing the replacement.",
+        "Integrate a dispatched x86-simd-sort-style path with a portable fallback, then verify sortedness and multiset equality against the baseline.",
+        "Benchmark before/after with repeats and report the speedup, the dispatch/fallback behavior, and the compatibility constraints checked."
+      ],
+      "metadata": {
+        "persona": "analytics_engineer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "simd-sort ship lifecycle with compatibility gates",
+        "why_it_matters": "End-to-end with go/no-go gates rather than pure diagnosis."
+      }
     }
   ]
 }
