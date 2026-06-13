@@ -730,6 +730,233 @@
         "expected_workflow": "benchmark rubric design",
         "why_it_matters": "Makes the benchmark evaluate skill application quality rather than memorized skill contents."
       }
+    },
+    {
+      "id": "intel-performance-skills-Q041",
+      "text": "Scenario: `perf stat` reports IPC 0.6 with cache miss rate 12% AND branch miss rate 9% on the same hot region. Both look elevated. What should the agent do before committing to a memory-bound or branch-bound diagnosis?",
+      "category": "counter_interpretation",
+      "difficulty": "medium",
+      "level": "triage",
+      "expected_topics": [
+        "Recognize that two simultaneously elevated counters are an ambiguous signal, not a license to pick either fix.",
+        "Run hotspot profiling and annotate the hot region to see whether misses and mispredictions co-locate or live in different functions before classifying.",
+        "Do not propose cache blocking or branch restructuring yet; gather source/annotate evidence to attribute each signal first."
+      ],
+      "metadata": {
+        "persona": "performance_triage_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "Flow A escalation with ambiguous counters",
+        "why_it_matters": "Tests whether the agent resists committing to one regime when signals conflict.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q042",
+      "text": "Scenario: A memory-streaming kernel (large sequential `a[i]+=b[i]` over arrays far exceeding LLC) shows IPC 1.1. A teammate calls the low IPC a compute problem and asks for SIMD. Is low IPC the right thing to chase here?",
+      "category": "counter_interpretation",
+      "difficulty": "medium",
+      "level": "triage",
+      "expected_topics": [
+        "For a bandwidth-bound streaming kernel, low IPC is expected because the core stalls on memory, so IPC alone is not the bottleneck signal.",
+        "Check memory-bandwidth/LLC-miss evidence and compare achieved bandwidth against the platform roofline before recommending compute changes.",
+        "Do not add SIMD to raise IPC when the kernel is already memory-bound; widening compute will not move a bandwidth-limited workload."
+      ],
+      "metadata": {
+        "persona": "hpc_scaling_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "Flow A with roofline-aware interpretation",
+        "why_it_matters": "Adversarial: low IPC is treated as universally bad, but it is expected for bandwidth-bound code.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q043",
+      "text": "Scenario: A job is wall-clock slow, but `perf stat` shows moderate IPC, low cache misses, low branch misses, and low kernel time \u2014 nothing dominates. CPU utilization during the run is only ~30%. What should the agent investigate?",
+      "category": "triage",
+      "difficulty": "hard",
+      "level": "triage",
+      "expected_topics": [
+        "Recognize that an on-CPU profile explaining nothing, plus low CPU utilization, points to off-CPU time (I/O wait, lock sleep, scheduling) rather than a compute hotspot.",
+        "Compare wall-clock versus CPU time and use off-CPU analysis (e.g. `perf sched`, blocked-time/wait stacks, `perf record` with sleep tracing) to find where the time actually goes.",
+        "Do not force a CPU optimization pattern onto a workload that is not CPU-bound; widen the evidence before diagnosing."
+      ],
+      "metadata": {
+        "persona": "systems_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "Flow A to off-CPU analysis",
+        "why_it_matters": "Negative/hard triage: the correct move is to widen evidence, not to invent an on-CPU pattern.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q044",
+      "text": "Scenario: On an SMT-enabled host running two sibling threads per core, `perf stat` reports IPC 0.7 per logical CPU and the agent is asked whether the cores are compute-starved. What microarchitectural caveat must the agent state before interpreting this number?",
+      "category": "measurement_rigor",
+      "difficulty": "hard",
+      "level": "triage",
+      "expected_topics": [
+        "Per-logical-CPU IPC under SMT shares core execution resources between siblings, so a low per-thread IPC can still mean a saturated physical core.",
+        "Validate by measuring with siblings idle or by checking core-level throughput and frequency, and confirm what the counted event actually means on this microarchitecture.",
+        "Do not conclude compute starvation from per-thread IPC alone; SMT contention and frequency scaling can distort the reading."
+      ],
+      "metadata": {
+        "persona": "compiler_performance_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "counter semantics validation before diagnosis",
+        "why_it_matters": "Hard triage trap: a counter is read at face value while its meaning is microarchitecture- and SMT-dependent.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q045",
+      "text": "Scenario: `perf c2c` shows heavy HITM on one cache line. Inspection reveals threads A and B both read-modify-write the SAME field (a shared running total), not different offsets. A colleague proposes padding to separate cache lines. Will padding fix this?",
+      "category": "cache_contention",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "Distinguish true sharing (many threads touching the same field) from false sharing (different fields colliding on one line); padding only helps the latter.",
+        "Classify this as true sharing of a shared counter and propose per-thread/per-CPU partial aggregation combined at the end, not cache-line padding.",
+        "Reject the padding fix: separating cache lines does not remove contention when all threads genuinely write the same datum."
+      ],
+      "metadata": {
+        "persona": "multicore_performance_engineer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "true-sharing vs false-sharing disambiguation",
+        "why_it_matters": "Adversarial: HITM on one line tempts a padding fix, but true sharing needs aggregation, not separation.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q046",
+      "text": "Scenario: A hot loop `for (i=0;i<n;i++) sum += a[i];` over `double` data uses one accumulator. The agent wants to split into multiple partial sums for ILP/SIMD. The result feeds a financial report requiring bit-reproducible output across builds. What caveat must the agent raise?",
+      "category": "compiler_vectorization",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "Splitting a floating-point reduction into multiple accumulators changes summation order, which changes rounding and breaks bit-for-bit reproducibility.",
+        "Surface the numerical-accuracy/ABI-of-results risk explicitly and offer options: keep serial order, use compensated (Kahan) summation, or get sign-off that reordering tolerance is acceptable.",
+        "Do not silently apply `-ffast-math`/reassociation or a multi-accumulator rewrite when bitwise reproducibility is a stated requirement."
+      ],
+      "metadata": {
+        "persona": "c_cpp_optimizer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "serial-accumulator pattern with FP-reproducibility guardrail",
+        "why_it_matters": "Negative/safety: the standard speedup is unsafe under a bit-reproducibility contract.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q047",
+      "text": "Scenario: Annotate shows an alias-check preamble in `void blend(float *dst, float *src, int n)`. Adding `restrict` would vectorize it. But one caller invokes `blend(buf, buf, n)` for an in-place pass. Should the agent add `restrict`?",
+      "category": "compiler_vectorization",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "`restrict` is a promise of non-overlap; the in-place `blend(buf,buf,n)` caller violates it, so adding `restrict` is undefined behavior, not just a missed-optimization risk.",
+        "Audit all call sites for the non-overlap contract before applying `restrict`; here at least one aliases.",
+        "Do not add `restrict`; instead provide a separate non-aliasing entry point, require distinct buffers, or leave the alias-safe version for the in-place caller."
+      ],
+      "metadata": {
+        "persona": "c_maintainer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "missing-restrict pattern with caller-contract audit",
+        "why_it_matters": "Negative/UB: the obvious vectorization fix is incorrect because a real caller aliases the buffers.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q048",
+      "text": "Scenario: A service spawns 4x more worker threads than physical cores. Profiles show high context-switch and `futex_wait` rates. A teammate diagnoses condition-variable thundering herd and wants to rework wakeups. What should the agent check first?",
+      "category": "scheduler_overhead",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "High context switches with heavy oversubscription (threads >> cores) can be scheduling churn, not a wakeup-storm design flaw.",
+        "Check the thread-to-core ratio and test with a right-sized pool before reworking the condition-variable signaling.",
+        "Do not assume thundering herd from futex/context-switch counts alone when the pool is grossly oversubscribed."
+      ],
+      "metadata": {
+        "persona": "runtime_engineer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "scheduler-overhead disambiguation before cv-thundering-herd",
+        "why_it_matters": "Adversarial: futex/context-switch symptoms match two causes; oversubscription must be ruled out first.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q049",
+      "text": "Scenario: A flamegraph shows `memcpy` as the single largest self-time function in a request handler. The agent is asked to make `memcpy` faster. Is replacing `memcpy` the right target?",
+      "category": "profile_interpretation",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "A hot library `memcpy` is usually a symptom of excessive or redundant copying upstream, not a slow `memcpy` implementation.",
+        "Trace callers of `memcpy` to find what is copying so much and reduce/eliminate copies (move semantics, in-place ops, buffer reuse, zero-copy paths).",
+        "Do not try to hand-optimize or replace the already-tuned `memcpy`; fix the call pattern that generates the traffic."
+      ],
+      "metadata": {
+        "persona": "backend_performance_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "Flow D caller attribution for hot library symbol",
+        "why_it_matters": "Adversarial: optimizing the hot symbol is wrong when it is a symptom of upstream copying.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q050",
+      "text": "End-to-end task: A serial-accumulator bottleneck has already been confirmed in `reduce.cpp` with profile evidence. The user says \"go ahead and apply the fix.\" Walk through the full apply-rebuild-verify-report loop for this already-diagnosed change.",
+      "category": "iteration",
+      "difficulty": "medium",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Apply the multi-accumulator/SIMD-safe rewrite, preserving the CLI and output contract.",
+        "Rebuild with the original optimization flags plus `-g`, then verify numeric equality against the serial reference within tolerance and measure before/after with repeated runs.",
+        "Report baseline, after, delta with variance, and the verification evidence; stop without chasing further fixes since only this change was requested."
+      ],
+      "metadata": {
+        "persona": "c_cpp_optimizer",
+        "skill_under_test": "performance-patterns",
+        "expected_workflow": "apply-rebuild-verify-report on a pre-diagnosed fix",
+        "why_it_matters": "Procedural end-to-end at medium difficulty: tests disciplined execution of an unambiguous change."
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q051",
+      "text": "End-to-end task: After a PTS benchmark rebuild, the score moves from 4180 to 4205 MB/s (higher is better) across three runs with run-to-run spread of about +/- 60. The user asks whether the optimization worked. How should the agent run and report this?",
+      "category": "benchmark_rigor",
+      "difficulty": "medium",
+      "level": "end_to_end",
+      "expected_topics": [
+        "Run baseline and changed builds with repeats and compute mean and spread before judging the result.",
+        "Recognize that a ~25 MB/s move inside a +/- 60 run-to-run band is within noise, so report no statistically meaningful change rather than a win.",
+        "Do not claim an improvement from a single favorable run; report the deltas with variance and recommend a larger sample or a different approach."
+      ],
+      "metadata": {
+        "persona": "benchmark_owner",
+        "skill_under_test": "phoronix-test-suite",
+        "expected_workflow": "PTS evaluate-scores with variance-aware verdict",
+        "why_it_matters": "Negative end-to-end: the honest verdict is 'no significant change', not a claimed gain.",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "intel-performance-skills-Q052",
+      "text": "Scenario: A user pastes a `perf report` excerpt and demands an immediate code fix for the top function, but provides no source, no build info, and no debug symbols (addresses only). What should the agent deliver, and what must it refuse to claim?",
+      "category": "black_box_profiling",
+      "difficulty": "medium",
+      "level": "triage",
+      "expected_topics": [
+        "With only addresses and no source/debug symbols, the agent can identify which module/library dominates but cannot map to specific source lines.",
+        "Offer the available next steps: rebuild with `-g`, provide source, or run black-box library/config/version experiments.",
+        "Refuse to assert a specific source-line fix or root cause without source and debug information; state the limitation explicitly."
+      ],
+      "metadata": {
+        "persona": "platform_engineer",
+        "skill_under_test": "linux-perf",
+        "expected_workflow": "boundary-setting under missing source/symbols",
+        "why_it_matters": "Negative triage: the correct response sets a hard boundary instead of fabricating a line-level fix.",
+        "negative_case": true
+      }
     }
   ]
 }
