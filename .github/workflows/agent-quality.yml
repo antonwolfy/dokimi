@@ -49,19 +49,19 @@ jobs:
           set -euo pipefail
           for task in $TERMINAL_BENCH_TASKS
           do
-            mkdir -p "/tmp/logs/${task}"
-            chmod 777 "/tmp/logs/${task}"
+            mkdir -p "${{ github.workspace }}/logs/${task}"
+            chmod 777 "${{ github.workspace }}/logs/${task}"
             docker run --rm \
               --network none \
               --cpus=4 \
               --memory=2g \
               -v "${{ github.workspace }}/agent-benchmark/terminal-bench-tasks/${task}/solution:/solution:ro" \
               -v "${{ github.workspace }}/agent-benchmark/terminal-bench-tasks/${task}/tests:/tests:ro" \
-              -v "/tmp/logs/${task}:/logs" \
+              -v "${{ github.workspace }}/logs/${task}:/logs" \
               "intel-hpc-bench/${task}:latest" \
               bash -c "bash /solution/solve.sh && bash /tests/test.sh"
 
-            REWARD=$(cat "/tmp/logs/${task}/verifier/reward.txt" | tr -d '[:space:]')
+            REWARD=$(cat "${{ github.workspace }}/logs/${task}/verifier/reward.txt" | tr -d '[:space:]')
             echo "${task} reward: $REWARD"
             if [ "$REWARD" != "1" ]; then
               echo "❌ ${task} oracle solution did not pass all tests (reward=$REWARD)"
@@ -75,7 +75,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: terminal-bench-logs
-          path: /tmp/logs/
+          path: ${{ github.workspace }}/logs/
 
   # Tasks that depend on the Intel oneAPI apt repo (oneMKL, IPP),
   # header-only oneDPL, or large pip installs (sklearnex). Each task is a
@@ -120,7 +120,7 @@ jobs:
             "terminal-bench-tasks/${task}/environment/"
           echo "::endgroup::"
 
-          mkdir -p "/tmp/logs/${task}"
+          mkdir -p "${{ github.workspace }}/logs/${task}"
           docker run --rm \
             --network none \
             --shm-size=2g \
@@ -128,11 +128,11 @@ jobs:
             --memory=4g \
             -v "${{ github.workspace }}/agent-benchmark/terminal-bench-tasks/${task}/solution:/solution:ro" \
             -v "${{ github.workspace }}/agent-benchmark/terminal-bench-tasks/${task}/tests:/tests:ro" \
-            -v "/tmp/logs/${task}:/logs" \
+            -v "${{ github.workspace }}/logs/${task}:/logs" \
             "intel-hpc-bench/${task}:latest" \
             bash -c "bash /solution/solve.sh && bash /tests/test.sh"
 
-          REWARD=$(cat "/tmp/logs/${task}/verifier/reward.txt" | tr -d '[:space:]')
+          REWARD=$(cat "${{ github.workspace }}/logs/${task}/verifier/reward.txt" | tr -d '[:space:]')
           echo "${task} reward: $REWARD"
           if [ "$REWARD" != "1" ]; then
             echo "❌ ${task} oracle solution did not pass all tests (reward=$REWARD)"
@@ -145,7 +145,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: terminal-bench-oneapi-logs-${{ matrix.task }}
-          path: /tmp/logs/
+          path: ${{ github.workspace }}/logs/
 
   benchmark:
     runs-on: ubuntu-latest
