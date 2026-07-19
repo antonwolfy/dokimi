@@ -82,6 +82,18 @@ third-party catalog — can verify without trusting us: the trust layer under an
 listing, not just a better listing of our own. A deliberate strategic bet, later
 than the core cycle. Design: [`attestation.md`](attestation.md).
 
+## Cross-cutting: the `intel/skills` catalog (proposed — draft, for team review)
+
+Where a benchmarked skill would actually ship: [`catalog-distribution.md`](catalog-distribution.md)
+(DRAFT) evaluates the existing peer catalogs (Anthropic, `intel/intel-performance-skills`,
+NVIDIA, AMD, and the working [`napetrov/skills`](https://github.com/napetrov/skills)
+prototype) and proposes a **tiered publishing model** — simple, self-contained
+skills publish in full; skills with bundled scripts, setup guides, or
+fast-moving upstream content publish as a thin reference wrapper instead —
+with the benchmark as the shared quality gate for both tiers and a
+recommendation (not yet decided) that Intel act as the catalog's
+signing/certificate authority.
+
 ## Open architectural questions
 
 Tracked in the branch plan; to be resolved with design docs:

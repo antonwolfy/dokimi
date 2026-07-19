@@ -197,6 +197,21 @@ execution/security surface the eval side deferred. Requirements:
 
 - **Q5 — layout alignment.** Adopt `intel/intel-performance-skills`' existing
   package/skill layout, or define our own and provide an adapter to it?
+- **Q5b — org catalog & marketplace listing. Proposal drafted, not yet
+  decided — see [`catalog-distribution.md`](catalog-distribution.md).** NVIDIA
+  (`nvidia/skills`) and AMD (`amd/skills`) both run an org-level skills catalog
+  distinct from any single product's skill collection, and syndicate it out to
+  third-party marketplaces (skills.sh, Codex/Claude plugin listings, ClawHub,
+  Hermes Hub — see [`nvidia/skills`](https://github.com/NVIDIA/skills)'s
+  roadmap). Proposed answer, pending team review: yes, Intel stands up
+  `intel/skills`, seeded from [`napetrov/skills`](https://github.com/napetrov/skills)'s
+  tooling, publishing in two tiers (direct copy vs. thin reference wrapper —
+  see [`catalog-distribution.md`](catalog-distribution.md) §2) as the export
+  target for [per-runtime exporters](#5-per-runtime-exporters) §5. External
+  marketplace listing would be sequenced *after* the certification chain
+  ([`catalog-distribution.md`](catalog-distribution.md) §4) ships, mirroring
+  NVIDIA's sign-then-syndicate order — which external marketplace(s) exactly
+  remains open, as does whether the standing-up decision itself is approved.
 - **Q6 — MCP server.** Do we ship an Intel **MCP doc server** (a new artifact
   with its own lifecycle), or only reference third-party ones (Context7)? Today
   `agent-benchmark` is purely an MCP *client*.

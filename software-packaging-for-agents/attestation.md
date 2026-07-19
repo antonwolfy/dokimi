@@ -105,8 +105,15 @@ skeptical auditor alike.
 
 ## 7. Open questions
 
-- **Signing scheme & key custody.** Sigstore-style keyless, an org key, or
-  in-toto/SLSA-style attestation? Who holds keys and how are they rotated?
+- **Signing scheme & key custody. Proposal drafted, not yet decided — see
+  [`catalog-distribution.md`](catalog-distribution.md) §4.** That draft
+  recommends an Intel-held org key over Sigstore-keyless, on the reasoning
+  that a GitHub-native attestation alone still roots trust in GitHub's OIDC
+  issuer rather than Intel. It also flags, per this section's §6 scope note,
+  that Intel does not have documented signing/PKI infrastructure in this repo
+  today — so "org key" is a recommendation to evaluate, not a resource known
+  to already exist. Signing scheme, key custody, and rotation mechanics all
+  remain open pending team review.
 - **Reproducibility tolerance.** What judge-score variance is acceptable for two
   runs to count as "the same" credential, and how is the seed/tolerance recorded?
 - **Federation target.** Which external catalog(s) would consume an attested
