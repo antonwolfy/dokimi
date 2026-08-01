@@ -2,7 +2,8 @@
 
 A skill follows the Claude Code / Agent Skills convention: a ``SKILL.md`` file
 with YAML frontmatter (at least ``name`` and ``description``) followed by a
-Markdown body of instructions. Optional sibling files (scripts, references)
+Markdown body of instructions. Optional bundled files (scripts, references),
+beside ``SKILL.md`` or nested in subdirectories,
 live alongside it and are recorded but not executed by the loader — executing
 bundled scripts is the job of the agentic task track, not this loader.
 """
@@ -80,9 +81,13 @@ def load_skill(path) -> Skill:
             "frontmatter; the description is the skill's trigger hint."
         )
 
+    # Recurse: skills commonly keep their detail in subdirectories
+    # (``references/``, ``patterns/``, ``scripts/``) and load them on demand, so a
+    # flat scan would report no resources and silently disable the file picker.
+    root = skill_file.parent
     resources = sorted(
-        p for p in skill_file.parent.iterdir()
-        if p.is_file() and p.name != skill_file.name
+        p for p in root.rglob("*")
+        if p.is_file() and p != skill_file and "__pycache__" not in p.parts
     )
     return Skill(
         name=name,

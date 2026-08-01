@@ -222,26 +222,29 @@ description: One line that tells the agent when to use this skill.
 
 **Multi-file skills** (progressive disclosure):
 
-Skills can contain multiple `.md` files alongside `SKILL.md`. When used with
+Skills can contain multiple `.md` files alongside `SKILL.md`, or nested in
+subdirectories (`references/`, `patterns/`). When used with
 `skill-agent:<path>`, the tool offers a `file` parameter listing all available
-files. The model can load `SKILL.md` first (typically a navigation table) and
-then load specific topic files as needed.
+files by path relative to the skill root. The model can load `SKILL.md` first
+(typically a navigation table) and then load specific topic files as needed.
 
-Example structure:
+Example structure, flat or nested:
 ```
 skills/my-skill/
-  SKILL.md           # Navigation/overview with topic-to-file mapping
-  getting-started.md # Topic-specific guidance
-  advanced.md        # Deep-dive content
-  troubleshooting.md # Common issues and solutions
+  SKILL.md              # Navigation/overview with topic-to-file mapping
+  getting-started.md    # Topic-specific guidance
+  advanced.md           # Deep-dive content
+  references/deep.md    # Nested files work too, offered as references/deep.md
 ```
 
-When the `ViewSkillTool` detects sibling `.md` files, it automatically offers:
+When the `ViewSkillTool` detects bundled `.md` files, it automatically offers
+them by path relative to the skill root, so a file nested under `references/`
+is offered as `references/<name>.md`:
 ```json
 {
   "file": {
     "type": "string",
-    "enum": ["SKILL.md", "advanced.md", "getting-started.md", "troubleshooting.md"],
+    "enum": ["SKILL.md", "advanced.md", "getting-started.md", "references/deep.md"],
     "description": "Which file to load. Start with 'SKILL.md' to see the navigation..."
   }
 }
@@ -254,7 +257,7 @@ The `SKILL.md` should contain a navigation table mapping user contexts to files:
 |--------------|----------------|
 | Installing and basic setup | `getting-started.md` |
 | Advanced configuration | `advanced.md` |
-| Debugging common errors | `troubleshooting.md` |
+| Deep dive on one topic | `references/deep.md` |
 ```
 
 **Note:** When used with injected mode (`skill:<path>`), only `SKILL.md` is

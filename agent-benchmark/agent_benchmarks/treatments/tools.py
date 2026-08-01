@@ -74,9 +74,10 @@ class DocQueryTool(Tool):
 class ViewSkillTool(Tool):
     """Progressive disclosure: load a skill's full instructions on demand.
 
-    Supports multi-file skills: if sibling .md files exist, the tool accepts
-    a 'file' parameter to load them individually. SKILL.md is always loaded
-    when no file is specified.
+    Supports multi-file skills: if the skill bundles other .md files, whether
+    beside ``SKILL.md`` or nested in subdirectories, the tool accepts a 'file'
+    parameter naming one by its path relative to the skill root. ``SKILL.md``
+    is loaded when no file is given.
     """
 
     kind = "skill"
@@ -93,8 +94,15 @@ class ViewSkillTool(Tool):
             f"Use it when the task matches: {skill.description}"
         )
 
-        # Build file enum from sibling .md resources
-        md_files = [r.name for r in skill.resources if r.suffix == '.md']
+        # Build the file enum from the skill's .md resources. Paths are relative
+        # to the skill root so nested layouts (``references/topic.md``) are
+        # offered and resolve correctly.
+        root = skill.path.parent
+        md_files = [
+            r.relative_to(root).as_posix()
+            for r in skill.resources
+            if r.suffix == ".md"
+        ]
         if md_files:
             # Multi-file skill: offer file picker
             self.parameters = {
@@ -122,9 +130,13 @@ class ViewSkillTool(Tool):
         if file == "SKILL.md":
             return self.skill.as_context(self.max_chars)
 
-        # Load sibling .md file
-        target = self.skill.path.parent / file
-        if not target.exists() or target.suffix != '.md':
+        # Load a bundled .md file, which may be nested under the skill root.
+        root = self.skill.path.parent.resolve()
+        target = (root / file).resolve()
+        # Keep reads inside the skill directory even if the model invents a path.
+        if root not in target.parents:
+            return f"(file '{file}' is outside the skill directory)"
+        if not target.is_file() or target.suffix != ".md":
             return f"(file '{file}' not found or not a .md file)"
 
         try:
