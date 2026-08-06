@@ -24,6 +24,7 @@ honest effective state (`covered` needs both halves; `questions-only` and
 | `intel_performance_skills` | ✅ | ✅ 16 | covered |
 | `intelmpi` | ⬜ | ⬜ 0 | planned |
 | `ipp` | ⬜ | ✅ 1 | planned |
+| `mkl_extensions` | ✅ | ✅ 3 | covered |
 | `numba_dpex` | ⬜ | ⬜ 0 | planned |
 | `oneccl` | ⬜ | ⬜ 0 | planned |
 | `onedal` | ✅ | ✅ 1 | covered |
@@ -137,6 +138,14 @@ This matrix tracks which dpnp APIs and concepts are covered by terminal-bench-st
 | `dpnp.matmul` / `@` operator, oneMKL backend | `dpnp-linalg-matmul` | implemented | NumPy reference signature comparison, AST matmul check |
 | `dpnp.fft.fft`, power spectrum | `dpnp-fft-pipeline` | implemented | NumPy reference signature comparison, AST fft check |
 | `dpctl` device introspection, GPU→CPU fallback | `dpnp-device-fallback` | implemented | NumPy reference signature comparison, dpctl import + GPU attempt check |
+
+## MKL Python extensions
+
+| API / concept | Task | Status | Verifier strategy |
+| --- | --- | --- | --- |
+| `mkl_fft.patch_numpy_fft()` activation with unchanged `np.fft.*` call sites | `mkl-fft-patch-numpy` | implemented | NumPy reference signature within `1e-6` relative tolerance (never bitwise: DFTI vs pocketfft), `np.fft.fft.__module__` proof, AST checks for activation and preserved `np.fft` call site |
+| `mkl_random` independent parallel streams (parametrized `brng` family or explicit jump) | `mkl-random-parallel-streams` | implemented | Analytic Monte Carlo target (stick-breaking triangle probability = 1/4) rather than a seed-matched reference, since mkl_random is not seed-compatible with NumPy; pairwise-distinct per-worker draws; AST check rejecting per-worker reseeding of one generator |
+| `mkl_umath` ufunc coverage boundary (which ufuncs and dtypes actually dispatch) | `mkl-umath-coverage-report` | implemented | Coverage report graded against the installed `mkl_umath._ufuncs` registry and each ufunc's `.types`, so a hardcoded list fails; plus `is_patched()` proof and tolerance-based signature match on the npbench `arc_distance` kernel |
 
 ## Notes for new tasks
 

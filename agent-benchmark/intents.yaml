@@ -31,7 +31,7 @@ domains:
       Dense and sparse linear algebra, FFTs, random number generation, and
       vector math — with attention to accuracy, reproducibility, and
       performance on CPU and GPU.
-    products: [onemkl, onemath, ipp]
+    products: [onemkl, onemath, ipp, mkl_extensions]
     example_intents:
       - "Speed up this large matrix multiplication"
       - "Compute an FFT on batched signals"

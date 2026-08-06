@@ -54,6 +54,9 @@ See [COVERAGE.md](./COVERAGE.md) for the broader oneTBB API/concept coverage mat
 | [dpnp-migration-replace-numpy](./dpnp-migration-replace-numpy/) | dpnp | easy | Migrate a NumPy preprocessing pipeline to dpnp, preserving results with a NumPy fallback for unsupported `histogram(bins='auto')` |
 | [dpnp-linalg-matmul](./dpnp-linalg-matmul/) | dpnp | medium | Matrix multiply with `dpnp.matmul` / `@`, absolute-value-sum signature vs serial NumPy reference |
 | [dpnp-fft-pipeline](./dpnp-fft-pipeline/) | dpnp | medium | Power spectrum via `dpnp.fft.fft`, signature vs NumPy reference; validates power-of-2 length CLI argument |
+| [mkl-fft-patch-numpy](./mkl-fft-patch-numpy/) | MKL Python extensions | medium | Activate `mkl_fft` so unchanged `np.fft.*` call sites dispatch to oneMKL; verified by `np.fft.fft.__module__` plus a tolerance-based (not bitwise) signature match |
+| [mkl-random-parallel-streams](./mkl-random-parallel-streams/) | MKL Python extensions | hard | Give each worker an independent `mkl_random` stream from a parametrized `brng` family; verified against the analytic 1/4 Monte Carlo target plus pairwise-distinct draws |
+| [mkl-umath-coverage-report](./mkl-umath-coverage-report/) | MKL Python extensions | hard | Patch `mkl_umath` for the npbench `arc_distance` kernel and report which ufuncs actually dispatch; graded against the installed ufunc registry, so a hardcoded list fails |
 | [intel-perf-serial-accumulator](./intel-perf-serial-accumulator/) | Intel performance skills | medium | Diagnose low-IPC serial accumulator and rewrite with independent partial accumulators |
 | [intel-perf-false-sharing](./intel-perf-false-sharing/) | Intel performance skills | medium | Diagnose c2c/HITM false sharing and separate per-thread counters by cache line |
 | [intel-perf-shared-counter](./intel-perf-shared-counter/) | Intel performance skills | medium | Replace a hot global atomic statistics counter with local aggregation |
@@ -68,8 +71,9 @@ See [COVERAGE.md](./COVERAGE.md) for the broader oneTBB API/concept coverage mat
 
 > The oneTBB tasks build entirely from `ubuntu:22.04` + standard apt and are
 > verified in the `terminal-bench-verify` CI job. The oneMKL / oneDPL / IPP /
-> oneCCL / sklearnex / dpnp tasks pull the Intel oneAPI apt repo, header-only
-> oneDPL, or pip wheels (dpnp pulls the Intel SYCL runtime transitively) at
+> oneCCL / sklearnex / dpnp / MKL-extension tasks pull the Intel oneAPI apt
+> repo, header-only oneDPL, or pip wheels (dpnp pulls the Intel SYCL runtime
+> transitively; the `mkl_*` extensions pull oneMKL itself) at
 > **build** time (the verifier still runs offline with `--network none`) and are
 > verified in a separate
 > `terminal-bench-verify-oneapi` CI job so a heavy build cannot affect the core

@@ -65,6 +65,20 @@ products:
       - url:https://spec.oneapi.io/versions/latest/elements/oneMKL/source/index.html
       - url:https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2024-2/overview.html
 
+  mkl_extensions:
+    coverage_status: covered
+    name: MKL Python Extensions (mkl_fft, mkl_random, mkl_umath)
+    description: >
+      Intel MKL Python extension packages providing oneMKL-backed acceleration
+      for numpy.fft (mkl_fft), numpy.random (mkl_random), and element-wise
+      ufuncs (mkl_umath). Activation is explicit via patch_numpy_*() on stock
+      numpy and build-wired on Intel-built numpy. mkl_random is not a
+      fixed-seed drop-in: the same seed yields a different sequence.
+    doc_sources:
+      - url:https://raw.githubusercontent.com/IntelPython/mkl_fft/master/README.md
+      - url:https://raw.githubusercontent.com/IntelPython/mkl_random/master/README.md
+      - url:https://raw.githubusercontent.com/IntelPython/mkl_umath/main/README.md
+
   # ── Deep Learning & AI ───────────────────────────────────────────────────
 
   onednn:

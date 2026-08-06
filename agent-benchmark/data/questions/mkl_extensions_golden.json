@@ -1,0 +1,213 @@
+{
+  "schema_version": "questions.v1",
+  "library": "MKL Python Extensions",
+  "library_id": "intelpython/mkl_fft",
+  "description": "Curated golden questions for the Intel MKL Python extension packages (mkl_fft, mkl_random, mkl_umath). Each item is verified against upstream source and selected for discriminating power: a knowledgeable agent should score differently from one producing fluent but unsourced advice. The set measures whether an agent decides fit correctly from the code, reports honest NOs, activates the extensions with real API names, proves activation reliably, and declines to invent performance numbers.",
+  "version_or_doc_snapshot": "Verified against upstream source for IntelPython/mkl_fft, mkl_random, and mkl_umath, then revalidated question-by-question by independent per-persona review. Difficulty reflects that review rather than an initial guess. Eligibility thresholds cited in expected_topics are private #defines in mkl_umath, not published API, and may change between releases; treat them as read-from-source facts, and re-read them from the installed build before relying on a specific number.",
+  "questions": [
+    {
+      "id": "mkl-extensions-Q001",
+      "text": "A hot loop calls `np.sin(a)` where `a = base.T` and `base` is a C-contiguous `(1000, 4)` float64 array, so `a` is a transposed view of shape `(4, 1000)` holding 4000 elements. Would patching mkl_umath accelerate this call? Explain precisely what decides it.",
+      "category": "eligibility_gates",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "No, but not because of contiguity. `.T` of a 2-D C-contiguous array is exactly F-contiguous, so NumPy's iterator coalesces both axes into a single run with `steps[0] == sizeof(double)`. `IS_UNARY_CONT` and therefore `can_vectorize` both PASS.",
+        "The gate `can_vectorize && dimensions[0] > VML_TRANSCEDENTAL_THRESHOLD` fails purely on size: the coalesced inner-loop length is 4000, and the threshold is 8192 (strict `>`).",
+        "`dimensions[0]` is the inner-loop length after coalescing, not the array's shape. Scale the same expression up and it does dispatch: `np.ones((1_000_000, 4)).T` gives `dimensions[0] == 4000000` and reaches VML.",
+        "Judge the call site on `steps[]` and the coalesced run length, not on `.T` and not on the C_CONTIGUOUS flag. A genuinely strided view (`a[::2]`, `a[:, ::2]`) is buffered into chunks capped at NumPy's buffer size, which matches the transcendental threshold, so the strict `>` comparison is never satisfied and the VML kernel is not reached. Copy to contiguous first if dispatch is needed."
+      ],
+      "metadata": {
+        "persona": "numpy_performance_engineer",
+        "skill_under_test": "mkl_umath",
+        "expected_workflow": "eligibility gate check before recommending a patch",
+        "why_it_matters": "Tests whether the agent reasons from strides and the coalesced inner-loop length rather than assuming `.T` implies non-contiguous. The plausible wrong answer reaches the right verdict for the wrong reason.",
+        "negative_case": true,
+        "trigger": "code"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q002",
+      "text": "A signal-processing module runs `np.exp`, `np.log`, and `np.tanh` over large contiguous `complex128` arrays. Which MKL extension helps, and why or why not?",
+      "category": "coverage_limits",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "mkl_umath does not help. `exp`, `log`, `sin`, `cos`, `sqrt`, and `tanh` ship float32/float64 loops only (`f->f`, `d->d`); patching installs nothing for complex input.",
+        "Results for complex input stay bit-identical to stock NumPy because patching is signature-matched (`PyUFunc_ReplaceLoopBySignature`) and no complex loop exists to substitute for these ufuncs.",
+        "Complex loops exist for elementwise arithmetic, comparison, and predicate ufuncs (add, subtract, multiply, divide, conjugate, square, reciprocal, sign, fmax/fmin, the six comparisons, isfinite/isinf/isnan, the logical ops) -- none of them transcendental. `absolute` takes complex input but returns real (`F->f`, `D->d`). Do not present the complex-capable set as a short list.",
+        "If the module also performs FFTs, mkl_fft is a separate and genuine candidate; the complex-transcendental NO applies only to mkl_umath."
+      ],
+      "metadata": {
+        "persona": "signal_processing_developer",
+        "skill_under_test": "mkl_umath",
+        "expected_workflow": "dtype coverage check per ufunc",
+        "why_it_matters": "Complex-heavy DSP code is a common false positive for vectorized-math acceleration.",
+        "negative_case": true,
+        "trigger": "code"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q003",
+      "text": "A Monte Carlo simulation draws samples with `rng = np.random.default_rng(seed); rng.standard_normal(10_000_000)`. Will `mkl_random.patch_numpy_random()` accelerate it?",
+      "category": "coverage_limits",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "No. mkl_random patches only the legacy `np.random.*` functional API and the `np.random.RandomState` class. The modern `default_rng()`/`Generator` API is untouched.",
+        "Patching would have no effect on this code; the call site would need to change.",
+        "Acceleration requires changing the call site. Options: `mkl_random.interfaces.numpy_random.RandomState` (the documented drop-in for the legacy API, and what upstream's own deprecation warning points at), `mkl_random.MKLRandomState` when `brng`/`method` control is needed, or the patched legacy functional calls. All of them change the sampled values, since mkl_random is explicitly not fixed-seed compatible."
+      ],
+      "metadata": {
+        "persona": "quantitative_analyst",
+        "skill_under_test": "mkl_random",
+        "expected_workflow": "API-surface check before recommending a patch",
+        "why_it_matters": "The Generator API is now the NumPy default, so this NO is the most frequent real-world case.",
+        "negative_case": true,
+        "trigger": "code"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q004",
+      "text": "A codebase draws bulk samples via `np.random.standard_normal(size=50_000_000)` and its test suite asserts exact values for `np.random.seed(0)`. What should an agent recommend?",
+      "category": "reproducibility",
+      "difficulty": "medium",
+      "level": "end_to_end",
+      "expected_topics": [
+        "The sampling shape is what mkl_random's VSL backend targets: bulk legacy-API draws with a large `size`, filled per call with no size gate. No upstream benchmark quantifies the gain.",
+        "But patching changes the sampling sequence for the same seed, even with `brng='MT19937'`. It is not a fixed-seed drop-in, so the exact-value tests will fail.",
+        "The reproducibility hazard must be surfaced unprompted, and the patch requires an explicit OK from the user before being applied.",
+        "If the user drops to `mkl_random.MKLRandomState` directly, the `method` choice for normal sampling (ICDF / BoxMuller / BoxMuller2) is a third independent source of stream change. Note the patched `np.random.standard_normal` hardcodes `method='ICDF'` and does not expose the kwarg."
+      ],
+      "metadata": {
+        "persona": "quantitative_analyst",
+        "skill_under_test": "mkl_random",
+        "expected_workflow": "fit check plus mandatory reproducibility caveat",
+        "why_it_matters": "Silently changing a random stream under a fixed seed is the most damaging failure mode of these packages.",
+        "trigger": "code",
+        "negative_case": true
+      }
+    },
+    {
+      "id": "mkl-extensions-Q005",
+      "text": "An agent wants to confirm that `np.fft` is currently routing to MKL. It plans to check `mkl_fft.is_patched()`. Is that the right proof?",
+      "category": "activation_proof",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "No. On an Intel-built numpy, FFT is already active while `is_patched()` still returns False, because that counter only tracks explicit patch calls.",
+        "The reliable proof is `np.fft.fft.__module__ == 'mkl_fft.interfaces._numpy_fft'`, which is true whether FFT is build-wired or explicitly patched.",
+        "Patching also re-exports the helpers, so `fftshift`, `fftfreq`, `rfftfreq`, and `ifftshift` start reporting `mkl_fft.interfaces._numpy_helper`. That is a re-export, not acceleration; judge only the transforms."
+      ],
+      "metadata": {
+        "persona": "build_engineer",
+        "skill_under_test": "mkl_fft",
+        "expected_workflow": "runtime feature detection via bound-function __module__",
+        "why_it_matters": "Using is_patched() for FFT produces false negatives on exactly the installs where FFT is already accelerated.",
+        "trigger": "environment"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q006",
+      "text": "`numpy.__config__.show()` indicates an MKL-backed build, but `threadpool_info()` called right after `import numpy` reports no entry with `internal_api: 'mkl'`. A colleague suggests running a matmul first and re-probing. Is that the right fix, and what should be investigated?",
+      "category": "environment_probe",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "No, the warm-up call changes nothing. threadpoolctl enumerates shared libraries already loaded in the process image, and numpy's BLAS is a link-time dependency of its C extension module, so it is mapped at import before any BLAS call runs.",
+        "A missing `mkl` entry immediately after import is therefore genuine evidence, not a probe-ordering artifact. Investigate the link rather than the probe order.",
+        "Check what the extension module actually links against (`numpy.__config__.show()`, or `ldd`/`dumpbin` on `_multiarray_umath`). Real causes include MKL exposed under a filename threadpoolctl does not match, a BLAS shim, or MKL linked statically.",
+        "`mkl-service` is not involved: threadpoolctl declares no dependency on it and binds `mkl_rt` directly by symbol. Do not prescribe installing it to make the pool appear."
+      ],
+      "metadata": {
+        "persona": "build_engineer",
+        "skill_under_test": "environment_probe",
+        "expected_workflow": "BLAS call before reading threadpool_info",
+        "why_it_matters": "Tests whether the agent knows library loading happens at import, so it neither dismisses real evidence nor prescribes a no-op warm-up call.",
+        "trigger": "environment"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q007",
+      "text": "A float32 audio pipeline calls `np.fft.rfft` under NumPy 2.x, and the team is considering `mkl_fft.interfaces.numpy_fft`. Some arrays are `np.longdouble`. What should be said about output dtype and extended precision?",
+      "category": "numerical_effect",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "For float32 there is no dtype change to flag. mkl_fft preserves single precision (`float32 -> complex64`), and since NumPy 2.0 stock `numpy.fft` also computes natively in float, double, or long double rather than always upcasting to double. The old 'NumPy upcasts float32' contrast applies only to NumPy 1.x.",
+        "Extended precision is where the real regression is. The numpy interface silently downcasts `longdouble -> float64` and `clongdouble -> complex128`; the source comment notes it downcasts rather than raising.",
+        "The scipy interface behaves differently on the same input: it raises `NotImplementedError` instead of downcasting silently. Naming that asymmetry is the useful part of the answer.",
+        "Since NumPy 2.0 supports longdouble FFT natively, routing this pipeline through mkl_fft is a precision regression for those arrays, not merely an absence of acceleration."
+      ],
+      "metadata": {
+        "persona": "signal_processing_developer",
+        "skill_under_test": "mkl_fft",
+        "expected_workflow": "dtype preservation check",
+        "why_it_matters": "Guards against advice built on pre-NumPy-2.0 behaviour, and surfaces the silent-downcast versus raise asymmetry between the two interfaces.",
+        "trigger": "code"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q008",
+      "text": "An environment has stock conda-forge numpy plus mkl_fft, mkl_random, and mkl_umath installed. A user reports 'no speedup at all' from FFT work. What is the most likely cause?",
+      "category": "install_axis",
+      "difficulty": "easy",
+      "level": "triage",
+      "expected_topics": [
+        "With a stock numpy the extensions stay dormant: `np.fft.*` still routes to `numpy.fft` until patching is enabled, via `mkl_fft.patch_numpy_fft()`, the `mkl_fft` context manager, or the CLI; alternatively call `mkl_fft.interfaces.numpy_fft` directly.",
+        "Confirm with `np.fft.fft.__module__`, which reads `numpy.fft` when dormant and `mkl_fft.interfaces._numpy_fft` when active. `mkl_fft.is_patched()` distinguishes an in-process or persistent `.pth` patch from an unwired environment.",
+        "The same conda command can land either an Intel-built or a conda-forge numpy depending on which channel wins, so determine the state at runtime rather than assuming.",
+        "Constraining BLAS does not wire numpy's FFT: `blas=*=mkl` on conda-forge, or `blas=*=*_intelmkl` on Intel's channel, only swaps the BLAS/LAPACK libraries. numpy's FFT is bundled pocketfft with no BLAS linkage, so it is wired by a Python-level rebinding (Intel's recipe patches `numpy/fft/__init__.py`) -- a different mechanism entirely."
+      ],
+      "metadata": {
+        "persona": "build_engineer",
+        "skill_under_test": "mkl_fft",
+        "expected_workflow": "dormant-extension diagnosis",
+        "why_it_matters": "This is the single most common reason an expected speedup does not appear.",
+        "trigger": "environment"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q009",
+      "text": "Code runs `np.floor_divide` and bitwise operations on large contiguous int64 arrays. Which of mkl_fft, mkl_random, or mkl_umath helps?",
+      "category": "coverage_limits",
+      "difficulty": "easy",
+      "level": "triage",
+      "expected_topics": [
+        "None. mkl_umath's VML paths are float, double, and complex; integer-only work is not covered.",
+        "Bitwise operations are not covered for any dtype.",
+        "The honest answer is that none of mkl_fft, mkl_random, or mkl_umath help this code.",
+        "Credit answers noting that integer typecodes appear in mkl_umath only as the `ldexp` exponent operand and `frexp` exponent output, never as a value dtype; and that mkl_random could only help generating such arrays, not operating on them."
+      ],
+      "metadata": {
+        "persona": "numpy_performance_engineer",
+        "skill_under_test": "mkl_umath",
+        "expected_workflow": "dtype and coverage check yielding an outright NO",
+        "why_it_matters": "Tests whether the agent will state a complete NO rather than inventing a marginal benefit.",
+        "negative_case": true,
+        "trigger": "code"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q010",
+      "text": "An agent must decide whether `mkl_fft.interfaces.scipy_fft` is usable in the current environment. What check should it run, and what must it avoid?",
+      "category": "capability_probe",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "Probe capability at runtime with `hasattr(mkl_fft.interfaces, 'scipy_fft')`.",
+        "Do not decide from a version string; use runtime feature detection.",
+        "`hasattr(mkl_fft, 'patch_numpy_fft')` similarly confirms the explicit-patch workflow is available.",
+        "The check is safe after a bare `import mkl_fft` because the package imports its `interfaces` submodule at top level.",
+        "The guard binds the submodule as an attribute (`from . import scipy_fft`) in the same success branch that appends to `__all__`, so `hasattr` is driven by attribute binding rather than `__all__` membership. When scipy or mkl-service is missing, `import mkl_fft` still succeeds and `hasattr` simply returns False."
+      ],
+      "metadata": {
+        "persona": "build_engineer",
+        "skill_under_test": "mkl_fft",
+        "expected_workflow": "hasattr capability probe rather than version comparison",
+        "why_it_matters": "Version-string gating breaks across the many release generations of these packages.",
+        "trigger": "environment"
+      }
+    }
+  ]
+}
