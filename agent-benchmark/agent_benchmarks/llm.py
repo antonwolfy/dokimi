@@ -70,12 +70,12 @@ def _resolve_api_key(provider: str, api_key: Optional[str]) -> str:
     """Resolve API key from env vars or file: references."""
     if not api_key:
         env_map = {
-            "anthropic":  "ANTHROPIC_API_KEY",
-            "openai":     "OPENAI_API_KEY",
-            "openrouter": "OPENROUTER_API_KEY",
-            "bedrock":    "AWS_ACCESS_KEY_ID",
-            "google":     "GEMINI_API_KEY",
-            "gemini":     "GEMINI_API_KEY",
+            "anthropic":     "ANTHROPIC_API_KEY",
+            "openai":        "OPENAI_API_KEY",
+            "openrouter":    "OPENROUTER_API_KEY",
+            "amazon-bedrock": "AWS_BEARER_TOKEN_BEDROCK",
+            "google":        "GEMINI_API_KEY",
+            "gemini":        "GEMINI_API_KEY",
         }
         api_key = os.environ.get(env_map.get(provider, "OPENAI_API_KEY"), "")
     if api_key and api_key.startswith("file:"):
@@ -236,6 +236,7 @@ def llm_call_with_usage(
     retry_delay: float = 2.0,
     system: Optional[str] = None,
     stream: bool = False,
+    max_tokens: Optional[int] = None,
 ) -> "tuple[str, UsageRecord]":
     """Like llm_call, but returns ``(text, UsageRecord)``.
 
@@ -250,6 +251,9 @@ def llm_call_with_usage(
             the first content chunk). Default off — the non-streaming path keeps
             the well-tested retry/usage behavior; TTFT is opt-in for
             latency-sensitive sweeps.
+        max_tokens: Optional output-token ceiling. Reasoning models can spend the
+            provider's default budget entirely on internal reasoning and return
+            empty content, so callers benchmarking them should raise this.
 
     Returns:
         (response_text: str, usage: UsageRecord)
@@ -271,13 +275,15 @@ def llm_call_with_usage(
         try:
             if stream:
                 return _stream_call(completion, litellm_model, messages, api_key,
-                                    model, provider)
+                                    model, provider, max_tokens=max_tokens)
 
             t0 = time.time()
+            extra = {"max_tokens": max_tokens} if max_tokens else {}
             resp = completion(
                 model=litellm_model,
                 messages=messages,
                 api_key=api_key or None,
+                **extra,
             )
             latency = time.time() - t0
             text = resp.choices[0].message.content
@@ -299,7 +305,8 @@ def llm_call_with_usage(
     raise last_exc  # should never reach here
 
 
-def _stream_call(completion, litellm_model, messages, api_key, model, provider):
+def _stream_call(completion, litellm_model, messages, api_key, model, provider,
+                 max_tokens: Optional[int] = None):
     """Streaming variant of a single completion that also measures TTFT.
 
     Requests usage in the terminal chunk (``stream_options``) and stamps
@@ -317,6 +324,7 @@ def _stream_call(completion, litellm_model, messages, api_key, model, provider):
         api_key=api_key or None,
         stream=True,
         stream_options={"include_usage": True},
+        **({"max_tokens": max_tokens} if max_tokens else {}),
     )
     for chunk in stream_resp:
         final_chunk = chunk
@@ -354,6 +362,7 @@ def chat_completion(
     api_key: Optional[str] = None,
     max_retries: int = 3,
     retry_delay: float = 2.0,
+    max_tokens: Optional[int] = None,
 ):
     """Multi-turn completion with optional tool-calling.
 
@@ -366,6 +375,8 @@ def chat_completion(
         messages: OpenAI-style message dicts.
         tools: Optional list of tool schemas (OpenAI/litellm format).
         tool_choice: Optional tool-choice directive (e.g. ``"auto"``).
+        max_tokens: Optional output-token ceiling; see
+            :func:`llm_call_with_usage`.
 
     Returns:
         The litellm completion response object.
@@ -379,6 +390,8 @@ def chat_completion(
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = tool_choice or "auto"
+    if max_tokens:
+        kwargs["max_tokens"] = max_tokens
 
     last_exc: Optional[Exception] = None
     delay = retry_delay

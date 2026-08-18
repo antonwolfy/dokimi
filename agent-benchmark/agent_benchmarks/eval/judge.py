@@ -110,6 +110,28 @@ __CONTEXT__
   }
 }"""
 
+MAX_GROUND_TRUTH_CHARS = 4000
+
+
+def _clip_ground_truth(ground_truth: str, limit: int = MAX_GROUND_TRUTH_CHARS) -> str:
+    """Bound ground-truth length while preserving line structure.
+
+    ``textwrap.shorten`` collapses all whitespace, which would flatten a
+    multi-statement ground truth into one run-on line and make it far harder for
+    the judge to check facts individually. Clip whole lines instead.
+    """
+    text = (ground_truth or "").strip()
+    if len(text) <= limit:
+        return text
+    kept: list[str] = []
+    used = 0
+    for line in text.splitlines():
+        if used + len(line) + 1 > limit:
+            break
+        kept.append(line)
+        used += len(line) + 1
+    return "\n".join(kept) + "\n…" if kept else text[:limit] + "…"
+
 
 class Judge:
     """
@@ -317,7 +339,6 @@ class Judge:
         ground_truth: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Judge a single answer, optionally using a ground-truth doc chunk."""
-        import textwrap
         from agent_benchmarks.llm import extract_json_object
 
         grounded = bool(ground_truth)
@@ -329,7 +350,7 @@ class Judge:
                 .replace("__ANSWER__", answer)
                 .replace("__CONTEXT__", context)
                 .replace("__LIBRARY_NAME__", library_name)
-                .replace("__GROUND_TRUTH__", textwrap.shorten(ground_truth, width=1500, placeholder="…"))
+                .replace("__GROUND_TRUTH__", _clip_ground_truth(ground_truth))
             )
         else:
             prompt = (
@@ -340,17 +361,33 @@ class Judge:
                 .replace("__LIBRARY_NAME__", library_name)
             )
 
-        response = self.llm.invoke(prompt)
-        raw = response.content if hasattr(response, "content") else str(response)
-        self._accumulate_usage(getattr(response, "usage", None))
-
-        scores = extract_json_object(raw)
-
-        # Validate required fields
         required = self._GROUNDED_DIMS if grounded else self._STANDARD_DIMS
-        missing = required - scores.keys()
-        if missing:
-            raise ValueError(f"Missing keys in judge response: {missing}")
+
+        # A malformed or truncated reply is a formatting failure, not a verdict:
+        # without a retry the question loses its score for good and the report
+        # still renders a clean-looking delta over the survivors.
+        #
+        # Retrying only helps because no sampling parameters are pinned on this
+        # path, so each attempt is an independent draw; pinning temperature=0 or a
+        # fixed seed would make these three identical calls.
+        last_exc: Exception = ValueError("judge retry loop did not execute")
+        for attempt in range(3):
+            response = self.llm.invoke(prompt)
+            raw = response.content if hasattr(response, "content") else str(response)
+            self._accumulate_usage(getattr(response, "usage", None))
+            try:
+                scores = extract_json_object(raw)
+                missing = required - scores.keys()
+                if missing:
+                    raise ValueError(f"Missing keys in judge response: {missing}")
+                break
+            except Exception as exc:
+                last_exc = exc
+                logger.warning(
+                    "Judge response unparseable (attempt %d/3): %s", attempt + 1, exc
+                )
+        else:
+            raise last_exc
 
         # Python computes aggregate for grounded eval
         # (LLM sets aggregate=0 per instructions)

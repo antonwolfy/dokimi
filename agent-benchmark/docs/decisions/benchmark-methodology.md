@@ -82,6 +82,8 @@ Questions can come from several sources:
 
 Question records preserve source fields such as `source_type`, `question_source`, `persona`, `difficulty`, `topics`, `expected_topics`, and `ground_truth_chunk` when available.
 
+`expected_topics` carries two different kinds of content depending on the source, and evaluation treats them differently. Persona-generated sets store short keyword labels ("version check", "import test"). Curated golden sets store verified answer statements, often with citations in `metadata` (`must_cite`, `github_issue`, `verified_by`). Only the latter are usable as judge ground truth — see [Grounded Judging](#grounded-judging).
+
 ## Question Types
 
 Persona-based generation mixes these question families:
@@ -125,7 +127,22 @@ The standard judge scores five dimensions from 0 to 100:
 - **Code quality**: whether included code is correct, runnable, and idiomatic.
 - **Actionability**: whether the user can apply the answer immediately.
 
-For chunk-grounded questions, the judge also scores **factual grounding** against the stored documentation excerpt. Python computes the grounded aggregate with extra weight on correctness and factual grounding.
+### Grounded Judging
+
+When a question carries ground truth, the judge scores a sixth dimension, **factual grounding**, against it. Python computes the grounded aggregate with extra weight on correctness and factual grounding.
+
+Two kinds of question supply ground truth:
+
+- **Chunk-grounded questions** supply it directly as `ground_truth_chunk`: the documentation excerpt the question was generated from.
+- **Curated golden sets** supply it as `expected_topics`, promoted to ground truth when those entries are substantive answer statements rather than keyword labels. This path is opt-in via `--grounded-from-topics`; without the flag such questions stay ungrounded. An explicit `ground_truth_chunk` always wins when both are present and needs no flag.
+
+The promotion is gated on mean `expected_topics` length (`MIN_GROUND_TRUTH_TOPIC_CHARS`, currently 40). Persona-generated sets store short topic labels in the same field — measured at 14-19 characters per entry across `dpnp.json`, `onetbb.json`, and `onedal.json` — and grading a full answer against a word list would penalise correct answers. Curated golden sets measure 78-195 characters per entry, so the two populations separate cleanly. Sets below the threshold keep using the ungrounded five-dimension rubric.
+
+Grounding is scoped to the judge. Ground truth is never shown to an answering model, and both arms of a comparison are graded against the same key, so the treatment arm gains no privileged access from it.
+
+Prefer grounding golden sets where ground truth exists. Without it the judge has no notion of the correct verdict, so it scores on the general qualities of an answer. That is weakest exactly where a golden set is most valuable: on adversarial questions whose correct answer is a refusal or a caution, where a confident and thorough-looking wrong answer can outscore a correct terse one.
+
+The two rubrics are not interchangeable. Grounded scoring changes both the dimension set and the aggregate formula, so grounded and ungrounded scores are different scales and must not be averaged together or compared as absolute values. Runs record `grounded_from_topics` and `grounded_questions` so the rubric behind a given score is recoverable, and a partly-grounded question set is detectable after the fact.
 
 The optional judge panel uses three roles:
 

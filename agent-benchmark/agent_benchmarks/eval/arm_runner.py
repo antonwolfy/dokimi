@@ -42,6 +42,31 @@ ANSWER_PROMPT_PLAIN = """Answer the following user question. Be specific and inc
 
 MAX_CONTEXT_CHARS = 15_000
 
+# Curated golden sets carry verified answer statements in ``expected_topics``,
+# which are usable as judge ground truth. Auto-generated sets put short keyword
+# labels in the same field (measured: ~14-19 chars/topic, versus 78-207 for the
+# golden sets), and grading a full answer against bare keywords would penalise
+# correct answers. Only promote topics that are prose-length.
+MIN_GROUND_TRUTH_TOPIC_CHARS = 40
+
+
+def _ground_truth_from_topics(q: Dict[str, Any]) -> Optional[str]:
+    """Build judge ground truth from ``expected_topics``, when they are substantive.
+
+    Returns ``None`` for keyword-style topics so that such questions keep using
+    the ungrounded rubric rather than being scored against a word list.
+    """
+    topics = q.get("expected_topics") or []
+    if not isinstance(topics, list):
+        return None
+    statements = [str(t).strip() for t in topics if str(t).strip()]
+    if not statements:
+        return None
+    mean_len = sum(len(s) for s in statements) / len(statements)
+    if mean_len < MIN_GROUND_TRUTH_TOPIC_CHARS:
+        return None
+    return "\n".join(f"- {s}" for s in statements)
+
 
 class ArmRunner:
     """Generate answers for each treatment arm and (optionally) judge them."""
@@ -56,6 +81,8 @@ class ArmRunner:
         harness: str = "arms-runner",
         plugin_set: Optional[Dict[str, Any]] = None,
         matrix_cell: Optional[str] = None,
+        max_tokens: Optional[int] = None,
+        grounded_from_topics: bool = False,
     ):
         if not treatments:
             raise ValueError("ArmRunner requires at least one treatment arm")
@@ -64,6 +91,8 @@ class ArmRunner:
         self.provider = provider
         self.api_key = api_key
         self.max_iterations = max_iterations
+        self.max_tokens = max_tokens
+        self.grounded_from_topics = grounded_from_topics
         self.harness = harness
         self.matrix_cell = matrix_cell
         self.plugin_set = plugin_set or {
@@ -126,8 +155,11 @@ class ArmRunner:
             "persona": q.get("persona"),
             "arms": arms,
         }
-        if q.get("ground_truth_chunk"):
-            rec["ground_truth_chunk"] = q["ground_truth_chunk"]
+        ground_truth = q.get("ground_truth_chunk")
+        if not ground_truth and self.grounded_from_topics:
+            ground_truth = _ground_truth_from_topics(q)
+        if ground_truth:
+            rec["ground_truth_chunk"] = ground_truth
         return rec
 
     def _answer_one_arm(
@@ -165,6 +197,7 @@ class ArmRunner:
                 provider=self.provider,
                 api_key=self.api_key,
                 system=cfg.system_prompt,
+                max_tokens=self.max_tokens,
             )
         except Exception as exc:
             logger.exception("Arm %s answer generation failed", treatment.name)
@@ -224,6 +257,7 @@ class ArmRunner:
                 system_prompt=cfg.system_prompt,
                 api_key=self.api_key,
                 max_iterations=self.max_iterations,
+                max_tokens=self.max_tokens,
             )
         except Exception as exc:
             logger.exception("Agentic arm failed")
@@ -345,6 +379,10 @@ class ArmRunner:
             "arms": self.arm_names,
             "baseline_arm": baseline_arm,
             "total_questions": len(records),
+            "grounded_from_topics": self.grounded_from_topics,
+            "grounded_questions": sum(
+                1 for r in records if r.get("ground_truth_chunk")
+            ),
             "answers": records,
             "cost_summary": self._cost_summary(records),
             "agentic_usage_summary": self._summarize_agentic_usage(records),

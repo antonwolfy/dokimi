@@ -174,6 +174,13 @@ def register(sub, positive_int) -> None:
     arms_run_p.add_argument("--rerank-threshold", type=float, default=0.3, dest="rerank_threshold")
     arms_run_p.add_argument("--max-iterations", type=positive_int, default=6, dest="max_iterations",
                             help="Max tool-call rounds for agentic arms (agent:/skill-agent:, default: 6)")
+    arms_run_p.add_argument("--max-tokens", type=positive_int, default=None, dest="max_tokens",
+                            help="Output-token ceiling per answer. Raise for reasoning models, which "
+                                 "can spend the provider default entirely on reasoning and return empty text")
+    arms_run_p.add_argument("--grounded-from-topics", action="store_true", dest="grounded_from_topics",
+                            help="Let the judge use a question's expected_topics as ground truth when they "
+                                 "are substantive answer statements, enabling the factual_grounding "
+                                 "dimension for curated golden sets. Keyword-style topics are ignored")
     arms_run_p.add_argument("--concurrency", type=positive_int, default=5)
     arms_run_p.add_argument("--out-json", default=None, dest="out_json",
                             help="Output JSON path (default: results/arms/{product}.json)")
@@ -267,6 +274,13 @@ def _add_common_run_args(parser, positive_int, *, matrix_required: bool = False)
     parser.add_argument("--rerank-threshold", type=float, default=0.3, dest="rerank_threshold")
     parser.add_argument("--max-iterations", type=positive_int, default=6, dest="max_iterations",
                         help="Max tool-call rounds for agentic arms (agent:/skill-agent:, default: 6)")
+    parser.add_argument("--max-tokens", type=positive_int, default=None, dest="max_tokens",
+                        help="Output-token ceiling per answer. Raise for reasoning models, which "
+                             "can spend the provider default entirely on reasoning and return empty text")
+    parser.add_argument("--grounded-from-topics", action="store_true", dest="grounded_from_topics",
+                        help="Let the judge use a question's expected_topics as ground truth when they "
+                             "are substantive answer statements, enabling the factual_grounding "
+                             "dimension for curated golden sets. Keyword-style topics are ignored")
     parser.add_argument("--concurrency", type=positive_int, default=5)
 
 
@@ -342,6 +356,8 @@ def _build_arms_output(args: argparse.Namespace, specs: list[str], questions: li
         harness=args.harness,
         plugin_set=plugin_set,
         matrix_cell=args.matrix_cell,
+        max_tokens=getattr(args, "max_tokens", None),
+        grounded_from_topics=getattr(args, "grounded_from_topics", False),
     )
     records = runner.run(
         library_name=args.product,

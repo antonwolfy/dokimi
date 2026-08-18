@@ -205,8 +205,17 @@ def extract_scores(
                 treatment_score = None
                 treatment_arm = None
 
-            # Include score even for single-arm runs (baseline-only)
-            # If baseline_score is None (model failed to answer), use 0.0 to keep question in common set
+            # A missing score is absent data, not a zero-quality answer: scoring
+            # it 0.0 inflates the treatment delta. Carry it as None instead of
+            # dropping the record, because the common-question intersection is
+            # taken over question ids further down — a run whose scores were
+            # dropped here would empty the intersection for every other run too.
+            # Downstream aggregation filters None per metric.
+            paired_delta = (
+                treatment_score - baseline_score
+                if treatment_score is not None and baseline_score is not None
+                else None
+            )
             scores.append(
                 {
                     "question_id": qid,
@@ -214,9 +223,9 @@ def extract_scores(
                     "category": evaluation.get("category", ""),
                     "difficulty": normalize_difficulty(evaluation.get("difficulty", "unknown")),
                     "persona": evaluation.get("persona", ""),
-                    "without_docs": baseline_score if baseline_score is not None else 0.0,
-                    "with_docs": treatment_score if treatment_score is not None else None,
-                    "delta": treatment_score - baseline_score if (treatment_score is not None and baseline_score is not None) else None,
+                    "without_docs": baseline_score,
+                    "with_docs": treatment_score,
+                    "delta": paired_delta,
                     "treatment_arm": treatment_arm,
                 }
             )
@@ -285,6 +294,20 @@ def extract_scores(
 
 def _avg(lst: list[float]) -> float:
     return round(sum(lst) / len(lst), 1) if lst else 0.0
+
+
+def _num_or_dash(v: float | None) -> str:
+    """Render a metric, or an em dash when no usable score backs it."""
+    return "—" if v is None else str(v)
+
+
+def _rank_key(field: str):
+    """Sort key that ranks runs with no usable value for *field* last."""
+    def key(item):
+        v = item[1].get(field)
+        return (v is not None, v if v is not None else 0.0)
+
+    return key
 
 
 def _fmt_delta(d: float | None) -> str:
@@ -539,8 +562,11 @@ def generate_section_report(
     # --- Overall Summary ---
     lines += [
         "## Overall Summary",
-        "| Run | N | Context arm | Baseline | Delta | Improved | Degraded |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "_Delta is the mean of per-question paired differences. Scored pairs is the"
+        " number of questions with a usable score in both arms; Delta, Improved and"
+        " Degraded are computed over those only._",
+        "| Run | N | Scored pairs | Context arm | Baseline | Delta | Improved | Degraded |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
 
     summary_stats: dict[str, dict] = {}
@@ -551,22 +577,34 @@ def generate_section_report(
         with_docs_scores = [s["with_docs"] for s in scores if s["with_docs"] is not None]
         without_docs_scores = [s["without_docs"] for s in scores if s["without_docs"] is not None]
 
-        has_treatment = bool(with_docs_scores)
-        with_avg = _avg(with_docs_scores) if has_treatment else 0.0
-        without_avg = _avg(without_docs_scores) if without_docs_scores else 0.0
+        # Per-run, distinct from the section-level has_treatment above: a single
+        # run may lack a treatment arm while others in the comparison have one.
+        run_has_treatment = bool(with_docs_scores)
+        with_avg = _avg(with_docs_scores) if with_docs_scores else None
+        without_avg = _avg(without_docs_scores) if without_docs_scores else None
 
-        # Only compute delta if treatment arm exists
-        if has_treatment:
-            delta_avg = round(with_avg - without_avg, 1)
-            improved = sum(1 for s in scores if s.get("delta") and s["delta"] > 0)
-            degraded = sum(1 for s in scores if s.get("delta") and s["delta"] < 0)
+        # Average the per-question deltas rather than differencing the two arm
+        # means. The arm means are filtered independently, so when any question
+        # is missing a score they cover different question subsets and their
+        # difference is not a paired delta.
+        paired_deltas = [s["delta"] for s in scores if s.get("delta") is not None]
+
+        if run_has_treatment and paired_deltas:
+            delta_avg = round(sum(paired_deltas) / len(paired_deltas), 1)
+            improved = sum(1 for d in paired_deltas if d > 0)
+            degraded = sum(1 for d in paired_deltas if d < 0)
         else:
             delta_avg = None
             improved = None
             degraded = None
 
+        # Questions that reached the intersection but lack a usable pair.
+        unpaired = len(scores) - len(paired_deltas)
+
         summary_stats[run_id] = {
             "n": len(scores),
+            "n_paired": len(paired_deltas),
+            "unpaired": unpaired,
             "with_avg": with_avg,
             "without_avg": without_avg,
             "delta_avg": delta_avg,
@@ -574,14 +612,19 @@ def generate_section_report(
             "degraded": degraded,
         }
 
-        # Format treatment-only columns as "—" when absent
-        with_avg_str = str(with_avg) if has_treatment else "—"
-        delta_str = f"**{_fmt_delta(delta_avg)}**" if has_treatment else "—"
-        improved_str = str(improved) if has_treatment else "—"
-        degraded_str = str(degraded) if has_treatment else "—"
+        # An arm with no usable score prints as "—" rather than a numeric zero,
+        # which would read as a legitimate score of 0/100.
+        with_avg_str = "—" if with_avg is None else str(with_avg)
+        without_avg_str = "—" if without_avg is None else str(without_avg)
+        delta_str = "—" if delta_avg is None else f"**{_fmt_delta(delta_avg)}**"
+        improved_str = "—" if improved is None else str(improved)
+        degraded_str = "—" if degraded is None else str(degraded)
+        # Make partial coverage visible: a delta over fewer pairs than questions
+        # is weaker evidence than the question count alone suggests.
+        scored_str = str(len(paired_deltas)) if not unpaired else f"{len(paired_deltas)} ({unpaired} unscored)"
 
         lines.append(
-            f"| **{run_id}** | {len(scores)} | {with_avg_str} | {without_avg} | "
+            f"| **{run_id}** | {len(scores)} | {scored_str} | {with_avg_str} | {without_avg_str} | "
             f"{delta_str} | {improved_str} | {degraded_str} |"
         )
 
@@ -662,17 +705,25 @@ def generate_section_report(
                 if sc:
                     with_scores = [s["with_docs"] for s in sc if s["with_docs"] is not None]
                     without_scores = [s["without_docs"] for s in sc if s["without_docs"] is not None]
+                    # Same pairing rule as the overall summary: average the
+                    # per-question deltas, never the difference of two means
+                    # filtered over different question subsets.
+                    diff_deltas = [s["delta"] for s in sc if s.get("delta") is not None]
                     if with_scores:
                         wa = _avg(with_scores)
-                        wo = _avg(without_scores)
-                        row += f" {wa} | {_fmt_delta(round(wa - wo, 1))} |"
+                        delta_cell = (
+                            _fmt_delta(round(sum(diff_deltas) / len(diff_deltas), 1))
+                            if diff_deltas else "—"
+                        )
+                        row += f" {wa} | {delta_cell} |"
                     else:
-                        # Single-arm run - show baseline only
-                        wo = _avg(without_scores) if without_scores else 0.0
+                        # No treatment score in this bucket: report the baseline.
+                        wo = _avg(without_scores) if without_scores else None
+                        wo_cell = "—" if wo is None else f"{wo} (baseline)"
                         if has_treatment:
-                            row += f" — | {wo} (baseline) |"
+                            row += f" — | {wo_cell} |"
                         else:
-                            row += f" {wo} |"
+                            row += f" {'—' if wo is None else wo} |"
                 else:
                     if has_treatment:
                         row += " — | — |"
@@ -746,9 +797,14 @@ def generate_section_report(
         ]
         for run_id in run_ids:
             st = summary_stats[run_id]
-            n = st["n"]
-            helped_pct = round(100 * st["improved"] / n) if n > 0 else 0
-            hurt_pct = round(100 * st["degraded"] / n) if n > 0 else 0
+            # Percentages are over scored pairs, the same population the
+            # improved/degraded counts come from.
+            n_paired = st["n_paired"]
+            if st["improved"] is None or not n_paired:
+                lines.append(f"| **{run_id}** | — | — | — |")
+                continue
+            helped_pct = round(100 * st["improved"] / n_paired)
+            hurt_pct = round(100 * st["degraded"] / n_paired)
             lines.append(
                 f"| **{run_id}** | **{_fmt_delta(st['delta_avg'])}** | "
                 f"{st['improved']} ({helped_pct}%) | {st['degraded']} ({hurt_pct}%) |"
@@ -768,9 +824,9 @@ def generate_section_report(
             "|---:|---|---:|",
         ]
         for rank, (run_id, st) in enumerate(
-            sorted(summary_stats.items(), key=lambda x: x[1]["with_avg"], reverse=True), 1
+            sorted(summary_stats.items(), key=_rank_key("with_avg"), reverse=True), 1
         ):
-            lines.append(f"| {rank} | **{run_id}** | {st['with_avg']} |")
+            lines.append(f"| {rank} | **{run_id}** | {_num_or_dash(st['with_avg'])} |")
     else:
         lines += [
             "### By absolute quality (baseline)",
@@ -778,9 +834,9 @@ def generate_section_report(
             "|---:|---|---:|",
         ]
         for rank, (run_id, st) in enumerate(
-            sorted(summary_stats.items(), key=lambda x: x[1]["without_avg"], reverse=True), 1
+            sorted(summary_stats.items(), key=_rank_key("without_avg"), reverse=True), 1
         ):
-            lines.append(f"| {rank} | **{run_id}** | {st['without_avg']} |")
+            lines.append(f"| {rank} | **{run_id}** | {_num_or_dash(st['without_avg'])} |")
 
     if has_treatment:
         lines += [
@@ -790,7 +846,7 @@ def generate_section_report(
             "|---:|---|---:|",
         ]
         for rank, (run_id, st) in enumerate(
-            sorted(summary_stats.items(), key=lambda x: x[1]["delta_avg"], reverse=True), 1
+            sorted(summary_stats.items(), key=_rank_key("delta_avg"), reverse=True), 1
         ):
             lines.append(f"| {rank} | **{run_id}** | {_fmt_delta(st['delta_avg'])} |")
     else:

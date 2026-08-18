@@ -121,24 +121,106 @@ def test_consistency_ok_different_models():
 # ---------------------------------------------------------------------------
 
 
-def test_extract_scores_skips_missing_aggregate():
-    """Questions are now included even with missing aggregate - supports single-arm reports."""
+def test_extract_scores_keeps_records_with_missing_aggregate():
+    """Records are kept with None so the common-question intersection survives."""
     run = _eval_run([
         {"id": "Q1", "scores": {"baseline": {"aggregate": 60}, "with-ctx": {"aggregate": 80}}},
-        {"id": "Q2", "scores": {"baseline": {}, "with-ctx": {"aggregate": 70}}},  # baseline missing -> 0.0
-        {"id": "Q3", "scores": {"baseline": {"aggregate": 50}, "with-ctx": {}}},  # treatment missing -> None
+        {"id": "Q2", "scores": {"baseline": {}, "with-ctx": {"aggregate": 70}}},
+        {"id": "Q3", "scores": {"baseline": {"aggregate": 50}, "with-ctx": {}}},
     ])
     scores = extract_scores(run)
-    assert len(scores) == 3
-    assert scores[0]["question_id"] == "Q1"
+    assert [s["question_id"] for s in scores] == ["Q1", "Q2", "Q3"]
+
     assert scores[0]["without_docs"] == 60
     assert scores[0]["with_docs"] == 80
-    assert scores[1]["question_id"] == "Q2"
-    assert scores[1]["without_docs"] == 0.0  # Missing baseline becomes 0.0
+    assert scores[0]["delta"] == 20
+
+    # Missing baseline: carried as None rather than 0.0, which would inflate the
+    # delta, and rather than dropped, which would shrink the intersection.
+    assert scores[1]["without_docs"] is None
     assert scores[1]["with_docs"] == 70
-    assert scores[2]["question_id"] == "Q3"
+    assert scores[1]["delta"] is None
+
     assert scores[2]["without_docs"] == 50
-    assert scores[2]["with_docs"] is None  # Missing treatment stays None
+    assert scores[2]["with_docs"] is None
+    assert scores[2]["delta"] is None
+
+
+def test_missing_baseline_run_does_not_empty_the_intersection():
+    """A run with no usable baselines must not zero out N for every other run."""
+    good = _eval_run([_q("Q1"), _q("Q2")], model="good")
+    broken = _eval_run([
+        {"id": "Q1", "scores": {"baseline": {"error": "boom"}, "with-context": {"aggregate": 70}}},
+        {"id": "Q2", "scores": {"baseline": {"error": "boom"}, "with-context": {"aggregate": 72}}},
+    ], model="broken")
+
+    lines = "\n".join(
+        generate_section_report([("good", good), ("broken", broken)], ["good", "broken"], "test")
+    )
+    assert "Common questions evaluated: **2**" in lines
+
+
+def _scored(qid, baseline, treatment, arm="with-context"):
+    """Question spec allowing either side to be an error instead of a score."""
+    return {
+        "id": qid,
+        "scores": {
+            "baseline": {"aggregate": baseline} if baseline is not None else {"error": "boom"},
+            arm: {"aggregate": treatment} if treatment is not None else {"error": "boom"},
+        },
+    }
+
+
+def test_no_usable_score_renders_dash_not_zero():
+    """An arm with no score must not print as 0, which reads as a real 0/100."""
+    ok = _eval_run([_scored("Q1", 70, 75), _scored("Q2", 72, 78)], model="ok")
+    bad = _eval_run([_scored("Q1", None, 75), _scored("Q2", None, 78)], model="bad")
+
+    lines = "\n".join(generate_section_report([("ok", ok), ("bad", bad)], ["ok", "bad"], "t"))
+    bad_row = next(ln for ln in lines.splitlines() if ln.startswith("| **bad** |") and "unscored" in ln)
+    assert "| 0.0 |" not in bad_row
+    assert "—" in bad_row
+
+
+def test_by_difficulty_uses_paired_delta():
+    """By-difficulty must not difference independently filtered means either."""
+    # Q2 has a treatment score but no baseline. Differencing means gives +13.3;
+    # the paired mean over Q1 and Q3 is +7.5.
+    run = _eval_run([
+        _scored("Q1", 70, 80),
+        _scored("Q2", None, 90),
+        _scored("Q3", 60, 65),
+    ])
+    lines = generate_section_report([("a", run)], ["a"], "t")
+    diff_row = next(ln for ln in lines if ln.startswith("| easy |"))
+    assert "+7.5" in diff_row
+    assert "+13.3" not in diff_row
+
+
+def test_difficulty_row_matches_header_column_count():
+    """Runs differing in treatment coverage must not desync header and row widths."""
+    ok = _eval_run([_scored("Q1", 70, 75), _scored("Q2", 72, 78)], model="ok")
+    # No treatment score at all: previously flipped the header into baseline mode
+    # via a clobbered has_treatment while rows still emitted two cells per run.
+    bad = _eval_run([_scored("Q1", 70, None), _scored("Q2", 72, None)], model="bad")
+
+    lines = generate_section_report([("ok", ok), ("bad", bad)], ["ok", "bad"], "t")
+    header = next(ln for ln in lines if ln.startswith("| Difficulty |"))
+    row = next(ln for ln in lines if ln.startswith("| easy |"))
+    assert header.count("|") == row.count("|")
+
+
+def test_delta_avg_is_mean_of_paired_deltas():
+    """Delta must be the paired mean, not the difference of independently filtered means."""
+    # Q2 has a treatment score but no baseline. Differencing arm means would give
+    # (80+90)/2 - 60 = +25; the paired mean over Q1 alone is +20.
+    run = _eval_run([
+        {"id": "Q1", "scores": {"baseline": {"aggregate": 60}, "with-ctx": {"aggregate": 80}}},
+        {"id": "Q2", "scores": {"baseline": {}, "with-ctx": {"aggregate": 90}}},
+    ])
+    lines = "\n".join(generate_section_report([("a", run)], ["a"], "test"))
+    assert "**+20.0**" in lines
+    assert "1 (1 unscored)" in lines
 
 
 def test_extract_scores_skips_missing_question_id():
@@ -173,19 +255,17 @@ def test_extract_scores_skips_question_where_baseline_absent_from_scores():
     assert scores[0]["question_id"] == "Q2"
 
 
-def test_extract_scores_all_failed_returns_empty():
-    """Questions with None baseline are included as 0.0 for single-arm support."""
+def test_extract_scores_all_failed_yields_no_usable_scores():
+    """Every score None: records are kept for the intersection, but nothing is scored."""
     run = _eval_run([
         {"id": "Q1", "scores": {"baseline": {"aggregate": None}, "arm": {"aggregate": None}}},
         {"id": "Q2", "scores": {"baseline": {}, "arm": {}}},
     ])
     scores = extract_scores(run)
-    assert len(scores) == 2
-    # None baseline becomes 0.0, None treatment stays None
-    assert scores[0]["without_docs"] == 0.0
-    assert scores[0]["with_docs"] is None
-    assert scores[1]["without_docs"] == 0.0
-    assert scores[1]["with_docs"] is None
+    assert [s["question_id"] for s in scores] == ["Q1", "Q2"]
+    assert all(s["without_docs"] is None for s in scores)
+    assert all(s["with_docs"] is None for s in scores)
+    assert all(s["delta"] is None for s in scores)
 
 
 def test_extract_scores_partial_coverage_diagnostic(capsys):

@@ -200,8 +200,24 @@ class JudgePanel:
                     library_name: str, context: str) -> JudgeVote:
         prompt = self._build_prompt(config.role, question, answer, library_name, context)
         try:
-            raw = llm_call(prompt, model=config.model, provider=config.provider)
-            data = self._extract_json(raw)
+            # Retry an unparseable reply rather than losing this role's vote to a
+            # formatting failure. Attempts are independent because no sampling
+            # parameters are pinned.
+            last_parse_exc: Exception | None = None
+            data = None
+            for attempt in range(3):
+                raw = llm_call(prompt, model=config.model, provider=config.provider)
+                try:
+                    data = self._extract_json(raw)
+                    break
+                except Exception as parse_exc:
+                    last_parse_exc = parse_exc
+                    logger.warning(
+                        "Judge '%s' reply unparseable (attempt %d/3): %s",
+                        config.role, attempt + 1, parse_exc,
+                    )
+            if data is None:
+                raise last_parse_exc  # type: ignore[misc]
             scores: Dict[str, float] = {}
             for k in SCORE_FIELDS:
                 if k in data:

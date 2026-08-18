@@ -104,6 +104,7 @@ def run_agent_loop(
     system_prompt: str = None,
     api_key: str = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    max_tokens: int = None,
 ) -> Dict[str, Any]:
     """Drive a tool-calling conversation to a final answer.
 
@@ -132,7 +133,7 @@ def run_agent_loop(
         t_turn = time.time()
         resp = chat_completion(
             messages=messages, model=model, provider=provider,
-            tools=schemas, api_key=api_key,
+            tools=schemas, api_key=api_key, max_tokens=max_tokens,
         )
         turn_usage = _extract_usage(resp, model, provider, latency_sec=time.time() - t_turn)
         usage_total = usage_total + turn_usage
@@ -203,7 +204,8 @@ def run_agent_loop(
             "content": "Provide your final answer now without calling tools.",
         })
         t_turn = time.time()
-        resp = chat_completion(messages=messages, model=model, provider=provider, api_key=api_key)
+        resp = chat_completion(messages=messages, model=model, provider=provider, api_key=api_key,
+                               max_tokens=max_tokens)
         turn_usage = _extract_usage(resp, model, provider, latency_sec=time.time() - t_turn)
         usage_total = usage_total + turn_usage
         per_turn.append({
