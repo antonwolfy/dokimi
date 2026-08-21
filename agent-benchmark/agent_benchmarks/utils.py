@@ -42,6 +42,25 @@ def parse_frontmatter(text: str) -> "Tuple[Dict[str, Any], str]":
     return {}, text
 
 
+def digest_text(text: str) -> str:
+    """Content-digest a prompt or other text blob.
+
+    Uses the ``sha256:<hexdigest>`` prefix convention the plugin-set and subject
+    digests already use, so provenance fields read the same way across artifacts.
+    The digest itself is the full 64-char hex: the plugin-set digest is truncated
+    to 32, so the two are comparable in shape but never equal for the same input.
+
+    Args:
+        text: The text to digest.
+
+    Returns:
+        ``"sha256:"`` followed by the hex digest of the UTF-8 encoding.
+    """
+    import hashlib
+
+    return "sha256:" + hashlib.sha256((text or "").encode("utf-8")).hexdigest()
+
+
 def normalize_model_ref(provider: str, model: str) -> str:
     """Normalize provider and model names for comparison."""
     return f"{(provider or '').strip().lower()}/{(model or '').strip().lower()}"

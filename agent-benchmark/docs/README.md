@@ -59,7 +59,7 @@ What this table teaches:
 
 *Where the stats come from:* the two-arm (with/without) reports compute the
 paired t-test, Wilcoxon, and Cohen's d; the N-way `arms run` report shows
-average scores and deltas vs baseline (use `scripts/compare_models.py` for
+average scores and deltas vs baseline (`report model-compare` adds
 baseline-vs-one-treatment significance). The full `benchmark run` pipeline
 also records a `question_set_hash` to prove question-set reuse across runs.
 

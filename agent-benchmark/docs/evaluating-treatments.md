@@ -131,6 +131,19 @@ artifact per cell, a `matrix_rollup.v1` JSON/Markdown report, and paired
   library id). Requires the optional `mcp` SDK: `pip install mcp`.
 - **`profile:<path>`** — a Markdown file; the body (frontmatter stripped) is the
   system prompt. See [`data/agent_profiles/concise_expert.md`](../data/agent_profiles/concise_expert.md).
+  The arm is **named after the frontmatter `id`, not the path**: `profile:data/agent_profiles/dpnp-expert.md`
+  appears in reports and in `--baseline-arm` as `profile:dpnp-expert`. With no
+  frontmatter — or with malformed YAML, which is ignored silently — the id falls back to
+  the filename stem, so name profile files after their id.
+
+  Because the arm name comes from the id, **editing a profile in place does not change the
+  arm name**: old and new cells look identical in a report. Each answer therefore records
+  `profile_path`, `profile_prompt_chars`, and `profile_prompt_sha256` (a digest of the
+  prompt text, not the file, since the text is what reaches the model). Compare that digest
+  across a batch before pooling cells — differing digests mean two different prompts were
+  measured under one arm name. On a **combined** arm the same three fields live one level
+  down, under the matching entry of `metadata["treatments"]` rather than at the top of the
+  metadata — so anything reading them has to look in both places.
 - **`skill:<path>`** — a `SKILL.md` file or its directory, following the Agent
   Skills convention (frontmatter `name`/`description` + Markdown body). See
   [`data/skills/onetbb-quickstart/SKILL.md`](../data/skills/onetbb-quickstart/SKILL.md).
@@ -186,7 +199,7 @@ python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
 
 # Triple combination (docs + profile + skill)
 python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
-  --arms "baseline,docs+profile:data/agent_profiles/concise_expert.md+skill:data/skills/dpnp-quickstart" \
+  --arms "baseline,docs+profile:data/agent_profiles/dpnp-expert.md+skill:data/skills/dpnp-quickstart" \
   --context7-id "intelpython_github_io_dpnp" \
   --judge
 
@@ -208,6 +221,36 @@ description: Terse, code-first senior engineer.
 ---
 You are a senior systems engineer. Lead with code, be terse, …
 ```
+
+A persona states *how to approach a problem*; a skill states *what is true about a
+library*. Keeping them separate is what makes a comparison between them mean anything —
+a persona that lists APIs is documentation delivered through the system-prompt channel,
+and it is measuring the skill, not the persona. The committed dpnp fixtures are a ladder
+that holds the channel fixed and varies only what it carries:
+
+| Profile | Carries | Role |
+|---------|---------|------|
+| `dpnp-expert.md` | identity, convictions, reasoning order — no API names | the persona |
+| `dpnp-expert-style.md` | voice and stance only, no dpnp content | style floor |
+| `dpnp-skilltext.md` | `dpnp-quickstart`'s own text, verbatim | channel control vs the `skill:` arm |
+| `dpnp-briefing.md` | a dpnp fact sheet | experimental: facts without a skill's structure |
+| `generic-expert.md` | expert framing with no product in it | negative control |
+
+`tests/test_agent_profiles.py` pins those roles. It fails if the persona grows an API name
+— dotted names, the keyword arguments that carry dpnp's device semantics, or a bare call —
+or reuses five consecutive words of the skill, and if `dpnp-skilltext.md` stops matching the
+skill it mirrors (at which point the control varies content *and* channel, and isolates
+nothing). The denylist is `API_SHAPES` in that file, and a companion test asserts it is not
+vacuous; it is a denylist, so it catches the shapes we have thought of, not every possible
+leak. When the skill changes, regenerate the channel control rather than hand-editing it:
+
+```bash
+python scripts/sync_skilltext_profile.py          # rewrites data/agent_profiles/dpnp-skilltext.md
+python scripts/sync_skilltext_profile.py --check   # CI-style check, no write
+```
+
+Regenerating changes `profile_prompt_sha256`, so cells already scored on
+`profile:dpnp-skilltext` measured the old text and must be re-run, not pooled.
 
 **Skill** (`skills/<name>/SKILL.md`):
 
@@ -280,10 +323,14 @@ file rather than relying on multi-file progressive disclosure.
   behavioral signal.
 - **Fair comparisons** hold the answer model, question set, and judge fixed
   across arms — only the treatment varies.
-- **Combined treatments concatenate contexts** in order: docs first, then profiles,
-  then skills. This ordering is consistent but may increase prompt token usage
-  significantly. Test combined treatments on a small question set first to estimate
-  cost impact before running full evaluations.
+- **Combined treatments concatenate contexts in the order the arm spec lists them**,
+  not in a fixed order by kind. `profile:` arms contribute a system prompt rather than
+  injected context, so they never appear in that concatenation. Combining is consistent
+  but may increase prompt token usage significantly — test on a small question set
+  first to estimate cost impact before running full evaluations.
+- **A combined arm sends only one system prompt.** If two `profile:` arms are combined,
+  the first one wins, the rest are dropped with a warning and listed in the arm's
+  `dropped_system_prompts` metadata. Compare personas as separate arms, not combined.
 - **Interaction effects may not be additive.** `(docs+skill)_delta` may differ from
   `docs_delta + skill_delta` due to context interference, redundancy, or synergy.
   Always measure the combined treatment directly rather than assuming linear effects.

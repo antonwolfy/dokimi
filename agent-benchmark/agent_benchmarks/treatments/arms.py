@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from agent_benchmarks.agent_profiles import AgentProfile
 from agent_benchmarks.skills import Skill
+from agent_benchmarks.utils import digest_text
 
 from .base import AgentConfig, Treatment
 
@@ -175,6 +176,11 @@ class AgentProfileTreatment(Treatment):
                 "arm_kind": "agent_profile",
                 "profile_id": self.profile.id,
                 "profile_name": self.profile.name,
+                "profile_path": str(self.profile.path),
+                # Digest the prompt text, not the file: the text is what reaches
+                # the model, so it is what a score is reproducible against.
+                "profile_prompt_sha256": digest_text(self.profile.system_prompt),
+                "profile_prompt_chars": len(self.profile.system_prompt),
             },
         )
 
@@ -216,7 +222,7 @@ class CombinedTreatment(Treatment):
     docs + skill together outperform skill alone?").
 
     The sub-treatments are prepared independently, then their outputs are merged:
-    - injected_context: concatenated (docs first, then skills)
+    - injected_context: concatenated in the order the arm spec lists them
     - tools: concatenated (for agentic arms)
     - system_prompt: first non-None value wins
     - metadata: tracks all sub-treatment metadata
@@ -234,7 +240,8 @@ class CombinedTreatment(Treatment):
             t.prepare(question_text, library_name, library_id) for t in self.treatments
         ]
 
-        # Merge injected contexts (docs first, then skills, for consistency)
+        # Merge injected contexts in spec order — `docs+skill:x` and `skill:x+docs`
+        # therefore send the same blocks in a different order, which is the caller's choice.
         merged_context = []
         for cfg in configs:
             merged_context.extend(cfg.injected_context)
@@ -255,7 +262,17 @@ class CombinedTreatment(Treatment):
                 {"name": t.name, "arm_kind": cfg.metadata.get("arm_kind"), **cfg.metadata}
             )
 
-        # System prompt: first non-None wins (profiles rarely combined with docs/skills)
+        # System prompt: first non-None wins (profiles rarely combined with docs/skills).
+        # More than one means the later ones never reach the model, which would make
+        # the arm's metadata claim a treatment the answer never saw — warn loudly.
+        with_prompt = [t.name for t, c in zip(self.treatments, configs, strict=True) if c.system_prompt]
+        if len(with_prompt) > 1:
+            logger.warning(
+                "Combined arm '%s' supplies %d system prompts (%s); only '%s' is sent — "
+                "the rest are dropped. Split them into separate arms to measure both.",
+                self.name, len(with_prompt), ", ".join(with_prompt), with_prompt[0],
+            )
+            merged_metadata["dropped_system_prompts"] = with_prompt[1:]
         system_prompt = next((c.system_prompt for c in configs if c.system_prompt), None)
 
         return AgentConfig(
