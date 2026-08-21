@@ -2,9 +2,16 @@
 
 Public API
 ----------
-check_run_consistency(runs, group_name)
+check_run_consistency(runs, group_name, treatment_arm=None)
     Validate a list of (run_id, run_data) pairs before comparison.
     Raises SystemExit on hard errors; returns a list of warning strings.
+
+non_baseline_arms(run_data)
+    The arm names in one artifact other than its baseline.
+
+prompt_digests(run_data, arm)
+    The agent-profile prompt digests stamped for one arm, for detecting an edited
+    profile hiding behind an unchanged arm name.
 
 extract_scores(run_data, force_treatment_arm=None)
     Extract per-question scores from an arms JSON artifact.
@@ -79,14 +86,93 @@ def normalize_difficulty(difficulty: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
+def non_baseline_arms(run_data: dict) -> set[str]:
+    """Arm names in *run_data* other than its baseline, for both artifact formats.
+
+    Reads the top-level ``arms`` list when present (``arms.v1``) and otherwise falls back to
+    the arm keys in the scored records, so a legacy artifact is checked on the same footing
+    as a current one. The fallback unions over *every* record rather than reading the first:
+    a judge failure drops an arm from a single record, and reading only that one would leave
+    the run looking single-armed and quietly switch the consistency checks off.
+    """
+    baseline_arm = run_data.get("baseline_arm")
+    arms = run_data.get("arms")
+    if isinstance(arms, list) and arms:
+        return {a for a in arms if isinstance(a, str) and a != baseline_arm}
+    found: set[str] = set()
+    for records, key in (
+        (run_data.get("evaluations"), "scores"),
+        (run_data.get("answers"), "arms"),
+    ):
+        for record in records or []:
+            if isinstance(record, dict) and isinstance(record.get(key), dict):
+                found |= {a for a in record[key] if a != baseline_arm}
+    return found
+
+
+def scored_arms(run_data: dict) -> set[str]:
+    """The non-baseline arms that actually carry a score in *run_data*.
+
+    This is the arm set the comparison is really built on, which is why it — and not
+    :func:`non_baseline_arms` — decides whether two runs measure the same treatment.
+    ``extract_scores`` selects, per record, the non-baseline arm that has a score dict, so
+    a run declaring three arms whose third arm lost every judge call is scored on one arm
+    and must still be compared as such. Deriving the check from the declared arm list
+    instead made a run like that look ambiguous and switched the check off for the group.
+    """
+    baseline_arm = run_data.get("baseline_arm")
+    found: set[str] = set()
+    for records, key in (
+        (run_data.get("evaluations"), "scores"),
+        (run_data.get("answers"), "arms"),
+    ):
+        for record in records or []:
+            if not isinstance(record, dict) or not isinstance(record.get(key), dict):
+                continue
+            found |= {
+                arm for arm, value in record[key].items()
+                if arm != baseline_arm and isinstance(value, dict)
+            }
+    return found
+
+
+def prompt_digests(run_data: dict, arm: str) -> set[str]:
+    """The ``profile_prompt_sha256`` values stamped for *arm* in one artifact.
+
+    An agent-profile arm is named after the profile's frontmatter ``id``, so editing a
+    profile in place produces cells that are indistinguishable by name while measuring
+    a different prompt. The digest is the only thing that separates them.
+
+    A combined arm stamps the same field one level down, under the entry of
+    ``metadata["treatments"]`` belonging to its profile sub-treatment, so
+    ``docs+profile:x`` has to be looked up in both shapes or the gate silently finds
+    nothing to compare and reports the arm as consistent.
+    """
+    digests: set[str] = set()
+    for answer in run_data.get("answers") or []:
+        record = (answer.get("arms") or {}).get(arm)
+        if not isinstance(record, dict):
+            continue
+        metadata = record.get("metadata") or {}
+        candidates = [metadata]
+        candidates += [t for t in (metadata.get("treatments") or []) if isinstance(t, dict)]
+        for candidate in candidates:
+            digest = candidate.get("profile_prompt_sha256")
+            if isinstance(digest, str) and digest:
+                digests.add(digest)
+    return digests
+
+
 def check_run_consistency(
     runs: list[tuple[str, dict]],
     group_name: str,
+    treatment_arm: str | None = None,
 ) -> list[str]:
     """Check runs for consistency problems; return warning strings.
 
-    Hard errors (different ``baseline_arm``) raise ``SystemExit`` immediately.
-    Soft warnings (hash mismatch, identical models) are collected and returned.
+    Hard errors (different ``baseline_arm``, different treatment arms) raise
+    ``SystemExit`` immediately. Soft warnings (hash mismatch, identical models) are
+    collected and returned.
     """
     if len(runs) < 2:
         return []
@@ -103,7 +189,70 @@ def check_run_consistency(
             "Comparing runs with different baselines produces meaningless deltas."
         )
 
-    # 2. question_set_hash — warn if present in all runs but diverges
+    # 2. the treatment arm must match too, or the deltas answer different questions.
+    # Without this the report happily puts one model's `profile:` delta beside another
+    # model's `skill:` delta: `extract_scores` auto-selects each run's single
+    # non-baseline arm, and nothing downstream names the arm it picked. An explicit
+    # --treatment-arm is exempt — it pins one name, and extract_scores already fails
+    # on a run that lacks it.
+    if treatment_arm is None:
+        # Gate on the arms that are actually *scored*, and never on how many runs are
+        # legible: an earlier version required every run to resolve to exactly one arm
+        # before comparing them, so a single run with two scored arms (or none) turned the
+        # check off for the whole group and let a profile: delta pool with a skill: delta.
+        per_run = {}
+        for rid, data in runs:
+            scored = scored_arms(data)
+            # Fall back to the declared arm list for an artifact with no scored records at
+            # all (answers not yet judged): it still names one treatment per run, and that
+            # is enough to catch a confounded group before any judge spend.
+            per_run[rid] = scored or non_baseline_arms(data)
+            if not scored and (data.get("evaluations") or data.get("answers")):
+                warnings.append(
+                    f"Run '{rid}' has records but no scored non-baseline arm — it "
+                    "contributes a baseline column and no delta."
+                )
+        distinct = set().union(*per_run.values()) if per_run else set()
+        if len(distinct) > 1:
+            detail = ", ".join(
+                f"{rid}={'/'.join(sorted(arms)) if arms else '<none scored>'}"
+                for rid, arms in per_run.items()
+            )
+            raise SystemExit(
+                f"Error [{group_name}]: runs are scored on {len(distinct)} different "
+                f"treatment arms ({detail}). Each run's delta would measure a different "
+                "treatment, so the comparison is confounded. Compare runs that share one "
+                "treatment, or pass --treatment-arm to pin the arm every run must be "
+                "scored on. (A run listing more than one arm here is ambiguous on its own "
+                "terms, and needs --treatment-arm regardless.)"
+            )
+
+    # 3. one arm name must mean one prompt. A `profile:` arm is named after the
+    # profile's frontmatter id, so editing the profile in place leaves old and new cells
+    # sharing a name while measuring different prompts — pooling them silently averages
+    # two treatments. Runs predating the digest stamp carry none, and are left alone.
+    shared_arm = treatment_arm
+    if shared_arm is None:
+        candidates = {a for _, data in runs for a in scored_arms(data)} or {
+            a for _, data in runs for a in non_baseline_arms(data)
+        }
+        shared_arm = next(iter(candidates)) if len(candidates) == 1 else None
+    if shared_arm is not None:
+        by_run = {rid: prompt_digests(data, shared_arm) for rid, data in runs}
+        all_digests = set().union(*by_run.values()) if by_run else set()
+        if len(all_digests) > 1:
+            detail = ", ".join(
+                f"{rid}={'/'.join(sorted(d)[:1])[:19]}…" for rid, d in by_run.items() if d
+            )
+            raise SystemExit(
+                f"Error [{group_name}]: arm '{shared_arm}' carries "
+                f"{len(all_digests)} different prompt digests across runs ({detail}). "
+                "The arm name comes from the profile's frontmatter id, so an edited "
+                "profile keeps its name: these runs measured different prompts under one "
+                "name and their scores cannot be pooled. Re-run the stale cells."
+            )
+
+    # 4. question_set_hash — warn if present in all runs but diverges
     hashes = {
         run_id: data["question_set_hash"]
         for run_id, data in runs
@@ -117,7 +266,7 @@ def check_run_consistency(
             "will still be used but results may not be directly comparable."
         )
 
-    # 3. identical model+provider across all runs likely means duplicate runs
+    # 5. identical model+provider across all runs likely means duplicate runs
     models = [(data.get("model", ""), data.get("provider", "")) for _, data in runs]
     if len(set(models)) == 1:
         m, p = models[0]
@@ -178,7 +327,7 @@ def extract_scores(
             else:
                 continue  # Unexpected format
 
-            non_baseline_arms = [
+            treatment_arms = [
                 arm for arm in eval_scores
                 if arm != baseline_arm and isinstance(eval_scores[arm], dict)
             ]
@@ -191,12 +340,12 @@ def extract_scores(
                     )
                 target_arm = force_treatment_arm
             else:
-                if len(non_baseline_arms) > 1:
+                if len(treatment_arms) > 1:
                     raise SystemExit(
-                        f"Error: run has multiple non-baseline arms {non_baseline_arms} in "
+                        f"Error: run has multiple non-baseline arms {treatment_arms} in "
                         f"question '{qid}'. Use --treatment-arm to select one explicitly."
                     )
-                target_arm = non_baseline_arms[0] if non_baseline_arms else None
+                target_arm = treatment_arms[0] if treatment_arms else None
 
             if target_arm is not None and isinstance(eval_scores.get(target_arm), dict):
                 treatment_score = eval_scores[target_arm].get("aggregate")
@@ -245,7 +394,7 @@ def extract_scores(
                 continue
 
             baseline_eval = arms.get(baseline_arm, {}).get("evaluation", {})
-            non_baseline_arms = [a for a in arms if a != baseline_arm]
+            treatment_arms = [a for a in arms if a != baseline_arm]
 
             if force_treatment_arm is not None:
                 if force_treatment_arm not in arms:
@@ -255,12 +404,12 @@ def extract_scores(
                     )
                 treatment_arm = force_treatment_arm
             else:
-                if len(non_baseline_arms) > 1:
+                if len(treatment_arms) > 1:
                     raise SystemExit(
-                        f"Error: run has multiple non-baseline arms {non_baseline_arms} in "
+                        f"Error: run has multiple non-baseline arms {treatment_arms} in "
                         f"question '{qid}'. Use --treatment-arm to select one explicitly."
                     )
-                treatment_arm = non_baseline_arms[0] if non_baseline_arms else None
+                treatment_arm = treatment_arms[0] if treatment_arms else None
 
             treatment_eval = (
                 arms.get(treatment_arm, {}).get("evaluation", {}) if treatment_arm else {}
@@ -452,21 +601,42 @@ def generate_section_report(
         for run_id in run_ids
     }
 
+    # The arm that was actually scored, taken from the extracted records rather than the
+    # artifact header, so the label can never disagree with the numbers beside it. Named
+    # explicitly because a `profile:` run and a `docs` run otherwise render identically:
+    # a reader of the Markdown alone could not tell which treatment it measured.
+    scored_arms = {
+        s["treatment_arm"]
+        for scores in all_run_scores.values()
+        for s in scores
+        if s.get("treatment_arm")
+    }
+    arm_label = next(iter(scored_arms)) if len(scored_arms) == 1 else "Context arm"
+
     lines: list[str] = []
 
     # --- Models Compared ---
     lines += [
         "## Models Compared",
-        "| Run ID | Answer model | Judge model |",
-        "|---|---|---|",
+        "| Run ID | Answer model | Judge model | Treatment arm |",
+        "|---|---|---|---|",
     ]
     for run_id, run_data in runs:
         model = run_data.get("model", "unknown")
         provider = run_data.get("provider", "unknown")
         judge_model = run_data.get("judge_model", "same")
         judge_provider = run_data.get("judge_provider", provider)
+        run_arms = sorted(
+            {
+                s["treatment_arm"]
+                for s in all_run_scores.get(run_id, [])
+                if s.get("treatment_arm")
+            }
+        )
+        arm_cell = ", ".join(f"`{a}`" for a in run_arms) if run_arms else "— (baseline only)"
         lines.append(
-            f"| **{run_id}** | {model} ({provider}) | {judge_model} ({judge_provider}) |"
+            f"| **{run_id}** | {model} ({provider}) | {judge_model} ({judge_provider}) "
+            f"| {arm_cell} |"
         )
 
     lines += [
@@ -565,7 +735,7 @@ def generate_section_report(
         "_Delta is the mean of per-question paired differences. Scored pairs is the"
         " number of questions with a usable score in both arms; Delta, Improved and"
         " Degraded are computed over those only._",
-        "| Run | N | Scored pairs | Context arm | Baseline | Delta | Improved | Degraded |",
+        f"| Run | N | Scored pairs | {arm_label} | Baseline | Delta | Improved | Degraded |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
 
@@ -789,8 +959,13 @@ def generate_section_report(
             "",
         ]
     else:
+        subtitle = (
+            f"_Which model benefits more from the treatment arm `{arm_label}`?_"
+            if len(scored_arms) == 1
+            else "_Which model benefits more from the non-baseline treatment arm?_"
+        )
         lines += [
-            "_Which model benefits more from the non-baseline treatment arm?_",
+            subtitle,
             "",
             "| Run | Avg Delta | Questions context helped | Questions context hurt |",
             "|---|---:|---:|---:|",
@@ -819,8 +994,8 @@ def generate_section_report(
 
     if has_treatment:
         lines += [
-            "### By absolute quality (context arm)",
-            "| Rank | Run | Context-arm avg |",
+            f"### By absolute quality ({arm_label})",
+            f"| Rank | Run | {arm_label} avg |",
             "|---:|---|---:|",
         ]
         for rank, (run_id, st) in enumerate(

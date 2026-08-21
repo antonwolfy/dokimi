@@ -11,6 +11,7 @@ track. These tools are read-only.
 """
 
 import logging
+from typing import Dict
 
 from agent_benchmarks.skills import Skill
 
@@ -86,6 +87,11 @@ class ViewSkillTool(Tool):
         self.skill = skill
         self.max_chars = max_chars
         self.viewed = False
+        # Bundled files are the third channel that carries the 12,000-char cap, and the
+        # only one where a committed fixture is already over it. Record what was cut, on
+        # the same terms as the injected channels — an unrecorded truncation makes the
+        # artifact claim the agent read a file it only read the first 12,000 chars of.
+        self.truncated_files: Dict[str, int] = {}
         # Unique-but-stable tool name per skill.
         safe = "".join(c if c.isalnum() else "_" for c in skill.name)
         self.name = f"view_skill_{safe}"
@@ -141,8 +147,15 @@ class ViewSkillTool(Tool):
 
         try:
             content = target.read_text(encoding="utf-8")
-            if len(content) > self.max_chars:
+            source_chars = len(content)
+            if source_chars > self.max_chars:
                 content = content[:self.max_chars].rstrip() + "\n…"
+                self.truncated_files[file] = source_chars
+                logger.warning(
+                    "Skill '%s' file '%s' is %d chars and was truncated to the %d-char "
+                    "cap; the agent saw a prefix of it.",
+                    self.skill.name, file, source_chars, self.max_chars,
+                )
             return f"# Skill: {self.skill.name} — {file}\n\n{content}"
         except Exception as exc:
             logger.exception("Failed to read skill file")
@@ -154,5 +167,8 @@ class ViewSkillTool(Tool):
             "skill_name": self.skill.name,
             "skill_path": str(self.skill.path),
             "max_chars": self.max_chars,
+            "skill_file_truncated": bool(self.truncated_files),
         })
+        if self.truncated_files:
+            meta["skill_file_chars_source"] = dict(self.truncated_files)
         return meta

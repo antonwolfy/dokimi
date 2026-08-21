@@ -12,6 +12,8 @@ from agent_benchmarks.report.model_compare import (
     generate_combined_report,
     generate_section_report,
     load_run,
+    non_baseline_arms,
+    prompt_digests,
 )
 
 
@@ -114,6 +116,216 @@ def test_consistency_identical_model_warns():
 def test_consistency_ok_different_models():
     runs = [_run_pair("a", model="m1"), _run_pair("b", model="m2")]
     assert check_run_consistency(runs, "g") == []
+
+
+# ---------------------------------------------------------------------------
+# non_baseline_arms / prompt_digests
+# ---------------------------------------------------------------------------
+
+
+def test_non_baseline_arms_reads_the_arms_header():
+    data = {"baseline_arm": "baseline", "arms": ["baseline", "skill:dpnp-quickstart"]}
+    assert non_baseline_arms(data) == {"skill:dpnp-quickstart"}
+
+
+def test_non_baseline_arms_falls_back_to_the_scored_record():
+    """A legacy artifact carries no `arms` header; the arm names live in the records."""
+    data = _eval_run([_q("Q1", arm="docs")])
+    assert "arms" not in data
+    assert non_baseline_arms(data) == {"docs"}
+
+
+def test_non_baseline_arms_unions_over_every_record():
+    """A judge failure drops an arm from one record; reading only the first would make the
+    run look single-armed and switch the treatment-arm check off without saying so."""
+    data = _eval_run(
+        [
+            {"id": "Q1", "scores": {"baseline": {"aggregate": 60}}},  # treatment call failed
+            _q("Q2", arm="profile:dpnp-expert"),
+        ]
+    )
+    assert non_baseline_arms(data) == {"profile:dpnp-expert"}
+
+
+def test_non_baseline_arms_empty_when_nothing_but_baseline():
+    assert non_baseline_arms({"baseline_arm": "baseline", "arms": ["baseline"]}) == set()
+
+
+def test_prompt_digests_collects_the_stamped_prompt_hashes():
+    data = _profile_run("run", digest="sha256:aaaa")
+    assert prompt_digests(data, "profile:p") == {"sha256:aaaa"}
+    assert prompt_digests(data, "profile:other") == set()
+
+
+# ---------------------------------------------------------------------------
+# treatment-arm integrity — pooling two different treatments is not a comparison
+# ---------------------------------------------------------------------------
+
+
+def _armed_run(run_id, arm, **kw):
+    """One run whose single non-baseline arm is *arm*."""
+    return (
+        run_id,
+        {
+            "baseline_arm": "baseline",
+            "arms": ["baseline", arm],
+            "model": kw.get("model", run_id),
+            "provider": "p",
+        },
+    )
+
+
+def _profile_run(run_id, digest, arm="profile:p", n=2, **kw):
+    """An artifact with *n* answers on *arm*, each stamping *digest*."""
+    return {
+        "baseline_arm": "baseline",
+        "arms": ["baseline", arm],
+        "model": kw.get("model", run_id),
+        "provider": "p",
+        "answers": [
+            {
+                "question_id": f"Q{i}",
+                "arms": {
+                    "baseline": {"answer": "a"},
+                    arm: {"answer": "a", "metadata": {"profile_prompt_sha256": digest}},
+                },
+            }
+            for i in range(n)
+        ],
+    }
+
+
+def test_consistency_rejects_runs_measuring_different_treatments():
+    """A `profile:` delta beside a `skill:` delta is confounded, not a model comparison."""
+    runs = [_armed_run("a", "profile:dpnp-expert"), _armed_run("b", "skill:dpnp-quickstart")]
+    with pytest.raises(SystemExit, match="different treatment arms"):
+        check_run_consistency(runs, "regular")
+
+
+def test_consistency_accepts_runs_sharing_one_treatment():
+    runs = [_armed_run("a", "profile:dpnp-expert"), _armed_run("b", "profile:dpnp-expert")]
+    assert check_run_consistency(runs, "regular") == []
+
+
+def _scored_run(run_id, scored_arm, declared_extra=(), **kw):
+    """A run declaring ``baseline + scored_arm + declared_extra`` but scored only on
+    *scored_arm* — the shape a judge failure produces, where every call for the extra arm
+    came back ``null``."""
+    scores = {"baseline": {"aggregate": 5.0}, scored_arm: {"aggregate": 6.0}}
+    scores.update({arm: None for arm in declared_extra})
+    return (
+        run_id,
+        {
+            "baseline_arm": "baseline",
+            "arms": ["baseline", scored_arm, *declared_extra],
+            "model": kw.get("model", run_id),
+            "provider": "p",
+            "evaluations": [
+                {"question_id": f"Q{i}", "scores": scores} for i in range(2)
+            ],
+        },
+    )
+
+
+def test_consistency_rejects_different_treatments_even_when_one_run_is_ambiguous():
+    """The guard must not switch itself off for the group.
+
+    An earlier version required *every* run to resolve to exactly one non-baseline arm
+    before it compared them, so a single run declaring an extra arm whose judge calls all
+    failed dropped out of the comparison and took the check with it: a `profile:` delta
+    then pooled with a `skill:` delta with exit 0 and a report on disk.
+    """
+    runs = [
+        _scored_run("a", "profile:dpnp-expert"),
+        _scored_run("b", "skill:dpnp-quickstart", declared_extra=("docs",)),
+    ]
+    with pytest.raises(SystemExit, match="different treatment arms"):
+        check_run_consistency(runs, "regular")
+
+
+def test_consistency_rejects_a_group_whose_third_run_is_baseline_only():
+    """Same failure mode from the other side: a run with no non-baseline arm at all used to
+    make the group unanimous by disappearing from it."""
+    runs = [
+        _scored_run("a", "profile:dpnp-expert"),
+        _scored_run("b", "skill:dpnp-quickstart"),
+        ("c", {"baseline_arm": "baseline", "arms": ["baseline"], "model": "c", "provider": "p"}),
+    ]
+    with pytest.raises(SystemExit, match="different treatment arms"):
+        check_run_consistency(runs, "regular")
+
+
+def test_an_unscored_arm_does_not_make_two_runs_look_different():
+    """The flip side: the arm a run is *scored* on is what it measures, so a declared-but-
+    unscored extra arm must not be read as a second treatment."""
+    runs = [
+        _scored_run("a", "profile:dpnp-expert", declared_extra=("docs",)),
+        _scored_run("b", "profile:dpnp-expert"),
+    ]
+    assert check_run_consistency(runs, "regular") == []
+
+
+def test_combined_arm_digests_are_read_from_the_nested_metadata():
+    """A combined arm stamps profile provenance under metadata['treatments'], so a gate that
+    only reads the top level finds nothing and calls two different prompts consistent."""
+    def combined(run_id, digest):
+        arm = "docs+profile:p"
+        return (run_id, {
+            "baseline_arm": "baseline",
+            "arms": ["baseline", arm],
+            "model": run_id,
+            "provider": "p",
+            "answers": [{
+                "question_id": "Q0",
+                "arms": {
+                    "baseline": {"answer": "a"},
+                    arm: {"answer": "a", "metadata": {
+                        "arm_kind": "combined",
+                        "treatments": [
+                            {"name": "docs", "arm_kind": "docs"},
+                            {"name": "profile:p", "profile_prompt_sha256": digest},
+                        ],
+                    }},
+                },
+            }],
+        })
+
+    runs = [combined("a", "sha256:" + "1" * 64), combined("b", "sha256:" + "2" * 64)]
+    with pytest.raises(SystemExit, match="different prompt digests"):
+        check_run_consistency(runs, "regular")
+
+
+def test_pinned_treatment_arm_exempts_multi_arm_runs():
+    """--treatment-arm names the arm explicitly, and extract_scores enforces it per run."""
+    runs = [_armed_run("a", "docs"), _armed_run("b", "skill:s")]
+    assert check_run_consistency(runs, "regular", treatment_arm="docs") == []
+
+
+def test_consistency_rejects_one_arm_name_carrying_two_prompts():
+    """Editing a profile in place keeps the arm name, so only the digest separates the cells."""
+    runs = [
+        ("a", _profile_run("a", digest="sha256:" + "1" * 64)),
+        ("b", _profile_run("b", digest="sha256:" + "2" * 64)),
+    ]
+    with pytest.raises(SystemExit, match="different prompt digests"):
+        check_run_consistency(runs, "regular")
+
+
+def test_consistency_accepts_one_arm_name_with_one_prompt():
+    runs = [
+        ("a", _profile_run("a", digest="sha256:" + "1" * 64)),
+        ("b", _profile_run("b", digest="sha256:" + "1" * 64)),
+    ]
+    assert check_run_consistency(runs, "regular") == []
+
+
+def test_digest_check_ignores_runs_predating_the_stamp():
+    """Artifacts scored before provenance stamping carry no digest — that is not a conflict."""
+    stamped = _profile_run("a", digest="sha256:" + "1" * 64)
+    legacy = _profile_run("b", digest="sha256:" + "1" * 64)
+    for answer in legacy["answers"]:
+        answer["arms"]["profile:p"].pop("metadata")
+    assert check_run_consistency([("a", stamped), ("b", legacy)], "regular") == []
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +505,26 @@ def test_section_report_basic_output():
     assert "## Overall Summary" in text
     assert "## Head-to-Head" in text
     assert "Common questions evaluated: **2**" in text
+
+
+def test_section_report_names_the_treatment_arm_it_scored():
+    """Without the name, a persona report and a docs report are the same document."""
+    run_a = _eval_run([_q("Q1", 60, 80, arm="profile:dpnp-expert")], model="m-a")
+    run_b = _eval_run([_q("Q1", 55, 75, arm="profile:dpnp-expert")], model="m-b")
+    text = "\n".join(generate_section_report([("a", run_a), ("b", run_b)], ["a", "b"], "Regular"))
+    assert "| Run ID | Answer model | Judge model | Treatment arm |" in text
+    assert "`profile:dpnp-expert`" in text
+    assert "### By absolute quality (profile:dpnp-expert)" in text
+    assert "Context arm" not in text
+
+
+def test_section_report_falls_back_to_context_arm_when_the_arm_is_unknown():
+    """A baseline-only run has no arm to name; the generic label must still render."""
+    run_a = _eval_run([{"id": "Q1", "scores": {"baseline": {"aggregate": 60}}}], model="m-a")
+    run_b = _eval_run([{"id": "Q1", "scores": {"baseline": {"aggregate": 55}}}], model="m-b")
+    text = "\n".join(generate_section_report([("a", run_a), ("b", run_b)], ["a", "b"], "Regular"))
+    assert "— (baseline only)" in text
+    assert "Context arm" in text
 
 
 def test_generate_combined_report_writes_file(tmp_path):

@@ -56,6 +56,66 @@ def test_unterminated_frontmatter_reads_as_empty():
     assert sync.frontmatter_block("---\nid: x\nno terminator\n") == ""
 
 
+# The block this script copies and the block the loader parses have to be the same block:
+# the frontmatter `id` is the arm name every artifact is keyed by, so a disagreement either
+# splices body text into the header or drops an `id` the loader can read.
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        FRONTMATTER + "body\n",
+        "---\nid: x\n---\n",                       # no body
+        "---\nid: x\n---",                         # no trailing newline
+        "﻿" + FRONTMATTER + "body\n",         # BOM, which the loader tolerates
+        "---\nid: x\n---\nbody\n---\nmore\n",      # a fence in the body
+        "---\nid: x\n--- \n",                      # trailing space on the fence
+        "---\nid: x\nno terminator\n",             # no fence at all
+        "plain body\n",
+        "",
+        "---\nid: x\n----\nbody\n",                # four dashes: not a fence
+    ],
+)
+def test_the_copied_block_and_the_parsed_block_agree(text):
+    from agent_benchmarks.utils import parse_frontmatter
+
+    header = sync.frontmatter_block(text)
+    meta, body = parse_frontmatter(text)
+    if not header:
+        # No header to preserve means the loader must have found no frontmatter either.
+        assert meta == {}
+        return
+    # The header is a literal prefix of the file (a newline may be added to the last fence),
+    # it ends where the body begins, and re-parsing it recovers the same mapping.
+    assert text.lstrip("﻿").startswith(header.rstrip("\n"))
+    assert parse_frontmatter(header)[0] == meta
+    assert len(header.rstrip("\n")) + len(body) <= len(text.lstrip("﻿"))
+
+
+def test_a_body_line_starting_with_dashes_is_not_mistaken_for_the_fence():
+    """A substring search for '\\n---' matched '----' and '--- ' too, and would have copied
+    body text into the header."""
+    text = "---\nid: x\n---\nbody\n----\ntrailer\n"
+    assert sync.frontmatter_block(text) == "---\nid: x\n---\n"
+
+
+def test_a_bom_does_not_hide_the_frontmatter():
+    """The loader strips a BOM, so refusing the file here would report 'no YAML frontmatter'
+    about a file whose id parses fine."""
+    assert sync.frontmatter_block("﻿" + FRONTMATTER + "body\n") == FRONTMATTER
+
+
+def test_a_fence_without_a_trailing_newline_still_ends_in_one(tmp_path):
+    """Otherwise the body is spliced onto the fence line and the result has no frontmatter."""
+    from agent_benchmarks.utils import parse_frontmatter
+
+    skill = write_skill(tmp_path, "Body.")
+    profile = tmp_path / "tmp-skilltext.md"
+    profile.write_text("---\nid: tmp-skilltext\nname: N\ndescription: D.\n---", encoding="utf-8")
+    rendered = sync.render(skill, profile)
+    assert parse_frontmatter(rendered)[0]["id"] == "tmp-skilltext"
+
+
 # --- render ---------------------------------------------------------------
 
 

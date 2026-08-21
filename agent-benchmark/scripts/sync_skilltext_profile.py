@@ -46,11 +46,25 @@ def frontmatter_block(text: str) -> str:
     Taken from the raw text rather than re-serialized from the parsed mapping: round-tripping
     YAML reorders keys and reflows the long `description`, which would show up as a diff on
     every run and make a real drift indistinguishable from formatting churn.
+
+    The fence rules deliberately mirror :func:`parse_frontmatter` — BOM tolerated, closing
+    fence is a line that is exactly ``---`` — because that function is what reads the file
+    back. Where the two disagreed, this one could copy a "header" the loader treats as body
+    (a substring search matched any line merely *starting* with ``---``) or refuse a BOM'd
+    file the loader parses fine, and the frontmatter `id` is the arm name every artifact is
+    keyed by.
     """
-    if not text.startswith("---"):
+    stripped = text.lstrip("﻿")
+    if not stripped.startswith("---"):
         return ""
-    end = text.find("\n---", 3)
-    return "" if end == -1 else text[: end + len("\n---") + 1]
+    lines = stripped.splitlines(keepends=True)
+    for idx in range(1, len(lines)):
+        if lines[idx].strip() == "---":
+            block = "".join(lines[: idx + 1])
+            # A file that ends at the closing fence with no newline would otherwise splice
+            # the body onto the fence line and stop being frontmatter at all.
+            return block if block.endswith(("\n", "\r")) else block + "\n"
+    return ""
 
 
 def render(skill_dir: Path, profile_path: Path) -> str:

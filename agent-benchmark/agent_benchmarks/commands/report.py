@@ -49,11 +49,12 @@ def cmd_report_model_compare(args: argparse.Namespace) -> None:
             golden_runs.append((run_id, load_run(path)))
 
     # Consistency checks — hard errors abort, warnings go to stderr
+    pinned_arm = getattr(args, "treatment_arm", None)
     all_warnings: list[str] = []
     if regular_runs:
-        all_warnings += check_run_consistency(regular_runs, "regular")
+        all_warnings += check_run_consistency(regular_runs, "regular", pinned_arm)
     if golden_runs:
-        all_warnings += check_run_consistency(golden_runs, "golden")
+        all_warnings += check_run_consistency(golden_runs, "golden", pinned_arm)
     for w in all_warnings:
         print(w, file=sys.stderr)
 
@@ -62,7 +63,7 @@ def cmd_report_model_compare(args: argparse.Namespace) -> None:
         golden_runs,
         run_ids,
         args.out,
-        treatment_arm=getattr(args, "treatment_arm", None),
+        treatment_arm=pinned_arm,
     )
 
 

@@ -102,6 +102,34 @@ def test_output_shaper_does_not_touch_system_prompt():
     assert clean["plugins"][0]["kind"] == "output_shaper"
 
 
+def test_prompt_middleware_digest_records_the_prompt_that_was_sent():
+    """A `profile:` arm digests its own text, but middleware appends after that.
+
+    Without a digest taken after the plugins run, a caveman cell and a bare profile cell
+    carry the same `profile_prompt_sha256` and nothing in the artifact separates the two
+    system prompts they actually sent.
+    """
+    bare = PluginWrappedTreatment(_EchoTreatment(), []).prepare("q", "oneTBB")
+    caveman = PluginWrappedTreatment(
+        _EchoTreatment(), create_plugins(["plugin:caveman"])
+    ).prepare("q", "oneTBB")
+
+    assert caveman.system_prompt != bare.system_prompt
+    assert caveman.metadata["system_prompt_sha256"] != bare.metadata["system_prompt_sha256"]
+    assert caveman.metadata["system_prompt_extended_by_plugins"] is True
+    assert bare.metadata["system_prompt_extended_by_plugins"] is False
+
+
+def test_output_shaper_leaves_the_prompt_digest_alone():
+    """An output shaper acts after the model, so the prompt digest must not move."""
+    bare = PluginWrappedTreatment(_EchoTreatment(), []).prepare("q", "oneTBB")
+    shaped = PluginWrappedTreatment(
+        _EchoTreatment(), create_plugins(["truncate:50"])
+    ).prepare("q", "oneTBB")
+    assert shaped.metadata["system_prompt_sha256"] == bare.metadata["system_prompt_sha256"]
+    assert shaped.metadata["system_prompt_extended_by_plugins"] is False
+
+
 def test_take_output_shapers_none_for_prompt_plugin():
     wrapped = PluginWrappedTreatment(_EchoTreatment(), create_plugins(["plugin:caveman"]))
     cfg = wrapped.prepare("q", "oneTBB")

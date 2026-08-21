@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from agent_benchmarks.agent_profiles import load_agent_profile
-from agent_benchmarks.treatments.arms import AgentProfileTreatment, BaselineTreatment, CombinedTreatment
+from agent_benchmarks.treatments.arms import (
+    AgentProfileTreatment,
+    BaselineTreatment,
+    CombinedTreatment,
+    SkillTreatment,
+)
 from agent_benchmarks.treatments.factory import create_treatment, create_treatments
 from agent_benchmarks.utils import digest_text
 
@@ -106,6 +111,238 @@ def test_frontmatter_only_edits_do_not_change_the_prompt_digest(tmp_path):
     assert before["profile_name"] != after["profile_name"]
 
 
+# --- channel parity: neither channel may carry an uncapped payload --------
+#
+# The whole `p:skilltext` vs `skills` comparison rests on the two channels being able to
+# carry the same amount of text. Skills have always capped at 12,000 chars; profiles did
+# not, so a long profile would have been compared against a truncated skill and the
+# difference read as "the system prompt works better".
+
+
+def test_profile_and_skill_caps_agree():
+    from agent_benchmarks.skills import load_skill
+
+    profile = load_agent_profile(PROFILE_DIR / "dpnp-expert.md")
+    skill = load_skill(SKILL_DIR / "dpnp-quickstart")
+    assert AgentProfileTreatment(profile).max_chars == SkillTreatment(skill).max_chars == 12_000
+
+
+def test_long_profile_is_capped_and_the_truncation_is_recorded(tmp_path, caplog):
+    body = "word " * 6_000  # 30,000 chars
+    p = write_profile(tmp_path, "verbose", "id: verbose\n", body)
+    treatment = AgentProfileTreatment(load_agent_profile(p), max_chars=100)
+    with caplog.at_level(logging.WARNING):
+        cfg = treatment.prepare("q", "dpnp")
+    assert len(cfg.system_prompt) <= 100 + len("\n…")
+    assert cfg.metadata["profile_prompt_truncated"] is True
+    assert cfg.metadata["profile_prompt_chars_source"] == len(body.strip())
+    assert cfg.metadata["profile_prompt_chars"] == len(cfg.system_prompt)
+    assert "truncated" in caplog.text
+
+
+def test_capping_changes_the_digest_so_the_stamp_matches_what_was_sent(tmp_path):
+    """The digest must cover the text the model saw, or a capped cell reads as a full one."""
+    p = write_profile(tmp_path, "verbose", "id: verbose\n", "word " * 6_000)
+    full = AgentProfileTreatment(load_agent_profile(p)).prepare("q", "dpnp")
+    capped = AgentProfileTreatment(load_agent_profile(p), max_chars=100).prepare("q", "dpnp")
+    assert capped.metadata["profile_prompt_sha256"] != full.metadata["profile_prompt_sha256"]
+    assert capped.metadata["profile_prompt_sha256"] == digest_text(capped.system_prompt)
+
+
+def test_a_profile_one_char_over_the_cap_still_reports_truncation(tmp_path):
+    """The cap appends an ellipsis, so a length comparison would call this untruncated."""
+    p = write_profile(tmp_path, "borderline", "id: borderline\n", "x" * 101)
+    cfg = AgentProfileTreatment(load_agent_profile(p), max_chars=100).prepare("q", "dpnp")
+    assert cfg.metadata["profile_prompt_truncated"] is True
+
+
+def test_a_profile_at_the_cap_is_untouched(tmp_path):
+    p = write_profile(tmp_path, "exact", "id: exact\n", "x" * 100)
+    cfg = AgentProfileTreatment(load_agent_profile(p), max_chars=100).prepare("q", "dpnp")
+    assert cfg.system_prompt == "x" * 100
+    assert cfg.metadata["profile_prompt_truncated"] is False
+
+
+def test_the_committed_fixtures_all_fit_under_the_cap():
+    """A fixture over the cap would silently measure a prefix of itself."""
+    for profile_id in DPNP_PROFILES:
+        profile = load_agent_profile(PROFILE_DIR / f"{profile_id}.md")
+        cfg = AgentProfileTreatment(profile).prepare("q", "dpnp")
+        assert cfg.metadata["profile_prompt_truncated"] is False, profile_id
+
+
+CAP = 12_000
+
+
+def injected_fixture_sizes() -> dict[str, int]:
+    """Rendered size of every payload that is *injected* into a prompt, by fixture name.
+
+    Two channels, both capped at :data:`CAP`: a profile body sent as a system prompt, and a
+    ``SKILL.md`` body injected as context. Bundled skill resources are a third channel with
+    the same cap, but they are served on demand by ``ViewSkillTool`` and are covered by
+    :func:`test_over_cap_bundled_resources_are_known` instead — conflating the two is what
+    let an over-cap resource sit unnoticed while the docs claimed full headroom.
+    """
+    from agent_benchmarks.skills import load_skill
+
+    sizes = {}
+    for profile_path in sorted(PROFILE_DIR.glob("*.md")):
+        sizes[profile_path.name] = len(load_agent_profile(profile_path).as_prompt(CAP * 10))
+    for skill_dir in sorted(SKILL_DIR.iterdir()):
+        if (skill_dir / "SKILL.md").exists():
+            sizes[skill_dir.name] = len(load_skill(skill_dir).as_context(CAP * 10))
+    return sizes
+
+
+def test_no_injected_fixture_is_within_5_percent_of_the_cap():
+    """Fail *before* a fixture starts getting truncated, not after.
+
+    A fixture crossing the cap still measures a prefix of itself; the metadata says so, but
+    the cell is a different treatment either way and the batch has to be re-run. Growth in a
+    skill body is the realistic failure, not an author writing a 30,000-char profile. On
+    failure: split the fixture, or raise the cap in *every* channel at once (skills,
+    profiles, ``ViewSkillTool``) so the channel comparison stays honest.
+
+    The message prints the current largest fixture rather than asserting a remembered
+    percentage — hardcoded numbers in prose went stale the first time a fixture was edited.
+    The scan covers whatever is on disk under ``data/``, including local fixtures not yet
+    committed, since those get measured too.
+    """
+    sizes = injected_fixture_sizes()
+    budget = int(CAP * 0.95)
+    oversized = [
+        f"{name}: {chars} chars ({chars / CAP:.0%} of cap)"
+        for name, chars in sorted(sizes.items())
+        if chars > budget
+    ]
+    largest = max(sizes.items(), key=lambda kv: kv[1])
+    assert not oversized, (
+        f"Injected fixtures within 5% of the {CAP:,}-char cap: {'; '.join(oversized)}. "
+        f"Largest on disk: {largest[0]} at {largest[1]} chars ({largest[1] / CAP:.0%}). "
+        "See Skill.as_context for where the cap comes from and what changing it costs."
+    )
+
+
+# The one committed bundled resource that is already over the cap. It is allowlisted rather
+# than fixed here so the truncation is visible in code instead of hidden: splitting it (or
+# raising the cap in all three channels) is a fixture decision of its own, and this PR only
+# makes the truncation recorded rather than silent. Anything *new* going over fails.
+OVER_CAP_RESOURCES = {"intel-performance-patterns/patterns/simd-upconversion-impl.md"}
+
+
+def test_over_cap_bundled_resources_are_known():
+    """``ViewSkillTool`` caps bundled files at the same 12,000 chars as the injected
+    channels, so a long resource is served as a prefix. That is tolerable only while we know
+    which files it happens to."""
+    import subprocess
+
+    # Committed files only. An uncommitted scratch skill under data/ is the author's
+    # business; what must not drift is what ships.
+    try:
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z", "--", str(SKILL_DIR)],
+            capture_output=True, check=True, cwd=SKILL_DIR.parents[1],
+        ).stdout.decode("utf-8").split("\0")
+    except (OSError, subprocess.CalledProcessError):  # pragma: no cover - no git available
+        pytest.skip("git is unavailable, cannot tell committed fixtures from scratch ones")
+
+    repo_root = SKILL_DIR.parents[1]
+    over_cap = set()
+    for rel in tracked:
+        if not rel.endswith(".md") or rel.endswith("/SKILL.md"):
+            continue
+        path = repo_root / rel
+        if path.is_file() and len(path.read_text(encoding="utf-8")) > CAP:
+            over_cap.add(path.relative_to(SKILL_DIR).as_posix())
+
+    assert not (over_cap - OVER_CAP_RESOURCES), (
+        f"New bundled resources exceed the {CAP:,}-char cap and will be served truncated: "
+        f"{sorted(over_cap - OVER_CAP_RESOURCES)}. Split them, or add them to "
+        "OVER_CAP_RESOURCES with a reason."
+    )
+    assert not (OVER_CAP_RESOURCES - over_cap), (
+        f"OVER_CAP_RESOURCES is stale — these now fit under the cap: "
+        f"{sorted(OVER_CAP_RESOURCES - over_cap)}. Drop them from the allowlist so it keeps "
+        "meaning 'known to be truncated'."
+    )
+
+
+def test_a_viewed_skill_file_over_the_cap_is_recorded_as_truncated(tmp_path):
+    """The injected channels record truncation; the file-view channel used not to, which is
+    how an over-cap committed resource stayed invisible."""
+    from agent_benchmarks.skills import load_skill
+    from agent_benchmarks.treatments.tools import ViewSkillTool
+
+    d = tmp_path / "big-resource-skill"
+    (d / "patterns").mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        "---\nname: big-resource-skill\ndescription: A skill with a long resource.\n---\nBody.\n",
+        encoding="utf-8",
+    )
+    (d / "patterns" / "long.md").write_text("x" * 25_000, encoding="utf-8")
+
+    tool = ViewSkillTool(load_skill(d))
+    rendered = tool.call(file="patterns/long.md")
+    assert rendered.endswith("…")
+    assert tool.telemetry_metadata()["skill_file_truncated"] is True
+    assert tool.telemetry_metadata()["skill_file_chars_source"] == {"patterns/long.md": 25_000}
+
+
+def test_a_viewed_skill_file_under_the_cap_records_no_truncation(tmp_path):
+    from agent_benchmarks.skills import load_skill
+    from agent_benchmarks.treatments.tools import ViewSkillTool
+
+    d = tmp_path / "small-resource-skill"
+    (d / "patterns").mkdir(parents=True)
+    (d / "SKILL.md").write_text(
+        "---\nname: small-resource-skill\ndescription: A skill with a short resource.\n---\nBody.\n",
+        encoding="utf-8",
+    )
+    (d / "patterns" / "short.md").write_text("x" * 100, encoding="utf-8")
+
+    tool = ViewSkillTool(load_skill(d))
+    tool.call(file="patterns/short.md")
+    meta = tool.telemetry_metadata()
+    assert meta["skill_file_truncated"] is False
+    assert "skill_file_chars_source" not in meta
+
+
+def test_skill_truncation_is_recorded_on_the_same_terms(tmp_path, caplog):
+    """`as_context` truncates silently; an unrecorded truncation makes the artifact lie."""
+    from agent_benchmarks.skills import load_skill
+
+    d = tmp_path / "verbose-skill"
+    d.mkdir()
+    body = "word " * 6_000
+    (d / "SKILL.md").write_text(
+        f"---\nname: verbose-skill\ndescription: A long skill.\n---\n{body}", encoding="utf-8"
+    )
+    treatment = SkillTreatment(load_skill(d), max_chars=100)
+    with caplog.at_level(logging.WARNING):
+        cfg = treatment.prepare("q", "dpnp")
+    assert cfg.metadata["skill_truncated"] is True
+    assert cfg.metadata["skill_chars_source"] == len(body.strip())
+    # `skill_chars` is the body after the cap, so it is comparable with the cap and with
+    # the source; the rendered block is a third number and carries the header too.
+    assert cfg.metadata["skill_chars"] == 100
+    assert cfg.metadata["skill_chars_injected"] == len(cfg.injected_context[0]["content"])
+    assert "truncated" in caplog.text
+
+
+def test_short_skill_records_no_truncation():
+    from agent_benchmarks.skills import load_skill
+
+    skill = load_skill(SKILL_DIR / "dpnp-quickstart")
+    cfg = SkillTreatment(skill).prepare("q", "dpnp")
+    assert cfg.metadata["skill_truncated"] is False
+    # Nothing was cut, so the two body sizes agree — the rendered block is larger, which
+    # is the confusion the third field exists to prevent.
+    assert cfg.metadata["skill_chars"] == cfg.metadata["skill_chars_source"]
+    assert cfg.metadata["skill_chars"] == len(skill.body.strip())
+    assert cfg.metadata["skill_chars_injected"] == len(cfg.injected_context[0]["content"])
+    assert cfg.metadata["skill_chars_injected"] > cfg.metadata["skill_chars"]
+
+
 # --- combined arms must not silently drop a persona -----------------------
 
 
@@ -200,7 +437,12 @@ def test_channel_control_is_the_skill_text_verbatim():
     is edited and this fixture is not, the two arms differ in content *and* channel, and the
     comparison stops isolating anything."""
     profile = load_agent_profile(PROFILE_DIR / "dpnp-skilltext.md")
-    assert profile.system_prompt == skill_text("dpnp-quickstart").strip()
+    assert profile.system_prompt == skill_text("dpnp-quickstart").strip(), (
+        "dpnp-skilltext.md has drifted from the dpnp-quickstart skill. Re-sync it with\n"
+        "    python scripts/sync_skilltext_profile.py\n"
+        "and note that this changes profile_prompt_sha256: cells already scored on arm "
+        "'profile:dpnp-skilltext' measured the old text and must be re-run, not pooled."
+    )
 
 
 def test_negative_control_persona_mentions_no_product():

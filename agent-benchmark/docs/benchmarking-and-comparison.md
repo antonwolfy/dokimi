@@ -275,10 +275,28 @@ Consistency is validated before the report is written:
 
 - Different `baseline_arm` values across runs in the same group abort with an
   error.
+- **Different treatment arms** across runs abort with an error: each run's delta
+  would measure a different treatment (one run's `profile:` arm beside another's
+  `skill:` arm is confounded, not a model comparison). Pin the shared arm with
+  `--treatment-arm` to override — it makes the choice explicit, and a run missing
+  that arm then fails on its own.
+- **One arm name carrying two different prompt digests** aborts with an error. A
+  `profile:` arm is named after the profile's frontmatter `id`, so editing a
+  profile in place leaves old and new cells sharing a name while measuring
+  different prompts; pooling them averages two treatments. Artifacts written
+  before provenance stamping carry no digest and are not affected.
 - Diverging `question_set_hash` values (when present) produce a warning on
   stderr.
 - Runs that share the same model and provider produce a warning (likely
   duplicate rather than a real comparison).
+
+The report names the arm it scored rather than calling everything "Context arm":
+"Models Compared" gains a **Treatment arm** column (per run, or `— (baseline
+only)`), and the summary, ranking, and benefit headers read the arm name — e.g.
+`### By absolute quality (profile:dpnp-expert)`. The generic label survives only
+when the runs disagree or no arm was scored. The name is taken from the extracted
+score records, not the artifact header, so the label cannot disagree with the
+numbers beside it.
 
 For programmatic use, import from the package directly:
 
@@ -287,6 +305,8 @@ from agent_benchmarks.report.model_compare import (
     check_run_consistency,
     generate_combined_report,
     load_run,
+    non_baseline_arms,   # the arm names in one artifact other than its baseline
+    prompt_digests,      # the profile_prompt_sha256 values stamped for one arm
 )
 ```
 

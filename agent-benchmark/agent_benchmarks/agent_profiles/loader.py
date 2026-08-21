@@ -39,6 +39,22 @@ class AgentProfile:
     system_prompt: str
     path: Path
 
+    def as_prompt(self, max_chars: int = 12_000) -> str:
+        """Render the prompt as it will be sent, capped at *max_chars*.
+
+        The cap mirrors :meth:`agent_benchmarks.skills.Skill.as_context` — see that
+        docstring for where the number came from (an inherited convention, not a tuned
+        value). The parity, not the figure, is what matters here: comparing the
+        system-prompt channel against the context channel is only meaningful if one
+        side cannot carry an unbounded payload the other would have had truncated.
+        Truncation is recorded by the caller rather than hidden — see
+        ``AgentProfileTreatment``.
+        """
+        prompt = self.system_prompt.strip()
+        if len(prompt) > max_chars:
+            return prompt[:max_chars].rstrip() + "\n…"
+        return prompt
+
 
 def load_agent_profile(path) -> AgentProfile:
     """Load a single agent profile from a Markdown file.

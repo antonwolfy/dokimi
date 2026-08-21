@@ -165,22 +165,46 @@ class SkillAgentTreatment(Treatment):
 class AgentProfileTreatment(Treatment):
     """Agent persona prompt — swaps the answering agent's system prompt."""
 
-    def __init__(self, profile: AgentProfile, name: Optional[str] = None):
+    def __init__(
+        self,
+        profile: AgentProfile,
+        name: Optional[str] = None,
+        max_chars: int = 12_000,
+    ):
         self.profile = profile
+        self.max_chars = max_chars
         self.name = name or f"profile:{profile.id}"
 
     def prepare(self, question_text, library_name, library_id=None) -> AgentConfig:
+        prompt = self.profile.as_prompt(self.max_chars)
+        source_chars = len(self.profile.system_prompt.strip())
+        # Mirror the loader's condition rather than comparing lengths: the cap appends an
+        # ellipsis, so a prompt one char over the cap comes back *longer* than the source
+        # and a length comparison would report it as untruncated.
+        truncated = source_chars > self.max_chars
+        if truncated:
+            logger.warning(
+                "Agent profile '%s' is %d chars and was truncated to the %d-char cap; "
+                "the arm measures the truncated prompt.",
+                self.profile.path, source_chars, self.max_chars,
+            )
         return AgentConfig(
-            system_prompt=self.profile.system_prompt,
+            system_prompt=prompt,
             metadata={
                 "arm_kind": "agent_profile",
                 "profile_id": self.profile.id,
                 "profile_name": self.profile.name,
                 "profile_path": str(self.profile.path),
-                # Digest the prompt text, not the file: the text is what reaches
-                # the model, so it is what a score is reproducible against.
-                "profile_prompt_sha256": digest_text(self.profile.system_prompt),
-                "profile_prompt_chars": len(self.profile.system_prompt),
+                # Digest the rendered text, not the file: an edit that leaves the file
+                # the same length still moves the digest, and capping moves it too, which
+                # is how a batch gate notices that two cells measured different prompts.
+                # This is the profile's *contribution*, not necessarily the whole prompt
+                # sent — a prompt-middleware plugin appends to it afterwards, and
+                # ``PluginWrappedTreatment`` records ``system_prompt_sha256`` for that.
+                "profile_prompt_sha256": digest_text(prompt),
+                "profile_prompt_chars": len(prompt),
+                "profile_prompt_chars_source": source_chars,
+                "profile_prompt_truncated": truncated,
             },
         )
 
@@ -199,8 +223,20 @@ class SkillTreatment(Treatment):
         self.name = name or f"skill:{skill.name}"
 
     def prepare(self, question_text, library_name, library_id=None) -> AgentConfig:
+        content = self.skill.as_context(self.max_chars)
+        # `as_context` truncates silently. An unrecorded truncation is how a skill arm
+        # ends up measuring three quarters of a skill while the artifact reads as if it
+        # measured all of it, so record it on the same terms as the profile arm.
+        source_chars = len(self.skill.body.strip())
+        truncated = source_chars > self.max_chars
+        if truncated:
+            logger.warning(
+                "Skill '%s' body is %d chars and was truncated to the %d-char cap; "
+                "the arm measures the truncated skill.",
+                self.skill.path, source_chars, self.max_chars,
+            )
         chunk = {
-            "content": self.skill.as_context(self.max_chars),
+            "content": content,
             "source": f"skill:{self.skill.name}",
             "relevance_score": 1.0,
         }
@@ -210,6 +246,17 @@ class SkillTreatment(Treatment):
                 "arm_kind": "skill",
                 "skill_name": self.skill.name,
                 "skill_path": str(self.skill.path),
+                # Three sizes, because two of them are easy to confuse. `skill_chars` is
+                # the body after the cap, so it pairs with `skill_chars_source` the way
+                # `profile_prompt_chars` pairs with its source and the difference is what
+                # the cap cut. `skill_chars_injected` is the whole rendered block, header
+                # and description included — which is why it exceeds the source for a
+                # skill that was never truncated, and why it is not the number to compare
+                # against the cap.
+                "skill_chars": min(source_chars, self.max_chars),
+                "skill_chars_source": source_chars,
+                "skill_chars_injected": len(content),
+                "skill_truncated": truncated,
             },
         )
 

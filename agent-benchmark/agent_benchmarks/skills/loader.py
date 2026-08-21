@@ -34,7 +34,23 @@ class Skill:
     resources: List[Path] = field(default_factory=list)
 
     def as_context(self, max_chars: int = 12_000) -> str:
-        """Render the skill as an injectable context block."""
+        """Render the skill as an injectable context block, capped at *max_chars*.
+
+        The 12,000-char default (≈3k tokens) is an inherited convention, not a tuned
+        value: it arrived with this loader and no ADR or commit justifies the figure.
+        Treat it as a guardrail against a fixture that would dominate the prompt, and
+        change it only deliberately — every channel must cap at the *same* number, or
+        a ``profile:`` arm and a ``skill:`` arm stop being comparable.
+
+        Three channels carry this cap, and only two of them are *injected*:
+        ``SKILL.md`` bodies (here) and profile bodies (``AgentProfile.as_prompt``).
+        ``tests/test_agent_profiles.py`` fails once either crosses 95%, so growth is
+        caught before it truncates anything. The third is
+        ``ViewSkillTool``, which serves bundled resource files at the same cap; there a
+        committed resource is already over it, so the test allowlists what is known to be
+        truncated rather than pretending the cap is unreached. Truncation is recorded in
+        every channel — see ``SkillTreatment`` and ``ViewSkillTool.telemetry_metadata``.
+        """
         body = self.body.strip()
         if len(body) > max_chars:
             body = body[:max_chars].rstrip() + "\n…"

@@ -55,6 +55,14 @@ carry the same stamped judge model and provider.
 > prompt. It is **not** a `persona` — in this repo a persona is a synthetic
 > *user* who asks questions (`agent_benchmarks/personas`).
 
+> **Which commands run treatments:** `arms run`, `arms matrix-run`, and the
+> `subjects` commands — they are the only callers of `create_treatments`. The
+> legacy answer path (`benchmark run`, `answers generate`) predates arms: it has
+> only the two fixed `with_docs`/`without_docs` conditions, no `--arms` flag, and
+> no way to send a system prompt at all, so a `profile:` arm cannot be expressed
+> there. `explore --arms` is an unrelated flag (`oracle`/`empty`/`command:`), not
+> a treatment list.
+
 ## Quick start
 
 ```bash
@@ -143,7 +151,53 @@ artifact per cell, a `matrix_rollup.v1` JSON/Markdown report, and paired
   across a batch before pooling cells — differing digests mean two different prompts were
   measured under one arm name. On a **combined** arm the same three fields live one level
   down, under the matching entry of `metadata["treatments"]` rather than at the top of the
-  metadata — so anything reading them has to look in both places.
+  metadata — so anything reading them has to look in both places, `prompt_digests()`
+  included.
+
+  The prompt is capped at **12,000 characters**, the same cap `skill:` applies to a skill
+  body. The parity is the point: comparing the system-prompt channel against the context
+  channel only means something if one side cannot carry a payload the other would have had
+  truncated. A capped arm records `profile_prompt_truncated: true` alongside
+  `profile_prompt_chars` (sent) and `profile_prompt_chars_source` (on disk), logs a warning,
+  and digests the *rendered* text — so a truncated cell is visibly a different treatment
+  rather than a quietly shorter one. `skill:` arms record `skill_truncated` on the same
+  terms, with three sizes rather than two: `skill_chars` (body after the cap) pairs with
+  `skill_chars_source` (body on disk) the way the profile fields do, while
+  `skill_chars_injected` is the whole rendered block — header and description included,
+  which is why it exceeds the source for a skill that was never truncated and is not the
+  number to compare against the cap. `ViewSkillTool` records `skill_file_truncated` /
+  `skill_file_chars_source` when an agent views a bundled file that exceeds the cap.
+
+  `profile_prompt_sha256` is the profile's *contribution*, not always the whole prompt sent:
+  a `prompt_middleware` plugin appends to the system prompt after the arm has already
+  digested it. `PluginWrappedTreatment` therefore also records `system_prompt_sha256` (the
+  prompt as it leaves the wrapper) and `system_prompt_extended_by_plugins`, so a caveman
+  cell and a bare profile cell are distinguishable in the artifact instead of sharing one
+  profile digest.
+
+  Where 12,000 comes from: it is the default the skill loader has always carried
+  (≈3k tokens), an inherited convention rather than a tuned figure — no ADR or commit
+  justifies the number, and profiles adopted it for parity, not because it is optimal.
+  Read it as a guardrail against a fixture that would dominate the prompt. If you change
+  it, change it in **all** channels at once (`skills/loader.py`,
+  `agent_profiles/loader.py`, `treatments/arms.py`, `treatments/tools.py`,
+  `scripts/sync_skilltext_profile.py`): an unequal cap turns the channel comparison into a
+  payload comparison. Raising it also re-truncates nothing retroactively — already-scored
+  cells keep their old digests.
+
+  Two tests guard the cap, and it is worth knowing exactly what each covers:
+
+  - `test_no_injected_fixture_is_within_5_percent_of_the_cap` scans the **injected**
+    payloads — every profile body and every `SKILL.md` body under `data/` — and fails at
+    95%, so a fixture is caught while it is still growing rather than after it truncates.
+    Its message prints the current largest fixture, so no percentage is hardcoded anywhere.
+  - `test_over_cap_bundled_resources_are_known` covers the third channel, the bundled
+    files `ViewSkillTool` serves. These are **not** in the injected scan, and one committed
+    resource is already over the cap
+    (`intel-performance-patterns/patterns/simd-upconversion-impl.md`, ~213%). It is
+    allowlisted by name so it stays visible, and anything *new* going over fails the test.
+    Splitting that file, or raising the cap, is tracked separately — this PR only stops the
+    truncation from being silent.
 - **`skill:<path>`** — a `SKILL.md` file or its directory, following the Agent
   Skills convention (frontmatter `name`/`description` + Markdown body). See
   [`data/skills/onetbb-quickstart/SKILL.md`](../data/skills/onetbb-quickstart/SKILL.md).
@@ -245,12 +299,12 @@ vacuous; it is a denylist, so it catches the shapes we have thought of, not ever
 leak. When the skill changes, regenerate the channel control rather than hand-editing it:
 
 ```bash
-python scripts/sync_skilltext_profile.py          # rewrites data/agent_profiles/dpnp-skilltext.md
-python scripts/sync_skilltext_profile.py --check   # CI-style check, no write
+python scripts/sync_skilltext_profile.py --check   # exit 1 if drifted, no write
+python scripts/sync_skilltext_profile.py           # rewrite the body, keep the frontmatter
 ```
 
-Regenerating changes `profile_prompt_sha256`, so cells already scored on
-`profile:dpnp-skilltext` measured the old text and must be re-run, not pooled.
+Re-syncing changes the prompt text and therefore `profile_prompt_sha256`, so cells already
+scored on `profile:dpnp-skilltext` measured the old text: re-run them rather than pooling.
 
 **Skill** (`skills/<name>/SKILL.md`):
 
@@ -307,6 +361,72 @@ The `SKILL.md` should contain a navigation table mapping user contexts to files:
 loaded. Multi-file structure only activates in agentic mode (`skill-agent:<path>`).
 For best results with injected mode, consolidate content into a single `SKILL.md`
 file rather than relying on multi-file progressive disclosure.
+
+## Comparing cells across runs
+
+One treatment measured over several models is many artifacts, one per cell. Two tools read
+them, and both refuse comparisons that would look fine and mean nothing.
+
+**`report model-compare`** puts one row per run beside a shared baseline:
+
+```bash
+python cli.py report model-compare \
+  --regular-runs results/arms/haiku_regular.json results/arms/opus_regular.json \
+  --run-ids haiku,opus \
+  --out results/arms/compare.md
+```
+
+It names the arm it scored — the "Models Compared" table gains a **Treatment arm** column,
+and the summary/ranking headers read `profile:dpnp-expert` instead of a generic
+"Context arm" — because a `profile:` report and a `docs:` report are otherwise the same
+document. It aborts, rather than warns, when the runs cannot be pooled:
+
+- **different `baseline_arm`** — the deltas are measured from different zeros;
+- **different treatment arms** — each run's delta would measure a different treatment. Pass
+  `--treatment-arm <name>` to pin one arm every run must be scored on (which is also
+  required when a run holds more than one non-baseline arm);
+- **one arm name carrying two prompt digests** — the arm name comes from the profile's
+  frontmatter `id`, so an edited profile leaves stale cells indistinguishable by name.
+  Artifacts written before provenance stamping carry no digest and are left alone.
+
+A differing `question_set_hash` and two runs on the same model are warnings, not errors.
+
+**`scripts/check_treatment_batch.py`** gates a whole batch directory before you read any
+number out of it:
+
+```bash
+python scripts/check_treatment_batch.py results/arms/persona-dpnp-expert \
+  --profile data/agent_profiles/dpnp-expert.md
+python scripts/check_treatment_batch.py results/arms/skills \
+  --treatment-arm 'skill:*' --expect-n regular=40,golden=20 --expect-files 12
+```
+
+It checks schema, exactly two arms, the baseline arm, the treatment-arm pattern, a pinned
+`--judge-model`/`--judge-provider`, that the judge is not the answering model
+(self-judging), question and per-arm answer counts, and — for `profile:` arms — that the
+system prompt reached every treatment answer and no baseline answer. With `--profile` it
+compares each cell's stamped digest against the file's current text and reports
+`STALE ARTIFACT`, which is what catches a cell a runner would otherwise skip as done.
+
+`--expect-n` maps a *filename suffix* to a question count, and the defaults (`regular=40`,
+`golden=20`) are the dpnp sizes only — golden sets run 20, 24 or 111 questions depending on
+the product, so a batch over another product must pass its own. Two things keep that from
+turning into a green row of wrong counts: a filename matching none of the suffixes is
+reported rather than silently gated against the artifact's own `total_questions` (the runner
+writes that field as `len(records)`, so every count check would hold by construction), and a
+`--expect-n` value that disagrees with `total_questions` is flagged as a mis-specified map
+rather than a short run.
+
+Two gates are deliberately statistical rather than absolute:
+
+- **coverage, not zero errors.** A judge call fails occasionally (~1.25% observed against
+  the Intel proxy), and a failed call leaves `aggregate: null`. The gate requires ≥95% of
+  questions scored in *both* arms.
+- **paired deltas, not the artifact's own number.** `delta_vs_baseline` averages each arm
+  over whatever it scored, so one failed call subtracts means taken over different
+  questions (39 vs 40 was observed, worth ~0.4 points). The script recomputes over
+  questions both arms scored. It pools questions; a mean of per-cell means differs slightly
+  when the sets have different sizes — say which one a report uses.
 
 ## Scope and caveats
 

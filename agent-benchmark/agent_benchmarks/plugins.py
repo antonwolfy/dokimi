@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional
 
 from agent_benchmarks.treatments.base import AgentConfig, Treatment
+from agent_benchmarks.utils import digest_text
 
 
 EMPTY_PLUGIN_SET_ID = "sha256:e3b0c44298fc1c149afbf4c8996fb924"
@@ -138,12 +139,22 @@ class PluginWrappedTreatment(Treatment):
 
     def prepare(self, question_text, library_name, library_id=None) -> AgentConfig:
         cfg = self.inner.prepare(question_text, library_name, library_id)
+        arm_prompt = cfg.system_prompt
         for plugin in self.plugins:
             cfg = plugin.apply(cfg)
 
         metadata = dict(cfg.metadata)
         metadata["plugin_set"] = self.plugin_set["plugin_set"]
         metadata["plugin_set_id"] = self.plugin_set["plugin_set_id"]
+        # A prompt-middleware plugin appends to the system prompt *after* the arm has
+        # digested its own contribution, so ``profile_prompt_sha256`` describes the
+        # profile, not the prompt that reaches the model. Digest the prompt as it leaves
+        # this wrapper as well, and say whether a plugin extended it — otherwise a caveman
+        # cell and a bare profile cell carry the same profile digest and nothing in the
+        # artifact distinguishes the two system prompts.
+        if cfg.system_prompt:
+            metadata["system_prompt_sha256"] = digest_text(cfg.system_prompt)
+            metadata["system_prompt_extended_by_plugins"] = cfg.system_prompt != arm_prompt
         return AgentConfig(
             system_prompt=cfg.system_prompt,
             injected_context=cfg.injected_context,
