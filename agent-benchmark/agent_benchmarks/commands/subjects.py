@@ -57,7 +57,11 @@ def cmd_subjects_show(args: argparse.Namespace) -> None:
 def cmd_subjects_run(args: argparse.Namespace) -> None:
     """Run awareness matrix cells for one subject and write a scorecard."""
     from agent_benchmarks.artifacts import load_artifact, save_artifact
-    from agent_benchmarks.commands.arms import cmd_arms_matrix_run, _safe_name
+    from agent_benchmarks.commands.arms import (
+        _safe_name,
+        cmd_arms_matrix_run,
+        forwarded_run_config,
+    )
     from agent_benchmarks.report.subject_report import render_subject_scorecard
     from agent_benchmarks.subjects import build_subject_scorecard, load_subject
     from agent_benchmarks.subjects.loader import awareness_arm_specs
@@ -97,19 +101,7 @@ def cmd_subjects_run(args: argparse.Namespace) -> None:
             out_json=str(rollup_json),
             out_md=str(rollup_md),
             plugin_deltas=not args.no_plugin_deltas,
-            model=args.model,
-            provider=args.provider,
-            harness=args.harness,
-            plugins="",
-            context7_id=args.context7_id,
-            baseline_arm=baseline_arm,
-            judge=args.judge,
-            judge_model=args.judge_model,
-            judge_provider=args.judge_provider,
-            top_k=args.top_k,
-            rerank_threshold=args.rerank_threshold,
-            max_iterations=args.max_iterations,
-            concurrency=args.concurrency,
+            **forwarded_run_config(args, plugins="", baseline_arm=baseline_arm),
         )
         cmd_arms_matrix_run(run_args)
         awareness_runs.append({
@@ -168,6 +160,13 @@ def register(sub, positive_int) -> None:
     run_p.add_argument("--top-k", type=positive_int, default=5, dest="top_k")
     run_p.add_argument("--rerank-threshold", type=float, default=0.3, dest="rerank_threshold")
     run_p.add_argument("--max-iterations", type=positive_int, default=6, dest="max_iterations")
+    run_p.add_argument("--max-tokens", type=positive_int, default=None, dest="max_tokens",
+                       help="Output-token ceiling per answer. Raise for reasoning models, which "
+                            "can spend the provider default entirely on reasoning and return empty text")
+    run_p.add_argument("--grounded-from-topics", action="store_true", dest="grounded_from_topics",
+                       help="Let the judge use a question's expected_topics as ground truth when they "
+                            "are substantive answer statements, enabling the factual_grounding "
+                            "dimension for curated golden sets. Keyword-style topics are ignored")
     run_p.add_argument("--concurrency", type=positive_int, default=5)
     run_p.add_argument("--no-plugin-deltas", action="store_true", dest="no_plugin_deltas")
     run_p.add_argument(

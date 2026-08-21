@@ -105,6 +105,21 @@ class ArmRunner:
     def arm_names(self) -> List[str]:
         return [t.name for t in self.treatments]
 
+    def _run_config(self) -> Dict[str, Any]:
+        """Request-shaping settings, recorded so a run stays interpretable later.
+
+        Two runs of the same questions under the same model are not comparable if
+        they used different budgets: ``max_tokens`` decides whether an answer was
+        truncated, and ``max_iterations`` decides whether an agentic arm ran out
+        of tool-call rounds before answering. Without these, a truncated run and a
+        complete one are indistinguishable in the artifact.
+        """
+        return {
+            "max_tokens": self.max_tokens,
+            "max_iterations": self.max_iterations,
+            "grounded_from_topics": self.grounded_from_topics,
+        }
+
     def run(
         self,
         library_name: str,
@@ -379,6 +394,7 @@ class ArmRunner:
             "arms": self.arm_names,
             "baseline_arm": baseline_arm,
             "total_questions": len(records),
+            "run_config": self._run_config(),
             "grounded_from_topics": self.grounded_from_topics,
             "grounded_questions": sum(
                 1 for r in records if r.get("ground_truth_chunk")

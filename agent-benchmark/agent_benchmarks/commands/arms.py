@@ -7,6 +7,44 @@ import json
 import sys
 from pathlib import Path
 
+# Run-configuration fields the arms commands read off parsed args, shared with
+# any other command that drives an arms run by constructing its own Namespace.
+# Kept in one place so a new flag reaches every caller: enumerating these at each
+# call site is what lets a flag silently fall back to its default, since
+# _build_arms_output reads them with getattr defaults and cannot tell a caller
+# that omitted a field from a user who chose the default.
+FORWARDED_RUN_CONFIG_FIELDS = (
+    "model",
+    "provider",
+    "harness",
+    "context7_id",
+    "judge",
+    "judge_model",
+    "judge_provider",
+    "top_k",
+    "rerank_threshold",
+    "max_iterations",
+    "max_tokens",
+    "grounded_from_topics",
+    "concurrency",
+)
+
+
+def forwarded_run_config(args: argparse.Namespace, **overrides) -> dict:
+    """Copy the shared run-configuration fields off *args*.
+
+    Fields absent from *args* are omitted rather than defaulted, so
+    ``_build_arms_output`` applies its own default instead of this helper
+    inventing one. Pass *overrides* for values the caller sets itself.
+    """
+    forwarded = {
+        field: getattr(args, field)
+        for field in FORWARDED_RUN_CONFIG_FIELDS
+        if hasattr(args, field)
+    }
+    forwarded.update(overrides)
+    return forwarded
+
 
 def cmd_arms_run(args: argparse.Namespace) -> None:
     """Run an N-arm treatment comparison and optionally judge it."""

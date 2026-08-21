@@ -209,3 +209,37 @@ def test_arm_runner_stamps_plugin_set_and_harness(monkeypatch):
     assert output["plugin_set"] == "caveman:full"
     assert output["harness"] == "openclaw-agent"
     assert output["matrix_cell"] == "agent-caveman"
+
+
+def test_arm_runner_records_request_shaping_config(monkeypatch):
+    captured = []
+    _patch_llm(monkeypatch, captured)
+
+    runner = ArmRunner(
+        [BaselineTreatment()],
+        max_tokens=32_000,
+        max_iterations=9,
+        grounded_from_topics=True,
+    )
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+    output = runner.build_output("oneTBB", records)
+
+    # Without these a truncated run and a complete one are indistinguishable.
+    assert output["run_config"] == {
+        "max_tokens": 32_000,
+        "max_iterations": 9,
+        "grounded_from_topics": True,
+    }
+
+
+def test_arm_runner_run_config_defaults(monkeypatch):
+    captured = []
+    _patch_llm(monkeypatch, captured)
+
+    runner = ArmRunner([BaselineTreatment()])
+    output = runner.build_output(
+        "oneTBB", runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+    )
+
+    assert output["run_config"]["max_tokens"] is None
+    assert output["run_config"]["grounded_from_topics"] is False

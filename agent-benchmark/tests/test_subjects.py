@@ -725,3 +725,75 @@ tasks = ["{task_dir}"]
     task_runs = json.loads((out_dir / "work" / "task-runs.json").read_text(encoding="utf-8"))
     assert task_runs["schema_version"] == "task_runs.v1"
     assert task_runs["results"][0]["metrics"]["dry_run"] is True
+
+
+def test_subjects_run_forwards_run_config_to_the_arms_runner(tmp_path: Path, monkeypatch):
+    """A budget set on `subjects run` must reach the runner, not fall back to the default.
+
+    subjects run drives an arms run through a hand-built Namespace, so a field it
+    forgets to copy is read back with a getattr default and is indistinguishable
+    from a user who chose that default.
+    """
+    def fake_call(prompt, model, provider="openai", api_key=None, system=None, **kw):
+        return "answer", {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+
+    monkeypatch.setattr(arm_runner_mod, "llm_call_with_usage", fake_call)
+    docs = tmp_path / "docs.md"
+    docs.write_text("# oneTBB\nUse parallel_for for loops.\n", encoding="utf-8")
+    questions = tmp_path / "questions.json"
+    questions.write_text(
+        json.dumps([{"id": "q1", "question": "What API runs loops?"}]), encoding="utf-8"
+    )
+    descriptor = tmp_path / "subject.toml"
+    descriptor.write_text(
+        f"""
+[subject]
+id = "docs-subject"
+kind = "doc-source"
+ref = "local:{docs.as_posix()}"
+
+[suite]
+products = ["oneTBB"]
+questions = ["{questions.as_posix()}"]
+
+[[matrix.cells]]
+id = "arms-runner"
+model = "m"
+provider = "openai"
+harness = "arms-runner"
+plugins = []
+""".strip(),
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "out"
+    args = build_parser().parse_args([
+        "subjects", "run", str(descriptor),
+        "--out-dir", str(out_dir),
+        "--max-tokens", "32000",
+        "--grounded-from-topics",
+    ])
+
+    args.func(args)
+
+    cell = json.loads(
+        (out_dir / "oneTBB" / "cells" / "arms-runner.json").read_text(encoding="utf-8")
+    )
+    assert cell["run_config"]["max_tokens"] == 32000
+    assert cell["run_config"]["grounded_from_topics"] is True
+
+
+def test_forwarded_run_config_covers_fields_read_with_a_default():
+    """The forwarded set must stay a superset of what _build_arms_output consults.
+
+    Anything read there with a getattr default is silently absent when a caller
+    building its own Namespace omits it, which is how a flag stops propagating.
+    """
+    import inspect
+    import re
+
+    from agent_benchmarks.commands import arms as arms_mod
+
+    source = inspect.getsource(arms_mod._build_arms_output)
+    read_with_default = set(re.findall(r'getattr\(args,\s*"([a-z_0-9]+)"', source))
+    missing = read_with_default - set(arms_mod.FORWARDED_RUN_CONFIG_FIELDS)
+    assert not missing, f"read with a getattr default but never forwarded: {sorted(missing)}"
