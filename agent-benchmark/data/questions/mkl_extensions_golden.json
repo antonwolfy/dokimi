@@ -208,6 +208,254 @@
         "why_it_matters": "Version-string gating breaks across the many release generations of these packages.",
         "trigger": "environment"
       }
+    },
+    {
+      "id": "mkl-extensions-Q011",
+      "text": "A deployment check must confirm oneMKL FFT is actually in use. `mkl_fft.is_patched()` returns False, so the team reports that FFT is not accelerated. But on that machine `numpy.fft.fft` is already dispatching into mkl_fft. Reconcile the two.",
+      "category": "build_vs_runtime_activation",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "`is_patched()` reports only the runtime monkeypatch installed by `patch_numpy_fft()`. It cannot see FFT wired in at build time by the NumPy distribution.",
+        "Check what the function actually is: `numpy.fft.fft.__module__` reads `mkl_fft.interfaces._numpy_fft` when routed and `numpy.fft` when not.",
+        "Measured on an Intel-distributed NumPy: `__module__` is `mkl_fft.interfaces._numpy_fft` while `mkl_fft.is_patched()` is False.",
+        "Control on stock conda-forge NumPy: `numpy.fft` with False, routed with True after `patch_numpy_fft()`, then both back after `restore_numpy_fft()`.",
+        "So `is_patched()` is sound evidence about the runtime patch and unsound evidence about activation. Do not answer the activation question with it.",
+        "The two extensions differ here. In that same environment `mkl_umath.is_patched()` was True, because that NumPy calls `patch_numpy_umath()` during its own import."
+      ],
+      "metadata": {
+        "persona": "release_engineer",
+        "skill_under_test": "mkl_fft",
+        "expected_workflow": "prove activation from what the function actually is, rather than from a state flag that covers only one of the two activation paths",
+        "why_it_matters": "Reporting 'not accelerated' for an environment that is already routed sends a team chasing a configuration problem that does not exist, and the flag they trusted is the documented one.",
+        "negative_case": true,
+        "trigger": "environment",
+        "verified_by": "executed in two environments: stock conda-forge numpy 2.4.3 with mkl_fft 2.3.2 gives np.fft.fft.__module__ 'numpy.fft' and is_patched() False, then 'mkl_fft.interfaces._numpy_fft' and True after patch_numpy_fft(), then both back after restore_numpy_fft(); Intel-distributed numpy 2.4.3 build py313h5623298_4 gives __module__ 'mkl_fft.interfaces._numpy_fft' with mkl_fft.is_patched() False while mkl_umath.is_patched() is True, the latter because that numpy's __init__.py calls patch_numpy_umath() at import (lines 937-946, file matched against its dist-info RECORD sha256)"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q012",
+      "text": "After `mkl_umath.patch_numpy_umath()`, a team checks whether VML is being reached by switching the VML accuracy mode from `ha` to `ep`. `np.sqrt` on a 50,000-element contiguous float64 array changes its results, so it is going through VML. `np.add` on the same two arrays shows no such sensitivity and no timing discontinuity anywhere in the sizes they sweep. Both are well past the 8192 threshold they read in the source. Explain precisely why.",
+      "category": "dispatch_thresholds",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "Eligibility is per function class, not one global gate. `add`, `subtract` and `multiply` gate on a much higher constant than the transcendentals, and `divide` has its own.",
+        "The split is not algebraic versus transcendental: `sqrt`, `square`, `reciprocal`, `absolute`, `ceil`, `floor`, `fmax` and `fmin` all sit with the transcendentals.",
+        "The values are private `#define`s in `mkl_umath/src/mkl_umath_loops.c.src` and can change between releases. Read them at the tag matching the installed build rather than asserting a remembered number.",
+        "They cannot be recovered from an installed wheel: no `.c.src` ships, and no file under the package contains the string `THRESHOLD`.",
+        "The comparison is strictly greater-than at every dispatch site, so a size exactly equal to the threshold takes the fallback.",
+        "Which branch ran is not observable from Python. `MKL_VERBOSE` emits nothing for these ufuncs, and no NumPy ufunc attribute exposes the installed loop.",
+        "The one deterministic probe is a VML accuracy-mode differential via `mkl.vml_set_mode`, and it cannot settle `add`, `subtract` or `multiply`, which are single correctly-rounded operations.",
+        "Do not infer VML from a speedup; the non-VML fallback is already hand-vectorized. Eligibility also requires contiguous input."
+      ],
+      "metadata": {
+        "persona": "hpc_developer",
+        "skill_under_test": "mkl_umath",
+        "expected_workflow": "identify the per-function-class threshold rather than assuming one global gate",
+        "why_it_matters": "Assuming a single 8192 gate leads to wrong capacity planning: elementwise add/sub/mul need 100k+ elements before VML engages at all.",
+        "negative_case": false,
+        "trigger": "code",
+        "verified_by": "source read at mkl_umath/src/mkl_umath_loops.c.src lines 70, 71, 72 in upstream tag 0.4.1 (e41c869), which differs from master in this file by exactly one unrelated line (154, isinff -> isinf), so master line numbers are usable; grep confirmed 0 occurrences of ALGEBRAIC, 0 of '>= VML_', 19 of '> VML_' split as 8 ASM, 2 D, 9 TRANSCEDENTAL; every repeat block resolved to names, giving add/subtract and multiply at ASM (real and complex), divide alone at D, and sqrt/ceil/floor/fmax/fmin/absolute/reciprocal/square at TRANSCEDENTAL; confirmed the installed mkl_umath 0.4.1 wheel ships none of this (no src/, no .c.src, no THRESHOLD string anywhere under the package, none in SOURCES.txt or CMakeLists.txt); observability probed by execution: MKL_VERBOSE=1 and =2 silent for both ufuncs, np.sqrt.types/ntypes unchanged by patching, and a vml_set_mode ha-vs-ep differential bit-identical at n<=8192 and divergent from n=8193 (about 9.7e-11) for sqrt while insensitive for add at every size up to 300000; timing sweeps show a patched-only discontinuity at the sqrt gate and none at the add gate; 0.2.x traced via generate_umath.py at tags v0.1.5 and v0.2.0"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q013",
+      "text": "A parallel Monte Carlo harness assigns each of 8 workers its own MT2203 stream with `MKLRandomState(seed, brng=(\"MT2203\", wid))` where `wid` comes from `np.arange(8)`. Results are reproducible and no warning is raised, but the variance across workers is exactly zero: all 8 workers return identical draws. What is happening?",
+      "category": "parallel_streams",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "All eight workers share one stream. `np.arange(8)` yields `np.int64`, and the member-selection branch honors the index only under `isinstance(s, int)`.",
+        "`np.int64` is not an `int` subclass, so the index is ignored and the stream id keeps its initial value of 0.",
+        "It is silent. The out-of-range warning never fires, because the value is not recognized as an integer at all.",
+        "Fix it at the call site with `int(wid)` or `operator.index(wid)`. Iterating `range(8)` also avoids it.",
+        "Verify independence by drawing from each worker's state and comparing, not from reproducibility, which holds either way.",
+        "Only MT2203 and WH are parametrized families. Every other BRNG has `stream_max == 1`, so the tuple form is meaningless for them."
+      ],
+      "metadata": {
+        "persona": "quantitative_researcher",
+        "skill_under_test": "mkl_random",
+        "expected_workflow": "check the dtype of the stream index, not just the tuple syntax",
+        "why_it_matters": "Silently collapsing N parallel streams onto one under-reports Monte Carlo variance while every surface signal (reproducible, no warning, correct API shape) looks healthy.",
+        "negative_case": false,
+        "trigger": "code",
+        "verified_by": "executed against mkl_random 1.4.2: int64(5) draws == member 0 draws exactly, != member 5 draws, zero warnings under simplefilter('always'); 8 workers indexed by np.arange(8) give 1 distinct stream and a cross-worker mean std of exactly 0, against 8 distinct streams and std 0.0312 with range(8); int(wid) and operator.index(wid) both fix it; a Python int out of range does warn and wraps modulo smax (index 6030 warns and yields member 6, not member 0) while the np.int64 equivalent is silent; issubclass(np.int64, int) is False with no int in its MRO; stream_max verified behaviorally across all 11 BRNG tokens. Source read in the installed wheel, which does ship mklrand.pyx: _parse_brng_argument at mklrand.pyx:1513-1533 (stream_id initialized 0 at :1515, isinstance(s, int) gate at :1521, sole assignment at :1529), _brng_dict_stream_max at :1471-1483, and SIZE_OF_MT2203_FAMILY / SIZE_OF_WH_FAMILY at src/randomkit.cpp:122-123; _parse_brng_argument diffed byte-identical against upstream master"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q014",
+      "text": "A service calls `mkl_fft.patch_numpy_fft()` at startup and expects its `scipy.signal` convolution pipeline to run on oneMKL. The pipeline is unchanged. What did that patch actually cover, and what covers the rest?",
+      "category": "activation_surfaces",
+      "difficulty": "hard",
+      "level": "diagnosis",
+      "expected_topics": [
+        "`np.fft` and `scipy.fft` are independent surfaces. `patch_numpy_fft()` routes only `np.fft`; `scipy.fft` requires registering the backend separately.",
+        "Measured: after `patch_numpy_fft()`, `np.fft.fft.__module__` is `mkl_fft.interfaces._numpy_fft` while `scipy.fft` dispatched zero calls into the mkl backend.",
+        "The converse holds too. `scipy.fft.set_global_backend(mkl_fft.interfaces.scipy_fft)` routes `scipy.fft` and leaves `np.fft.fft.__module__` at `numpy.fft`.",
+        "`scipy.signal` does inherit the `scipy.fft` backend: `fftconvolve` dispatched two `rfftn` calls and one `irfftn` into it.",
+        "Instrument the entry point the caller actually uses. Real-input convolution never calls `fft`, so watching `fft` alone reports a false negative.",
+        "Only the `scipy_fft` namespace carries `set_workers`/`get_workers`, so the numpy-patch route provides no thread knob at all."
+      ],
+      "metadata": {
+        "persona": "backend_service_engineer",
+        "skill_under_test": "mkl_fft",
+        "expected_workflow": "identify which activation surface a given call path reads, instead of assuming one patch covers the whole process",
+        "why_it_matters": "Half-activated stacks are the common production outcome: the NumPy path is accelerated, the SciPy path silently is not, and the thread knob exists on only one of them.",
+        "negative_case": false,
+        "trigger": "code",
+        "verified_by": "executed against mkl_fft 2.3.2 + scipy 1.17.1 with a spy wrapping all 14 backend entry points: after patch_numpy_fft() np.fft.fft.__module__ is 'mkl_fft.interfaces._numpy_fft' and scipy.fft produced 0 backend dispatches; after scipy.fft.set_global_backend(interfaces.scipy_fft) scipy.fft.fft produced 1 dispatch, np.fft.fft produced 0, and np.fft.fft.__module__ was still 'numpy.fft'; scipy.signal.fftconvolve dispatched rfftn twice and irfftn once, and scipy.signal.convolve(method='fft') the same; a spy watching only 'fft' reported 0 dispatches for fftconvolve, which is why the entry point matters; set_workers/get_workers present only on interfaces.scipy_fft per dir() across all three namespaces"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q015",
+      "text": "A team wants non-overlapping mkl_random streams per worker and plans to call `leapfrog(k, nstreams)` on an MT2203 generator, having read that leapfrog partitions a stream into interleaved subsequences. Will that work, and what should they use?",
+      "category": "parallel_streams",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "No. `leapfrog` raises `ValueError` on MT2203; across every BRNG the package exposes, it succeeds only for WH, MCG31 and MCG59.",
+        "`skipahead` is supported far more broadly and does work on MT2203, including on non-zero family members.",
+        "Support is per BRNG and must be probed at runtime. `hasattr` is True for every BRNG, so the check has to invoke the method and catch the error.",
+        "The documented support matrix is not a safe substitute; at the time of writing it omitted MT2203 from the skipahead list.",
+        "For MT2203 the idiomatic mechanism is family-member selection via `brng=(\"MT2203\", member)`.",
+        "With `skipahead`, copy each worker's state after its jump and keep each worker under `nskips` draws, or the streams overlap.",
+        "Neither method exists on `mkl_random.interfaces.numpy_random.RandomState`, which subclasses the private base and defines neither."
+      ],
+      "metadata": {
+        "persona": "quantitative_researcher",
+        "skill_under_test": "mkl_random",
+        "expected_workflow": "check per-BRNG method support at runtime instead of assuming uniform support or trusting the doc matrix",
+        "why_it_matters": "Choosing the wrong partitioning primitive fails loudly, but the documented support matrix understates skipahead, so a doc-driven answer needlessly rejects the primitive that works.",
+        "negative_case": true,
+        "trigger": "code",
+        "verified_by": "executed against mkl_random 1.4.2 across all 11 BRNG tokens enumerated from _brng_dict at mklrand.pyx:1455-1469: leapfrog OK only WH/MCG31/MCG59; skipahead OK for 9 including MT2203 and non-zero MT2203 members, ValueError for R250 and NONDETERM; upstream docs/source/how_to.rst skipahead list omits MT2203 while its leapfrog list is exact, and no other docs/source page states support for either method; VSL_RNG_ERROR_{LEAPFROG,SKIPAHEAD}_UNSUPPORTED translation read at src/randomkit.cpp:305-328 plus mklrand.pyx:6737-6766; class placement read at mklrand.pyx:1546/6670/6725/6746/7076 and interfaces/_numpy_random.py:34-35; nskips constraint quoted from how_to.rst and demonstrated in examples/parallel_random_states.py"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q016",
+      "text": "Code ported from SciPy calls `mkl_fft.interfaces.scipy_fft.fft(x, n=16, overwrite_x=True)` on an 8-element complex128 array to zero-pad in place. Under SciPy this worked; under the mkl_fft backend it raises. Why, and what is the correct fix?",
+      "category": "in_place_semantics",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "`overwrite_x` and a length-changing `n` or `s` are mutually exclusive. In-place only makes sense when the output shape equals the input shape.",
+        "It raises a `ValueError` naming the expected and received output shapes, which points at a shape rather than at the offending keyword.",
+        "Mechanism: the input is passed as `out` whenever `overwrite_x` is set and the dtype is complex, without consulting `n` or `s`, and out-array validation then rejects the shape.",
+        "The fix is to drop `overwrite_x` whenever the transform length changes. Truncating fails the same way as padding.",
+        "It is honored only for complex dtypes. Real input is silently left unmodified and a new complex array is returned.",
+        "Every real and Hermitian transform ignores it as well, and most carry a source comment saying so.",
+        "`overwrite_x` does not exist on the top-level `mkl_fft` API, which takes `out` instead. Only `interfaces.scipy_fft` accepts it."
+      ],
+      "metadata": {
+        "persona": "data_pipeline_maintainer",
+        "skill_under_test": "mkl_fft",
+        "expected_workflow": "recognize that in-place and length-changing arguments are mutually exclusive here",
+        "why_it_matters": "A drop-in SciPy backend that raises on a valid SciPy call breaks ported code at runtime, and the message names a shape rather than the offending keyword.",
+        "negative_case": false,
+        "trigger": "error",
+        "verified_by": "executed against mkl_fft 2.3.2 + scipy 1.17.1: mkl raises 'ValueError: output array has wrong shape, expected ((16,)) got ((8,)).' on n=16 with overwrite_x, both directly and through scipy.fft.set_backend, while n=4 raises the truncating equivalent and n=8 or n=None succeed and plain scipy returns len 16; complex input confirmed reused in place by identity (r is x, np.shares_memory True, input buffer modified) rather than by absence of an error, and float64/float32 input confirmed unmodified with a new complex array returned; traceback frames _scipy_fft.py:251 -> _mkl_fft.py:54 -> _pydfti.pyx:467 -> _pydfti.pyx:356; source read at interfaces/_scipy_fft.py:220-225 (_use_input_as_out, which takes no n or s parameter) and upstream _pydfti.pyx:347-360 (_validate_out_array, compiled in the installed build so no installed file:line exists); 8 occurrences of the '# Note: overwrite_x is not utilized' comment at _scipy_fft.py 388/405/484/509/530/548/634/660 with the four 2-D wrappers ignoring it uncommented; removal recorded in upstream CHANGELOG.md '## [2.1.0] - 2025-10-06' / '### Changed' as 'Dropped support for overwrite_x parameter in mkl_fft [gh-185]', whose PR body states the out kwarg made it redundant"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q017",
+      "text": "A library calls `mkl_umath.patch_numpy_umath()` in its module import and again in a helper, then calls `restore_numpy_umath()` once in a teardown hook and asserts NumPy is unpatched. The assertion fails. Explain the semantics.",
+      "category": "patch_lifecycle",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "Patching is reference counted. Two `patch_numpy_umath()` calls raise the counter to 2, and one `restore_numpy_umath()` decrements to 1 without unpatching.",
+        "Upstream encodes exactly this sequence in `mkl_umath/tests/test_patching.py::test_patch_redundant_patching`.",
+        "Restoring more times than patching does not raise. It emits a `RuntimeWarning` and returns without unpatching, and that balance check is thread-local.",
+        "The patch swaps C loop pointers inside NumPy's existing ufunc objects, so `np.sin is np.sin` holds and you cannot detect it by inspecting Python objects.",
+        "Use the `mkl_umath.mkl_umath` context manager or decorator for balanced lifetimes; it is reentrant over the same counter.",
+        "Upstream recommends it specifically for multi-threaded programs, not unconditionally.",
+        "Do not assume the counter starts at zero. Some NumPy distributions call `patch_numpy_umath()` during their own import, which makes your first patch the second."
+      ],
+      "metadata": {
+        "persona": "library_maintainer",
+        "skill_under_test": "mkl_umath",
+        "expected_workflow": "reason about reference-counted patch state rather than assuming a boolean toggle",
+        "why_it_matters": "A library that believes it cleaned up leaves MKL loops installed in the host process, changing numerical behavior for unrelated downstream code.",
+        "negative_case": false,
+        "trigger": "code",
+        "verified_by": "source read at upstream tag 0.4.1 mkl_umath/src/_patch_numpy.pyx: _GlobalPatch with process-global _patch_count at :164 and thread-local _tls at :165, the balance check at :190-191, the RuntimeWarning at :192-197, PyUFunc_ReplaceLoopBySignature at :129-131, and class mkl_umath(ContextDecorator) at :352-384; test_patch_redundant_patching and test_patch_reentrant read from tests/test_patching.py, which does ship in the installed wheel; executed against mkl_umath 0.4.1 in a fresh interpreter with mkl_umath imported before numpy: False -> patch -> True -> patch -> True -> restore -> True -> restore -> False, over-restore emits the quoted RuntimeWarning byte-identically and does not unpatch; thread-locality confirmed by a worker thread whose restore warned and left the global count at 2 and is_patched True; np.sin identity and __module__ confirmed unchanged across patching; the import-order effect traced to numpy/__init__.py:937-946 in Intel-channel numpy 2.4.3 build py313h5623298_4 (INSTALLER 'conda', file matched against dist-info/RECORD sha256), NOT to any code in mkl_umath 0.4.1; no upstream issue reports this (GitHub search for 'numpy/__init__' over the repo returns 0)"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q018",
+      "text": "A service registers the mkl_fft SciPy backend, then wraps its transforms in `with scipy.fft.set_workers(2):` to limit oversubscription inside an outer process pool. Thread usage does not drop. Why, and how should thread count actually be controlled?",
+      "category": "threading_control",
+      "difficulty": "medium",
+      "level": "diagnosis",
+      "expected_topics": [
+        "`scipy.fft.set_workers` never reaches the mkl backend. The uarray dispatch forwards no `workers` entry, so the backend silently applies its own default.",
+        "An explicit per-call `scipy.fft.fft(x, workers=n)` does forward.",
+        "The backend default is `mkl.get_max_threads()`, not SciPy's 1. Inside an outer process pool that default is the oversubscription source.",
+        "Use `mkl_fft.interfaces.scipy_fft.set_workers(n)` as a context manager, or pass `workers=n` on each call.",
+        "`MKL_NUM_THREADS` is latched by the MKL runtime when it loads, so setting it in-process afterwards is invisible even to `mkl.get_max_threads()`.",
+        "Separately, the backend caches the thread count per context on first access, so a later `mkl.set_num_threads()` does not move `get_workers()`.",
+        "The scope does not reach `threading.Thread` children. A fresh thread re-runs the lazy initializer rather than inheriting the scoped value.",
+        "Quote no absolute thread count; it is host-specific. The invariants are `get_workers() == mkl.get_max_threads()` and `scipy.fft.get_workers() == 1`."
+      ],
+      "metadata": {
+        "persona": "backend_service_engineer",
+        "skill_under_test": "mkl_fft",
+        "expected_workflow": "identify that the SciPy-level knob is not plumbed through uarray to this backend",
+        "why_it_matters": "A thread limit that silently does nothing causes CPU oversubscription in production while the code reads as if it were bounded.",
+        "negative_case": false,
+        "trigger": "environment",
+        "verified_by": "executed against mkl_fft 2.3.2 + scipy 1.17.1 on a 12-thread box, where the 12 is machine-specific: a spy backend recording __ua_function__ kwargs plus a spy on mkl.set_num_threads_local shows scipy.fft.set_workers(2) reaching the backend as kwargs {} with set_num_threads_local(12) for both fft and fftn while scipy.fft.get_workers() reads 2 inside the block, scipy.fft.fft(x, workers=3) reaching it as {'workers': 3} with set_num_threads_local(3), and msp.set_workers(2) giving kwargs {} with set_num_threads_local(2); mkl.get_max_threads 12, msp.get_workers 12, scipy.fft.get_workers 1, os.cpu_count 16; MKL_NUM_THREADS=3 honored when set before interpreter start and when set in-process before 'import mkl', ignored once mkl is loaded with get_max_threads itself staying 12; mkl.set_num_threads(3) after first access leaves get_workers at 12 but before first access gives 3; a threading.Thread child reads the raw ContextVar as None and re-evaluates to mkl.get_max_threads(), reporting 12 inside a set_workers(2) block and 3 once set_num_threads(3) preceded it, while contextvars.copy_context().run propagates 2; source read at mkl_fft/interfaces/_scipy_fft.py:73-103 and :128-149, interfaces/scipy_fft.py:82-90, scipy/fft/_basic.py:18-22 and scipy/fft/_pocketfft/helper.py:18,195-197; upstream interfaces/README.md documents the max-threads default and uses the backend's own set_workers; upstream issues mkl_fft#177 (closed by #183) and #53 show practitioners hitting this"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q019",
+      "text": "A pricing model calls `MKLRandomState(seed).standard_normal(n, method=\"BOXMULLER\")` to select the Box-Muller sampler. Output is reproducible and no warning appears, but a colleague says the method argument is not taking effect. Who is right, and how would you check?",
+      "category": "silent_argument_fallback",
+      "difficulty": "easy",
+      "level": "diagnosis",
+      "expected_topics": [
+        "The colleague is right. The accepted alias is `\"BoxMuller\"` and the lookup is case-sensitive, so `\"BOXMULLER\"` is not recognized.",
+        "An unrecognized `method` is silently swallowed and the default is used, with no warning and no exception.",
+        "Verify by differential testing: draw with the intended method and with the default from the same seed and assert the vectors differ.",
+        "Contrast `brng`, which is case-insensitive and does warn on an unrecognized value before falling back to MT19937.",
+        "Five distributions accept `method=` and they do not all act on it. `standard_normal` honors it while `lognormal` ignores it entirely.",
+        "`lognormal` is a different failure from the alias miss: its alias resolves and a separate entry point runs, so the no-op sits below the Python layer.",
+        "The docstrings advertise tokens such as `mkl_random.ICDF`, but that attribute does not exist. The exact-cased strings are the working path."
+      ],
+      "metadata": {
+        "persona": "quantitative_researcher",
+        "skill_under_test": "mkl_random",
+        "expected_workflow": "verify an optional argument took effect instead of trusting silent acceptance",
+        "why_it_matters": "A silently ignored sampler choice invalidates a documented methodology while leaving every observable signal (runs clean, reproducible, no warning) intact.",
+        "negative_case": true,
+        "trigger": "code",
+        "verified_by": "executed against mkl_random 1.4.2 with oneMKL 2026.1: standard_normal(method='BOXMULLER') byte-identical (tobytes equality, not just allclose) to method='ICDF', zero warnings captured under simplefilter('always'); 12 casing variants grouped into exactly 3 distinct outputs, with BOXMULLER/boxmuller/BoxMULLER/Box-muller/BOXMULLER2 all collapsing onto ICDF; method= surface enumerated over dir(MKLRandomState) confirming exactly five methods accept it; poisson differential-tested at lam 0.5/4/27/100/1000; lognormal shown to no-op on both scalar and array paths with identical follow-on stream state despite its alias resolving and a separate VSL constant being requested; source read at mkl_random/mklrand.pyx:1420-1452 (_method_alias_dict_gaussian, choose_method with the dead '# issue warning' comment at 1444), :4824-4826, :4938-4971, :5507, :6234 and src/mkl_distributions.cpp:839-892, all of which ship in the installed wheel"
+      }
+    },
+    {
+      "id": "mkl-extensions-Q020",
+      "text": "A team upgrading mkl_umath needs to know whether `np.maximum` on float64 is still accelerated in the build they now have. They compare `np.maximum.types` before and after patching, see no difference, and conclude the patch did not apply. Is that conclusion sound, and how should they check?",
+      "category": "coverage_determination",
+      "difficulty": "easy",
+      "level": "diagnosis",
+      "expected_topics": [
+        "No. NumPy ufunc introspection cannot report mkl_umath coverage at all.",
+        "`PyUFunc_ReplaceLoopBySignature` swaps the C loop pointer for an existing signature and leaves the signature table untouched.",
+        "Measured: `np.maximum.types`, `np.sqrt.types` and both `ntypes` are identical before and after `patch_numpy_umath()`.",
+        "Object identity is no evidence either. `np.sin is np.sin` still holds and `np.sin.__module__` stays `numpy`.",
+        "Check the extension instead: membership in `mkl_umath.__all__` or `dir(mkl_umath._ufuncs)`, since the covered set changes between releases.",
+        "Do not infer coverage from a speedup. The non-VML fallback loop is itself faster than stock NumPy at some sizes."
+      ],
+      "metadata": {
+        "persona": "hpc_developer",
+        "skill_under_test": "mkl_umath",
+        "expected_workflow": "determine coverage from the extension's own surface rather than from the patched NumPy object",
+        "why_it_matters": "Both halves of the naive check fail silently: the ufunc looks untouched whether or not the patch applied, so a team can conclude either way and be wrong.",
+        "negative_case": true,
+        "trigger": "migration",
+        "verified_by": "executed against mkl_umath 0.4.1: np.maximum.types and np.sqrt.types plus their ntypes identical before and after patch_numpy_umath(), and no public ufunc attribute exposes a loop pointer (dir() searched for 'loop' and 'func'); np.sin is np.sin holds with __module__ 'numpy' across patching; mkl_umath exposes 58 ufuncs via _ufuncs, with maximum, minimum and remainder absent from both __all__ and _ufuncs while fmax and fmin are present; patched np.add at 50,000 elements measured 0.2240 ns/element against 0.3600 unpatched while still below its VML gate, so speed is not evidence of coverage; PyUFunc_ReplaceLoopBySignature read at upstream tag 0.4.1 mkl_umath/src/_patch_numpy.pyx:129-131"
+      }
     }
   ]
 }
