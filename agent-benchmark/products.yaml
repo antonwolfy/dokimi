@@ -119,7 +119,7 @@ products:
       - url:https://uxlfoundation.github.io/oneDAL/
 
   sklearnex:
-    coverage_status: questions-only
+    coverage_status: planned
     name: scikit-learn Intel Extension (sklearnex)
     description: >
       Intel Extension for scikit-learn (sklearnex) is a drop-in acceleration
@@ -135,7 +135,7 @@ products:
   # ── Data Parallel Python ──────────────────────────────────────────────────
 
   onedpl:
-    coverage_status: questions-only
+    coverage_status: planned
     name: oneDPL
     description: >
       oneAPI DPC++ Library (oneDPL) extends C++ STL algorithms for parallel and
@@ -158,14 +158,14 @@ products:
       - url:https://intelpython.github.io/dpctl/
 
   dpnp:
-    coverage_status: questions-only
+    coverage_status: covered
     name: DPNP (Data Parallel NumPy)
     description: >
       DPNP is a NumPy-compatible array library that executes on Intel GPUs and
       CPUs via SYCL/DPCTL. Provides drop-in replacement for NumPy with GPU
       acceleration. Useful for porting NumPy code to heterogeneous hardware.
     repo: IntelPython/dpnp
-    context7_id: intelpython/dpnp
+    context7_id: intelpython_github_io_dpnp
     doc_sources:
       - url:https://intelpython.github.io/dpnp/
 
@@ -248,7 +248,7 @@ products:
   # ── Image & Signal Processing ────────────────────────────────────────────
 
   ipp:
-    coverage_status: questions-only
+    coverage_status: planned
     name: Intel IPP (Integrated Performance Primitives)
     description: >
       Intel IPP provides optimized functions for signal processing, image

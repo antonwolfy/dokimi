@@ -186,13 +186,13 @@ python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
 
 # Triple combination (docs + profile + skill)
 python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
-  --arms "baseline,docs+profile:data/agent_profiles/expert.md+skill:data/skills/dpnp-quickstart" \
+  --arms "baseline,docs+profile:data/agent_profiles/concise_expert.md+skill:data/skills/dpnp-quickstart" \
   --context7-id "intelpython_github_io_dpnp" \
   --judge
 
 # Test if multiple skills complement each other
 python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
-  --arms "baseline,skill:data/skills/dpnp-quickstart,skill:data/skills/dpnp-perf,skill:data/skills/dpnp-quickstart+skill:data/skills/dpnp-perf" \
+  --arms "baseline,skill:data/skills/dpnp-quickstart,skill:data/skills/dpnp-memory,skill:data/skills/dpnp-quickstart+skill:data/skills/dpnp-memory" \
   --judge
 ```
 
