@@ -10,7 +10,7 @@ Use this skill when working with Intel-optimized Python array operations, or whe
 
 ```bash
 # Conda (officially recommended)
-conda install -c intel dpnp
+conda install -c https://software.repos.intel.com/python/conda -c conda-forge --override-channels dpnp
 
 # Alternative: pip (may have native dependency issues)
 pip install dpnp
