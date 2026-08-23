@@ -42,6 +42,16 @@ version uses different flags, pass `--command-template` and keep the same output
 contract. When Harbor is not installed, prefer the `docker-*` harnesses — they
 build, solve, and verify against local Docker directly and record telemetry.
 
+Harbor 0.21.0 does not propagate a non-zero process exit code for
+errored/cancelled trials, and this repo's CI runner has hit Harbor
+environment-start failures (a Docker Compose v2 gap, a `network_mode`
+incompatibility). A `harbor run` invocation exiting 0 is therefore **not**
+sufficient evidence the trial actually passed — parse its `result.json`
+(`stats.n_errored_trials`, `stats.evals.<id>.metrics[].mean`) before trusting
+a Harbor-backed harness result. The `docker-*` harnesses don't have this gap:
+`tasks run`'s own `task_runs.v1` artifact (`summary.per_harness.<h>.pass_rate`)
+is the reliable pass/fail signal for those.
+
 ## Run Examples
 
 List known harnesses:
@@ -218,3 +228,53 @@ ran the same task set under the same model and task commit.
 
 The Q&A `arms run` path remains separate. It measures context artifacts with an
 LLM judge. The `tasks run` path measures executable work with verifier pass rate.
+
+## External Sources
+
+Skills and tasks can come from a checkout of another repo, not just
+`data/skills/` and `terminal-bench-tasks/`. Nothing here clones anything —
+point the existing flags at a checkout you already have.
+
+`uxlfoundation/skills` (https://github.com/uxlfoundation/skills) is the
+worked example: it ships `SKILL.md` packages for the same oneAPI libraries
+this repo benchmarks, plus a Harbor task suite under
+`evaluation/harbor/tasks/`, both in formats our loaders already read.
+
+Clone it, then scan it before pointing anything real at it:
+
+```bash
+git clone https://github.com/uxlfoundation/skills /tmp/uxl-skills
+
+python cli.py catalog scan --root /tmp/uxl-skills --kind skills
+python cli.py catalog scan --root /tmp/uxl-skills --kind tasks
+```
+
+`catalog scan` reads the source's own manifests when present
+(`skills.yaml`, `evaluation/harbor/suites.json`) and reports, per entry,
+whether it loaded, or why it was skipped — some suite entries are declared
+but not yet implemented (`status: "planned"`, no task directory on disk
+yet) or aren't executable Harbor tasks at all (`track: "answer-quality"` /
+`"hardware"`, a different evaluation track this repo's `tasks run` doesn't
+drive). Skips are expected and don't fail the scan; a load *error* on an
+entry that does exist does. Without a manifest, it falls back to a bare
+directory scan (same as `discover_skills`/`discover_tasks`).
+
+Once scanned, use the entries the same way as local ones:
+
+```bash
+# with-skill treatment arm using an external skill
+python cli.py tasks run --tasks onetbb-histogram-local-aggregation \
+  --tasks-root /tmp/uxl-skills/evaluation/harbor/tasks \
+  --harnesses docker-oracle,docker-claude-skill:/tmp/uxl-skills/skills/uxl-onetbb \
+  --baseline-harness docker-oracle
+
+# or hand an external task straight to Harbor
+harbor run -p /tmp/uxl-skills/evaluation/harbor/tasks/onetbb-histogram-local-aggregation -a oracle
+```
+
+`docker-claude`/`docker-oracle` read `environment.network_mode` from the
+task's own `task.toml` (defaulting to no network at solve/verify time, as
+every task in this repo already expects) — an external task that legitimately
+needs network at solve/verify time can declare
+`network_mode = "public"` and both harnesses will honor it, alongside
+`cpus`/`memory_mb` if declared.

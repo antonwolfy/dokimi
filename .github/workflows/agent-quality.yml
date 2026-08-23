@@ -155,6 +155,138 @@ jobs:
           name: terminal-bench-oneapi-logs-${{ matrix.task }}
           path: ${{ github.workspace }}/logs/
 
+  # NOT a load-bearing check: `harbor run` does not propagate a non-zero
+  # exit code for errored/cancelled trials in harbor 0.21.0, and on this
+  # runner it has failed two different ways across two real CI runs of this
+  # PR -- a swallowed "docker compose ... unknown flag: --project-name"
+  # (no Compose v2 on this runner) and a hard "network_mode='no-network' is
+  # not supported" crash. Either way, a green "harbor run -a oracle" step
+  # here does not mean the run actually passed; treat this job as proving
+  # only that `pip install harbor` and the task image build succeed.
+  # continue-on-error + the result.json dump below are deliberate: they
+  # surface the real Harbor exit state for a human without blocking merges
+  # on infra (Compose v2, Harbor's network_mode support) this repo does not
+  # control. Promote to blocking once that infra is fixed and result.json
+  # is parsed and asserted on here.
+  harbor-oracle-smoke:
+    name: Harbor install/build smoke test (harbor run is best-effort)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install Harbor
+        run: pip install harbor
+      - name: Build task image
+        run: |
+          docker build \
+            -t intel-hpc-bench/onetbb-parallel-sort:latest \
+            terminal-bench-tasks/onetbb-parallel-sort/environment/
+      - name: harbor run -a oracle (best-effort; see job comment)
+        run: |
+          harbor run \
+            -p terminal-bench-tasks/onetbb-parallel-sort \
+            -a oracle \
+            --jobs-dir "${{ github.workspace }}/logs/harbor-oracle-smoke"
+      - name: Print harbor result.json stats
+        if: always()
+        run: |
+          result="$(find "${{ github.workspace }}/logs/harbor-oracle-smoke" -name result.json | head -1)"
+          if [ -n "$result" ]; then cat "$result"; else echo "no result.json found"; fi
+      - name: Upload harbor job output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: harbor-oracle-smoke-jobs
+          path: ${{ github.workspace }}/logs/harbor-oracle-smoke/
+
+  # Real end-to-end proof that this repo's own harnesses (not just Harbor,
+  # attempted above) can pick up and run a skill/task from an external
+  # catalog it did not author. Clones a real, public uxlfoundation/skills
+  # checkout, scans it with `catalog scan`, then runs one of its real tasks
+  # through our own `docker-oracle` harness (build + solve + verify), the
+  # same code path `docker-claude`/`docker-claude-skill` use for the
+  # LLM-driven with-skill/without-skill experiment. Unlike harbor-oracle-
+  # smoke above, this job asserts the actual pass rate in "Verify pass
+  # rate" below -- `tasks run`'s own exit code does not reflect pass/fail
+  # (it is a reporting command, used by callers that want partial results),
+  # so without that explicit check this job would stay green even if the
+  # external task failed verification, exactly like the Harbor job. Pinned
+  # to a fixed commit (UXL_SKILLS_COMMIT below) and retried 3x on clone so
+  # this job's result reflects our own code, not an upstream repo edit or a
+  # transient network blip.
+  external-catalog-smoke:
+    name: External catalog smoke test (uxlfoundation/skills)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    env:
+      # Pinned, not `main` -- an upstream rename/restructure of
+      # onetbb-histogram-local-aggregation (or removal of skills.yaml/
+      # suites.json) would otherwise fail this job for reasons unrelated to
+      # this repo's own code. Bump deliberately; verify the task path below
+      # still resolves at the new commit before bumping.
+      UXL_SKILLS_COMMIT: 6feb3f3a0999b1a05868d4486a0e2d7696687763
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r requirements.txt
+      - name: Clone uxlfoundation/skills (pinned commit, retried)
+        run: |
+          set -euo pipefail
+          dir="${{ runner.temp }}/uxl-skills"
+          for attempt in 1 2 3; do
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            if git -C "$dir" init -q \
+                && git -C "$dir" fetch --depth 1 \
+                     https://github.com/uxlfoundation/skills "$UXL_SKILLS_COMMIT" \
+                && git -C "$dir" checkout -q FETCH_HEAD; then
+              break
+            fi
+            echo "clone attempt $attempt failed" >&2
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
+      - name: catalog scan
+        run: |
+          python cli.py catalog scan --root "${{ runner.temp }}/uxl-skills" --kind all
+      - name: Run a real external task through docker-oracle
+        run: |
+          python cli.py tasks run \
+            --tasks onetbb-histogram-local-aggregation \
+            --tasks-root "${{ runner.temp }}/uxl-skills/evaluation/harbor/tasks" \
+            --harnesses docker-oracle \
+            --out-json "${{ github.workspace }}/logs/external-catalog-smoke/runs.json"
+      - name: Verify pass rate
+        run: |
+          python - "${{ github.workspace }}/logs/external-catalog-smoke/runs.json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          stats = data["summary"]["per_harness"]["docker-oracle"]
+          print(f"docker-oracle: {stats['passed']}/{stats['n']} pass (rate={stats['pass_rate']})")
+          sys.exit(0 if stats["pass_rate"] == 1.0 else 1)
+          PY
+      - name: Upload run artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: external-catalog-smoke-runs
+          path: ${{ github.workspace }}/logs/external-catalog-smoke/
+
   benchmark:
     runs-on: ubuntu-latest
     continue-on-error: ${{ github.event.inputs.strict != 'true' }}

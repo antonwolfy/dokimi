@@ -10,6 +10,7 @@ from agent_benchmarks.commands import (
     arms,
     baseline,
     benchmark,
+    catalog,
     dashboard,
     dataset,
     evaluate,
@@ -58,6 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     arms.register(sub, positive_int)            # arms
     subjects.register(sub, positive_int)        # subjects (Phase D)
     tasks.register(sub, positive_int)           # tasks
+    catalog.register(sub, positive_int)         # catalog (external skills/tasks)
     explore.register(sub, positive_int)         # explore (ExploreBench, #60)
     dataset.register(sub, positive_int)         # dataset
     ingest.register(sub, positive_int)          # ingest

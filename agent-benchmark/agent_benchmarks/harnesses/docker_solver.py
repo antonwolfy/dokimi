@@ -116,7 +116,7 @@ class DockerSolverHarness:
         extra_metrics: dict[str, Any] = {}
         try:
             self._build_image(task, image, log)
-            self._start_container(image, container, log)
+            self._start_container(task, image, container, log)
             try:
                 if self.mode == "oracle":
                     self._solve_oracle(task, container, log)
@@ -176,19 +176,51 @@ class DockerSolverHarness:
             log, timeout=timeout,
         )
 
-    def _start_container(self, image: str, container: str, log) -> None:
+    def _start_container(self, task: TaskSpec, image: str, container: str, log) -> None:
+        # Our own tasks never set network_mode and never need network at
+        # solve/verify time, so this defaults to the historical --network
+        # none. External tasks (e.g. uxlfoundation/skills) can declare
+        # environment.network_mode = "public" for solve/verify steps that
+        # need it; build already gets host network via _build_image
+        # regardless of this setting. Bridge (not host): "public" means
+        # "needs outbound internet," not "may see the host's own network" --
+        # bridge gets NAT'd internet access without exposing host-local
+        # services (loopback ports, metadata endpoints) to untrusted task
+        # code the way --network host would.
+        network_mode = str(task.environment.get("network_mode") or "none")
+        network = "bridge" if network_mode == "public" else "none"
+
+        cpus_raw = task.environment.get("cpus")
+        cpus = str(cpus_raw) if cpus_raw is not None else "4"
+
+        # A malformed external task.toml (e.g. memory_mb as a string with a
+        # unit already attached) must not crash the whole run -- fall back
+        # to the historical default instead.
+        memory_mb_raw = task.environment.get("memory_mb")
+        try:
+            memory = f"{int(memory_mb_raw)}m" if memory_mb_raw is not None else "2g"
+        except (TypeError, ValueError):
+            memory = "2g"
+
         _docker(["rm", "-f", container], log, check=False)
         _docker(
-            ["run", "-d", "--name", container, "--network", "none",
-             "--cpus", "4", "--memory", "2g", image, "sleep", "1800"],
+            ["run", "-d", "--name", container, "--network", network,
+             "--cpus", cpus, "--memory", memory, image, "sleep", "1800"],
             log,
         )
 
     def _solve_oracle(self, task: TaskSpec, container: str, log) -> None:
-        """Apply solution/solve.sh as root (some images set a non-root USER)."""
-        _docker(["cp", str(task.path / "solution" / "solve.sh"), f"{container}:/solve.sh"], log)
+        """Apply solution/solve.sh as root (some images set a non-root USER).
+
+        Copies the whole ``solution/`` directory, not just ``solve.sh`` --
+        our own tasks' solve.sh is always self-contained, but an external
+        task's solve.sh can be a thin script that `cp`s a sibling source
+        file into place (e.g. uxlfoundation/skills' oneTBB tasks).
+        """
+        _docker(["cp", str(task.path / "solution"), f"{container}:/solution"], log)
         _docker(
-            ["exec", "-u", "root", container, "bash", "-lc", "chmod +x /solve.sh && /solve.sh"],
+            ["exec", "-u", "root", container, "bash", "-lc",
+             "chmod +x /solution/solve.sh && /solution/solve.sh"],
             log, check=False,
         )
 

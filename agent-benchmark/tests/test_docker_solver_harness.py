@@ -127,6 +127,126 @@ def test_build_and_verify_timeouts_read_toml(tmp_path):
     assert _task_verify_timeout(spec) == 120.0
 
 
+# ── container network/resources from task.environment ────────────────────────
+
+
+def _capture_docker_calls(monkeypatch):
+    import agent_benchmarks.harnesses.docker_solver as mod
+
+    calls: list[list[str]] = []
+
+    def fake_docker(args, log, *, check=True, timeout=None):
+        calls.append(args)
+
+        class _Result:
+            returncode = 0
+
+        return _Result()
+
+    monkeypatch.setattr(mod, "_docker", fake_docker)
+    return calls
+
+
+def test_start_container_defaults_to_network_none(tmp_path, monkeypatch):
+    task = load_task(_fixture_task(tmp_path))
+    calls = _capture_docker_calls(monkeypatch)
+
+    DockerSolverHarness(harness_id="docker-oracle", mode="oracle")._start_container(
+        task, "img:latest", "container-1", log=None
+    )
+
+    run_call = next(c for c in calls if c[0] == "run")
+    assert "--network" in run_call and run_call[run_call.index("--network") + 1] == "none"
+
+
+def test_start_container_honors_public_network_mode(tmp_path, monkeypatch):
+    task_dir = tmp_path / "external-net-task"
+    (task_dir / "tests").mkdir(parents=True)
+    (task_dir / "environment").mkdir()
+    (task_dir / "instruction.md").write_text("x", encoding="utf-8")
+    (task_dir / "task.toml").write_text(
+        '[metadata]\ntags = []\n\n[environment]\nnetwork_mode = "public"\ncpus = 2\nmemory_mb = 512\n',
+        encoding="utf-8",
+    )
+    task = load_task(task_dir)
+    calls = _capture_docker_calls(monkeypatch)
+
+    DockerSolverHarness(harness_id="docker-oracle", mode="oracle")._start_container(
+        task, "img:latest", "container-2", log=None
+    )
+
+    run_call = next(c for c in calls if c[0] == "run")
+    # bridge, not host: outbound internet without exposing host-local
+    # services to untrusted task code.
+    assert run_call[run_call.index("--network") + 1] == "bridge"
+    assert run_call[run_call.index("--cpus") + 1] == "2"
+    assert run_call[run_call.index("--memory") + 1] == "512m"
+
+
+def test_start_container_zero_cpus_is_honored_not_defaulted(tmp_path, monkeypatch):
+    # Regression: `task.environment.get("cpus") or 4` would silently
+    # discard an explicit `cpus = 0` because 0 is falsy.
+    task_dir = tmp_path / "zero-cpus-task"
+    (task_dir / "tests").mkdir(parents=True)
+    (task_dir / "environment").mkdir()
+    (task_dir / "instruction.md").write_text("x", encoding="utf-8")
+    (task_dir / "task.toml").write_text(
+        '[metadata]\ntags = []\n\n[environment]\ncpus = 0\n',
+        encoding="utf-8",
+    )
+    task = load_task(task_dir)
+    calls = _capture_docker_calls(monkeypatch)
+
+    DockerSolverHarness(harness_id="docker-oracle", mode="oracle")._start_container(
+        task, "img:latest", "container-4", log=None
+    )
+
+    run_call = next(c for c in calls if c[0] == "run")
+    assert run_call[run_call.index("--cpus") + 1] == "0"
+
+
+def test_start_container_malformed_memory_falls_back_instead_of_crashing(tmp_path, monkeypatch):
+    # Regression: `int(memory_mb)` raised uncaught if a task.toml author
+    # wrote a unit-suffixed string (e.g. "512m") instead of a bare number.
+    task_dir = tmp_path / "bad-memory-task"
+    (task_dir / "tests").mkdir(parents=True)
+    (task_dir / "environment").mkdir()
+    (task_dir / "instruction.md").write_text("x", encoding="utf-8")
+    (task_dir / "task.toml").write_text(
+        '[metadata]\ntags = []\n\n[environment]\nmemory_mb = "512m"\n',
+        encoding="utf-8",
+    )
+    task = load_task(task_dir)
+    calls = _capture_docker_calls(monkeypatch)
+
+    DockerSolverHarness(harness_id="docker-oracle", mode="oracle")._start_container(
+        task, "img:latest", "container-5", log=None
+    )
+
+    run_call = next(c for c in calls if c[0] == "run")
+    assert run_call[run_call.index("--memory") + 1] == "2g"
+
+
+def test_solve_oracle_copies_the_whole_solution_directory(tmp_path, monkeypatch):
+    # Regression test: a real run against uxlfoundation/skills'
+    # onetbb-histogram-local-aggregation failed (reward 0) because solve.sh
+    # did `cp /solution/histogram.cpp ...` -- a sibling file that only
+    # exists if the whole solution/ dir is copied in, not just solve.sh.
+    task = load_task(_fixture_task(tmp_path))
+    calls = _capture_docker_calls(monkeypatch)
+
+    DockerSolverHarness(harness_id="docker-oracle", mode="oracle")._solve_oracle(
+        task, "container-3", log=None
+    )
+
+    cp_call = next(c for c in calls if c[0] == "cp")
+    assert cp_call[1] == str(task.path / "solution")
+    assert cp_call[2] == "container-3:/solution"
+
+    exec_call = next(c for c in calls if c[0] == "exec")
+    assert exec_call[-1] == "chmod +x /solution/solve.sh && /solution/solve.sh"
+
+
 # ── registry wiring ───────────────────────────────────────────────────────────
 
 
@@ -158,7 +278,7 @@ def _patch_pipeline(monkeypatch, *, reward: float, usage_json: str | None):
     # Docker-free even on hosts without a `docker` binary.
     monkeypatch.setattr(mod, "_docker", lambda *a, **k: None)
     monkeypatch.setattr(DockerSolverHarness, "_build_image", lambda self, t, i, log: None)
-    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, i, c, log: None)
+    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log: None)
     monkeypatch.setattr(DockerSolverHarness, "_solve_oracle", lambda self, t, c, log: None)
 
     def fake_verify(self, task, container, output_dir, log):
@@ -322,7 +442,7 @@ def test_recompile_failure_recorded_in_metrics(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "_docker", lambda *a, **k: None)
     monkeypatch.setattr(DockerSolverHarness, "_build_image", lambda self, t, i, log: None)
-    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, i, c, log: None)
+    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log: None)
     monkeypatch.setattr(DockerSolverHarness, "_verify", lambda self, t, c, o, log: 0.0)
 
     # Snapshot copy-out and the claude subprocess are stubbed; recompile "fails".

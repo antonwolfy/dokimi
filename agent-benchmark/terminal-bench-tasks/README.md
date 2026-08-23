@@ -81,8 +81,23 @@ See [COVERAGE.md](./COVERAGE.md) for the broader oneTBB API/concept coverage mat
 
 ## Running a Task (Harbor)
 
+Prerequisites:
+
+- **Python >= 3.12.** `harbor` on PyPI requires it; installing under an
+  older interpreter fails to resolve.
+- **The task's Docker image must already be built** and tagged to match
+  `task.toml`'s `environment.docker_image` (e.g.
+  `intel-hpc-bench/onetbb-parallel-sort:latest`) -- `harbor run -p <path>`
+  does not build it from `environment/Dockerfile` for you. See "Docker
+  Images" below.
+
 ```bash
-pip install harbor-cli   # or: uv tool install harbor-cli
+pip install harbor   # or: uv tool install harbor
+# NOTE: the PyPI package is "harbor", not "harbor-cli" -- "harbor-cli" is an
+# unrelated project (a CLI for the container-registry Harbor).
+
+docker build -t intel-hpc-bench/onetbb-parallel-sort:latest \
+  terminal-bench-tasks/onetbb-parallel-sort/environment/
 
 # Evaluate an agent on a single task
 harbor run \
@@ -95,6 +110,15 @@ harbor run \
   -p terminal-bench-tasks/onetbb-parallel-sort \
   -a oracle
 ```
+
+CI's `harbor-oracle-smoke` job in `.github/workflows/agent-quality.yml`
+runs this Oracle check on every PR, but is not currently a reliable
+pass/fail signal -- see the comment on that job for why (Harbor 0.21.0
+does not propagate errored-trial exit codes, and this repo's runner has
+hit both a Docker Compose v2 gap and a `network_mode` incompatibility
+running Harbor). Prefer the `docker-oracle`/`docker-claude*` harnesses in
+[`docs/coding-harnesses.md`](../docs/coding-harnesses.md) for anything
+that needs a trustworthy pass/fail result today.
 
 ## Running Harness Comparisons
 

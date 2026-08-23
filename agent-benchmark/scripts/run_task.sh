@@ -65,8 +65,10 @@ case "$MODE" in
     log "solve: oracle (solution/solve.sh)"
     # Run as root: some images set `USER bench` who can write /app but not / or
     # /logs. The verifier is user-agnostic, so root keeps solve + verify uniform.
-    docker cp "$TASK_DIR/solution/solve.sh" "$CONTAINER:/solve.sh" >>"$LOG" 2>&1
-    docker exec -u root "$CONTAINER" bash -lc "chmod +x /solve.sh && /solve.sh" >>"$LOG" 2>&1 \
+    # Copy the whole solution/ dir, not just solve.sh -- some solve.sh scripts
+    # `cp` a sibling source file into place instead of writing it inline.
+    docker cp "$TASK_DIR/solution" "$CONTAINER:/solution" >>"$LOG" 2>&1
+    docker exec -u root "$CONTAINER" bash -lc "chmod +x /solution/solve.sh && /solution/solve.sh" >>"$LOG" 2>&1 \
         || { log "oracle solve.sh failed"; }
     ;;
   claude)

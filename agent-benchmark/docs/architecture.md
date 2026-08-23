@@ -118,6 +118,14 @@ See [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)
 to add a task and [coding-harnesses.md](coding-harnesses.md) to run harness
 comparisons.
 
+Skills and tasks don't have to live in this repo: `agent_benchmarks/external/`
+reads another checkout's own manifests (`skills.yaml`,
+`evaluation/harbor/suites.json` — the uxlfoundation/skills convention) and
+reports what loads via `python cli.py catalog scan --root <path>`; loaded
+entries then plug into the same `--tasks-root` / `docker-claude-skill:<path>`
+flags as local ones. See the "External Sources" section of
+[coding-harnesses.md](coding-harnesses.md).
+
 ## Shared building blocks
 
 - `agent_benchmarks/llm.py` — provider-neutral LLM call wrapper (LiteLLM-based)
