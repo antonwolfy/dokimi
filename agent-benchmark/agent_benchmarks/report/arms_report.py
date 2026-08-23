@@ -8,6 +8,121 @@ def _md_cell(text: str) -> str:
     return (text or "").replace("\n", " ").replace("|", r"\|")
 
 
+def _fmt_p(p: Any) -> str:
+    """Render a p-value, marking values too small to show at 4 decimals."""
+    if p is None:
+        return "—"
+    return "<0.0001" if p < 0.0001 else f"{p:.4f}"
+
+
+def _fmt_ci(lo: Any, hi: Any) -> str:
+    if lo is None or hi is None:
+        return "—"
+    return f"[{lo:+.1f}, {hi:+.1f}]"
+
+
+def _fmt_num(value: Any, digits: int = 1) -> str:
+    """Signed fixed-point, or a dash when the value is genuinely absent.
+
+    ``value or 0`` would print ``+0.00`` for a missing Cohen's d_z, which reads
+    as a measured null effect rather than as "undefined here".
+    """
+    if not isinstance(value, (int, float)):
+        return "—"
+    return f"{value:+.{digits}f}"
+
+
+def _fmt_sig(significant: Any) -> str:
+    """Render a significance verdict, keeping "unknown" distinct from "no".
+
+    ``None`` means no test could run (too few pairs, no SciPy, or a degenerate
+    sample). Printing ``no`` there asserts the absence of an effect on the
+    strength of absent evidence.
+    """
+    if significant is None:
+        return "—"
+    return "yes" if significant else "no"
+
+
+def _significance_lines(
+    summary: Dict[str, Any], arms: List[str], baseline: str
+) -> List[str]:
+    """Paired significance table: every arm vs the one shared baseline."""
+    rows = [
+        (arm, summary["per_arm"][arm]["significance"])
+        for arm in arms
+        if arm != baseline
+        and isinstance(summary.get("per_arm", {}).get(arm, {}).get("significance"), dict)
+    ]
+    if not rows:
+        return []
+
+    correction = next(
+        (sig.get("correction") for _, sig in rows if sig.get("correction")), "holm"
+    )
+    label = "Holm-Bonferroni" if correction == "holm" else "Benjamini-Hochberg"
+
+    lines = [
+        "## Paired significance vs baseline",
+        "",
+        f"_Each arm is paired per question against `{baseline}`. "
+        f"p-values are {label}-adjusted across the {len(rows)} treatment "
+        "arm(s); **Sig.** uses the adjusted value._",
+        "",
+        "| Arm | Δ (paired) | 95% CI | Cohen's d_z | Effect | p | p (adj) | Sig. | n |",
+        "| --- | ---: | :---: | ---: | --- | ---: | ---: | :---: | ---: |",
+    ]
+    for arm, sig in rows:
+        # Strictly the adjusted verdict. Falling back to the raw `significant`
+        # when it is None would report an uncorrected claim under a column
+        # header that promises correction.
+        lines.append(
+            f"| `{arm}` | {_fmt_num(sig.get('delta_mean'))} | "
+            f"{_fmt_ci(sig.get('ci_lo'), sig.get('ci_hi'))} | "
+            f"{_fmt_num(sig.get('cohens_d'), 2)} | {sig.get('effect', '—')} | "
+            f"{_fmt_p(sig.get('p_ttest'))} | {_fmt_p(sig.get('p_adjusted'))} | "
+            f"{_fmt_sig(sig.get('significant_adjusted'))} | {sig.get('n', 0)} |"
+        )
+    lines.append("")
+    return lines
+
+
+def _interaction_lines(summary: Dict[str, Any]) -> List[str]:
+    """Factorial interaction: does combining two treatments beat their sum?"""
+    interactions = summary.get("interactions") or []
+    if not interactions:
+        return []
+
+    lines = [
+        "## Factorial interaction",
+        "",
+        "_Per-question contrast `combined - A - B + baseline`, i.e. how far the "
+        "combined arm lands from the sum of the two individual gains. Negative "
+        "means the treatments interfere; positive means they reinforce. All four "
+        "cells come from the same question, so this is a paired contrast. "
+        f"p-values are adjusted across the {len(interactions)} interaction "
+        "contrast(s) — a family of their own, separate from the arm table above._",
+        "",
+        "| A | B | Δ A | Δ B | Additive expectation | Δ combined | Interaction | "
+        "95% CI | p | p (adj) | Sig. | n |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | :---: | ---: | ---: | "
+        ":---: | ---: |",
+    ]
+    for it in interactions:
+        lines.append(
+            f"| `{it.get('arm_a')}` | `{it.get('arm_b')}` | "
+            f"{_fmt_num(it.get('delta_a'))} | {_fmt_num(it.get('delta_b'))} | "
+            f"{_fmt_num(it.get('additive_expectation'))} | "
+            f"{_fmt_num(it.get('delta_combined'))} | "
+            f"**{_fmt_num(it.get('interaction'))}** | "
+            f"{_fmt_ci(it.get('ci_lo'), it.get('ci_hi'))} | "
+            f"{_fmt_p(it.get('p_ttest'))} | {_fmt_p(it.get('p_adjusted'))} | "
+            f"{_fmt_sig(it.get('significant_adjusted'))} | {it.get('n', 0)} |"
+        )
+    lines.append("")
+    return lines
+
+
 def render_arms_report(data: Dict[str, Any]) -> str:
     """Render the artifact produced by ``ArmRunner.build_output`` as Markdown."""
     lines: List[str] = []
@@ -46,6 +161,8 @@ def render_arms_report(data: Dict[str, Any]) -> str:
                 delta_s = f"{delta:+.1f}"
             lines.append(f"| `{arm}` | {avg_s} | {delta_s} | {stats.get('n', 0)} |")
         lines.append("")
+        lines.extend(_significance_lines(summary, arms, baseline))
+        lines.extend(_interaction_lines(summary))
     else:
         lines.append("_No evaluations available (answers were not judged)._")
         lines.append("")

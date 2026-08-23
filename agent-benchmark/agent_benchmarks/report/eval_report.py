@@ -17,11 +17,12 @@ import os
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
-try:
-    from scipy import stats as sp_stats
-    HAS_SCIPY = True
-except ImportError:
-    HAS_SCIPY = False
+from agent_benchmarks.eval import stats as eval_stats
+
+#: Mirrors :data:`agent_benchmarks.eval.stats.HAS_SCIPY`; the tests themselves
+#: live there now. Note this module defines a local ``stats()`` helper, hence
+#: the ``eval_stats`` alias.
+HAS_SCIPY = eval_stats.HAS_SCIPY
 
 try:
     from zoneinfo import ZoneInfo
@@ -35,37 +36,38 @@ def avg(lst):
 
 
 def significance_test(evals):
-    """Compute paired t-test, Wilcoxon, and Cohen's d on (with_docs - without_docs) pairs."""
+    """Paired t-test, Wilcoxon, and Cohen's d_z on (with_docs - without_docs) pairs.
+
+    Delegates to :func:`agent_benchmarks.eval.stats.paired_test`, which is also
+    what the arms and model-comparison reports use, so the three cannot drift
+    apart. Two behaviour changes came with that:
+
+    * ``delta_std``/``cohens_d`` now use the sample SD (n-1). This copy divided
+      by ``n``, which inflated d_z relative to every other report in the repo.
+    * ``significant`` also requires Wilcoxon < 0.05 when it could be computed,
+      matching the other reports instead of trusting the t-test alone.
+
+    ``significant`` stays ``None`` when no test could run (no SciPy, too few
+    pairs, or zero-variance deltas) rather than claiming "not significant".
+    """
     pairs = []
     for e in evals:
         w = (e.get("with_docs") or {}).get("aggregate")
         wo = (e.get("without_docs") or {}).get("aggregate")
         if w is not None and wo is not None:
             pairs.append((w, wo))
-    if len(pairs) < 5:
+    if len(pairs) < eval_stats.MIN_PAIRS_FOR_TEST:
         return None
-    with_s = [p[0] for p in pairs]
-    without_s = [p[1] for p in pairs]
-    deltas = [p[0] - p[1] for p in pairs]
-    d_mean = sum(deltas) / len(deltas)
-    d_std = (sum((x - d_mean) ** 2 for x in deltas) / len(deltas)) ** 0.5
 
-    result = {"n": len(pairs), "delta_mean": round(d_mean, 2), "delta_std": round(d_std, 2)}
+    result = eval_stats.paired_test([p[0] for p in pairs], [p[1] for p in pairs])
+    if result is None:
+        return None
 
-    if HAS_SCIPY:
-        t_stat, p_ttest = sp_stats.ttest_rel(with_s, without_s)
-        result["t_stat"] = round(t_stat, 3)
-        result["p_ttest"] = round(p_ttest, 4)
-        try:
-            _, p_wilcox = sp_stats.wilcoxon(deltas)
-            result["p_wilcoxon"] = round(p_wilcox, 4)
-        except Exception:
-            result["p_wilcoxon"] = None
-        result["cohens_d"] = round(d_mean / d_std, 3) if d_std > 0 else 0.0
-        result["significant"] = bool(p_ttest < 0.05)
-    else:
-        result["significant"] = None  # cannot determine without scipy
-
+    # No multiplicity correction on this path; see eval/stats.arm_significance.
+    result.pop("p_adjusted", None)
+    result.pop("significant_adjusted", None)
+    if result["p_ttest"] is None:
+        result["significant"] = None
     return result
 
 
@@ -215,9 +217,21 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     if sig:
         sig_label = ("✅ **Statistically significant** (p < 0.05)" if sig.get("significant")
                      else "❌ **Not statistically significant** (p ≥ 0.05)" if sig.get("significant") is False
-                     else "⚠️ Cannot determine (scipy not installed)")
-        effect = abs(sig.get("cohens_d", 0))
-        effect_label = "negligible" if effect < 0.2 else "small" if effect < 0.5 else "medium" if effect < 0.8 else "large"
+                     else "⚠️ Cannot determine (no SciPy, too few pairs, or "
+                          "zero-variance deltas)")
+        # Use the band eval.stats already computed. Recomputing it here needed
+        # abs(cohens_d), which raises on the None that a zero-variance sample
+        # now reports, and could drift from stats.effect_label.
+        effect_label = sig.get("effect", "unknown")
+
+        def _val(key):
+            """Render a metric, distinguishing "absent" from a real number.
+
+            ``sig.get(key, "N/A")`` only defaults on a *missing key*; these keys
+            are always present and may hold None, which would print "None".
+            """
+            value = sig.get(key)
+            return "N/A" if value is None else value
         lines += [
             "## Statistical Significance",
             f"_Is the delta ({sig['delta_mean']:+}) meaningful for n={sig['n']} questions?_",
@@ -226,9 +240,11 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
             "",
             "| Metric | Value |",
             "|---|---|",
-            f"| Paired t-test p-value | {sig.get('p_ttest', 'N/A')} |",
-            f"| Wilcoxon signed-rank p | {sig.get('p_wilcoxon', 'N/A')} |",
-            f"| Cohen's d (effect size) | {sig.get('cohens_d', 'N/A')} ({effect_label}) |",
+            f"| Paired t-test p-value | {_val('p_ttest')} |",
+            f"| Wilcoxon signed-rank p | {_val('p_wilcoxon')} |",
+            f"| Cohen's d (effect size) | {_val('cohens_d')} ({effect_label}) |",
+            f"| 95% CI on the delta | [{_val('ci_lo')}, {_val('ci_hi')}] "
+            f"({_val('ci_method')}) |",
             f"| Delta mean ± std | {sig['delta_mean']:+} ± {sig['delta_std']} |",
             "",
         ]

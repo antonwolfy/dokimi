@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from agent_benchmarks.llm import llm_call_with_usage
+from agent_benchmarks.eval import stats as arm_stats
+from agent_benchmarks.eval.arm_summary import cost_summary, summarize_agentic_usage
 from agent_benchmarks.eval.cells import Cell
 from agent_benchmarks.metrics.usage import to_record
 from agent_benchmarks.treatments.base import Treatment
@@ -71,6 +73,12 @@ def _ground_truth_from_topics(q: Dict[str, Any]) -> Optional[str]:
 class ArmRunner:
     """Generate answers for each treatment arm and (optionally) judge them."""
 
+    # Pure rollups over the answer records, kept in eval/arm_summary.py so this
+    # module stays under the repo's 500-line ceiling. Re-attached here so
+    # `self._cost_summary(...)` and existing tests keep working unchanged.
+    _summarize_agentic_usage = staticmethod(summarize_agentic_usage)
+    _cost_summary = staticmethod(cost_summary)
+
     def __init__(
         self,
         treatments: List[Treatment],
@@ -83,10 +91,20 @@ class ArmRunner:
         matrix_cell: Optional[str] = None,
         max_tokens: Optional[int] = None,
         grounded_from_topics: bool = False,
+        stats_correction: str = "holm",
     ):
         if not treatments:
             raise ValueError("ArmRunner requires at least one treatment arm")
+        # Rejected here rather than at summarize time: the correction is only
+        # applied after every arm has been answered and judged, so a typo would
+        # otherwise surface after the whole run has been paid for.
+        if stats_correction not in arm_stats.CORRECTIONS:
+            raise ValueError(
+                f"stats_correction must be one of {arm_stats.CORRECTIONS}, "
+                f"got {stats_correction!r}"
+            )
         self.treatments = treatments
+        self.stats_correction = stats_correction
         self.model = model
         self.provider = provider
         self.api_key = api_key
@@ -422,122 +440,6 @@ class ArmRunner:
             out["judge_metrics"] = totals
         return out
 
-    @staticmethod
-    def _summarize_agentic_usage(records: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Aggregate tool-use/discoverability signals from answer records."""
-        stats: Dict[str, Dict[str, Any]] = {}
-        for rec in records:
-            for arm_name, arm in rec.get("arms", {}).items():
-                if not isinstance(arm, dict) or not arm.get("agentic"):
-                    continue
-                s = stats.setdefault(
-                    arm_name,
-                    {
-                        "n": 0,
-                        "tool_call_total": 0,
-                        "tool_used_n": 0,
-                        "iteration_total": 0,
-                        "skill_offered_n": 0,
-                        "skill_called_n": 0,
-                        "skill_call_total": 0,
-                    },
-                )
-                s["n"] += 1
-                tool_calls = int(arm.get("tool_call_count") or 0)
-                s["tool_call_total"] += tool_calls
-                if tool_calls > 0:
-                    s["tool_used_n"] += 1
-                s["iteration_total"] += int(arm.get("iterations") or 0)
-
-                skill = (arm.get("tool_usage") or {}).get("skill") or {}
-                if skill.get("offered"):
-                    s["skill_offered_n"] += 1
-                if skill.get("called"):
-                    s["skill_called_n"] += 1
-                s["skill_call_total"] += int(skill.get("call_count") or 0)
-
-        summary: Dict[str, Any] = {}
-        for arm_name, s in stats.items():
-            n = s["n"] or 1
-            skill_offered_n = s["skill_offered_n"] or 0
-            summary[arm_name] = {
-                "n": s["n"],
-                "avg_tool_calls": round(s["tool_call_total"] / n, 2),
-                "tool_use_rate": round(s["tool_used_n"] / n, 3),
-                "avg_iterations": round(s["iteration_total"] / n, 2),
-                "skill_offered_n": skill_offered_n,
-                "skill_called_n": s["skill_called_n"],
-                "skill_load_rate": (
-                    round(s["skill_called_n"] / skill_offered_n, 3)
-                    if skill_offered_n else None
-                ),
-                "avg_skill_calls": (
-                    round(s["skill_call_total"] / skill_offered_n, 2)
-                    if skill_offered_n else None
-                ),
-            }
-        return summary
-
-    def _cost_summary(self, records: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Per-arm rollup of cost, tokens, latency, TTFT, and cache-hit ratio.
-
-        Aggregates the per-row ``metrics{}`` blocks. ``cost_usd`` is summed only
-        over priced rows (``None`` rows are skipped); the cache-hit ratio guards
-        against a zero prompt-token denominator. The exact ratio is provider-
-        dependent (see ADR O2) — here it is read cache tokens / prompt tokens.
-        """
-        per_arm: Dict[str, Dict[str, Any]] = {}
-        for rec in records:
-            for arm_name, arm in rec.get("arms", {}).items():
-                if not isinstance(arm, dict):
-                    continue
-                m = arm.get("metrics")
-                if not isinstance(m, dict):
-                    continue
-                acc = per_arm.setdefault(arm_name, {
-                    "n": 0, "total_llm_calls": 0,
-                    "cost_usd": 0.0, "cost_known_n": 0,
-                    "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
-                    "cache_read_tokens": 0, "latency_sec": 0.0,
-                    "ttft_sec_sum": 0.0, "ttft_n": 0,
-                })
-                acc["n"] += 1
-                n_calls = m.get("n_calls", 1)
-                acc["total_llm_calls"] += n_calls
-                if m.get("cost_usd") is not None:
-                    acc["cost_usd"] += m["cost_usd"]
-                    acc["cost_known_n"] += m.get("cost_known_calls", n_calls) or 0
-                for k in ("prompt_tokens", "completion_tokens", "total_tokens",
-                          "cache_read_tokens"):
-                    acc[k] += m.get(k, 0) or 0
-                acc["latency_sec"] += m.get("latency_sec", 0.0) or 0.0
-                if m.get("ttft_sec") is not None:
-                    acc["ttft_sec_sum"] += m["ttft_sec"]
-                    acc["ttft_n"] += 1
-
-        out: Dict[str, Any] = {}
-        for arm_name, acc in per_arm.items():
-            n = acc["n"] or 1
-            prompt = acc["prompt_tokens"]
-            out[arm_name] = {
-                "n": acc["n"],
-                "total_cost_usd": (round(acc["cost_usd"], 6)
-                                   if acc["cost_known_n"] else None),
-                # How many rows the cost total covers — when < n, the dollar
-                # figure is a partial sum (some LLM calls had no litellm pricing).
-                "cost_known_n": acc["cost_known_n"],
-                "total_llm_calls": acc["total_llm_calls"],
-                "prompt_tokens": acc["prompt_tokens"],
-                "completion_tokens": acc["completion_tokens"],
-                "total_tokens": acc["total_tokens"],
-                "mean_latency_sec": round(acc["latency_sec"] / n, 4),
-                "mean_ttft_sec": (round(acc["ttft_sec_sum"] / acc["ttft_n"], 4)
-                                  if acc["ttft_n"] else None),
-                "cache_hit_ratio": (round(acc["cache_read_tokens"] / prompt, 4)
-                                    if prompt else None),
-            }
-        return out
-
     def _summarize(
         self, evaluations: List[Dict[str, Any]], baseline_arm: str
     ) -> Dict[str, Any]:
@@ -560,6 +462,26 @@ class ArmRunner:
                 stats["delta_vs_baseline"] = (
                     round(avg - base_avg, 1) if avg is not None and arm_name != baseline_arm else None
                 )
+
+        # Paired statistics. Every arm is tested against the *same* baseline
+        # sample question-by-question, so the arms are mutually comparable and
+        # p-values get corrected across the family. Unpaired means above are
+        # kept as-is for artifact compatibility.
+        arm_names = list(summary["per_arm"].keys())
+        significance = arm_stats.arm_significance(
+            evaluations, baseline_arm, arm_names, correction=self.stats_correction
+        )
+        for arm_name, sig in significance.items():
+            summary["per_arm"].setdefault(arm_name, {})["significance"] = sig
+
+        # Interaction contrasts are their own hypothesis family, corrected
+        # among themselves rather than pooled with the arm comparisons above.
+        interactions = arm_stats.interaction_significance(
+            evaluations, arm_names, baseline_arm, correction=self.stats_correction
+        )
+        if interactions:
+            summary["interactions"] = interactions
+
         return summary
 
     @staticmethod

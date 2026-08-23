@@ -1,5 +1,6 @@
 """Tests for the N-arm runner (answer generation + judging)."""
 
+import pytest
 import agent_benchmarks.eval.arm_runner as arm_runner_mod
 from agent_benchmarks.eval.arm_runner import ArmRunner
 from agent_benchmarks.treatments import BaselineTreatment, SkillAgentTreatment, SkillTreatment
@@ -243,3 +244,64 @@ def test_arm_runner_run_config_defaults(monkeypatch):
 
     assert output["run_config"]["max_tokens"] is None
     assert output["run_config"]["grounded_from_topics"] is False
+
+
+def test_arm_runner_rejects_unknown_stats_correction():
+    """A typo must fail at construction, not after a whole run is paid for."""
+    with pytest.raises(ValueError, match="stats_correction"):
+        ArmRunner([BaselineTreatment()], stats_correction="bonferroni")
+
+
+def test_arm_runner_accepts_bh_correction_and_applies_it(monkeypatch):
+    captured = []
+    _patch_llm(monkeypatch, captured)
+    runner = ArmRunner([BaselineTreatment()], stats_correction="bh")
+    assert runner.stats_correction == "bh"
+
+    evaluations = [
+        {
+            "question_id": f"q{i}",
+            "scores": {"baseline": {"aggregate": 50.0 + i}, "docs": {"aggregate": 60.0 + i}},
+        }
+        for i in range(6)
+    ]
+    summary = runner._summarize(evaluations, "baseline")
+    assert summary["per_arm"]["docs"]["significance"]["correction"] == "bh"
+
+
+def _parse_arms_run(argv):
+    from agent_benchmarks.cli import build_parser
+
+    return build_parser().parse_args(
+        ["arms", "run", "--product", "oneTBB",
+         "--questions", "data/questions/onetbb.json", "--arms", "baseline"] + argv
+    )
+
+
+def test_cli_defaults_stats_correction_to_holm():
+    assert _parse_arms_run([]).stats_correction == "holm"
+
+
+def test_cli_accepts_every_correction_stats_supports():
+    """Guards against the CLI literal drifting from eval.stats.CORRECTIONS."""
+    from agent_benchmarks.eval import stats
+
+    for method in stats.CORRECTIONS:
+        assert _parse_arms_run(["--stats-correction", method]).stats_correction == method
+
+
+def test_cli_rejects_unknown_stats_correction():
+    with pytest.raises(SystemExit):
+        _parse_arms_run(["--stats-correction", "bonferroni"])
+
+
+def test_matrix_run_also_exposes_stats_correction():
+    """matrix-run copies the namespace wholesale, so the flag must exist there too."""
+    from agent_benchmarks.cli import build_parser
+
+    args = build_parser().parse_args(
+        ["arms", "matrix-run", "--product", "oneTBB",
+         "--questions", "data/questions/onetbb.json", "--arms", "baseline",
+         "--matrix-cells", "cells.json", "--stats-correction", "bh"]
+    )
+    assert args.stats_correction == "bh"

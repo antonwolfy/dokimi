@@ -27,6 +27,7 @@ FORWARDED_RUN_CONFIG_FIELDS = (
     "max_tokens",
     "grounded_from_topics",
     "concurrency",
+    "stats_correction",
 )
 
 
@@ -202,6 +203,15 @@ def register(sub, positive_int) -> None:
                             help="Explicit library id for doc/MCP arms (skips resolution)")
     arms_run_p.add_argument("--baseline-arm", default="baseline", dest="baseline_arm",
                             help="Arm name used as the delta baseline (default: baseline)")
+    arms_run_p.add_argument("--stats-correction", default="holm", dest="stats_correction",
+                            # Kept literal so registering the CLI stays stdlib-only;
+                            # eval.stats.CORRECTIONS is the enforced source of truth
+                            # and ArmRunner validates against it.
+                            choices=["holm", "bh"],
+                            help="Multiple-comparison correction across treatment arms: "
+                                 "'holm' (Holm-Bonferroni, controls family-wise error, "
+                                 "default) or 'bh' (Benjamini-Hochberg, controls false "
+                                 "discovery rate)")
     arms_run_p.add_argument("--judge", action="store_true",
                             help="Also score each arm with the LLM-as-judge")
     arms_run_p.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
@@ -302,6 +312,14 @@ def _add_common_run_args(parser, positive_int, *, matrix_required: bool = False)
                         help="Explicit library id for doc/MCP arms (skips resolution)")
     parser.add_argument("--baseline-arm", default="baseline", dest="baseline_arm",
                         help="Arm name used as the delta baseline (default: baseline)")
+    parser.add_argument("--stats-correction", default="holm", dest="stats_correction",
+                        # Kept literal so registering the CLI stays stdlib-only;
+                        # eval.stats.CORRECTIONS is the enforced source of truth
+                        # and ArmRunner validates against it.
+                        choices=["holm", "bh"],
+                        help="Multiple-comparison correction across treatment arms: "
+                             "'holm' (Holm-Bonferroni, controls family-wise error, default) "
+                             "or 'bh' (Benjamini-Hochberg, controls false discovery rate)")
     parser.add_argument("--judge", action="store_true",
                         help="Also score each arm with the LLM-as-judge")
     parser.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
@@ -396,6 +414,7 @@ def _build_arms_output(args: argparse.Namespace, specs: list[str], questions: li
         matrix_cell=args.matrix_cell,
         max_tokens=getattr(args, "max_tokens", None),
         grounded_from_topics=getattr(args, "grounded_from_topics", False),
+        stats_correction=getattr(args, "stats_correction", "holm"),
     )
     records = runner.run(
         library_name=args.product,

@@ -108,3 +108,98 @@ def test_save_does_not_mutate_caller():
 def test_schema_version_const_rejects_wrong_value():
     with pytest.raises(ArtifactValidationError):
         validate_artifact("questions", {"schema_version": "questions.v2", "questions": []})
+
+
+def _factorial_summary():
+    """Real ``_summarize`` output for a 2x2 design, so the schema is checked
+    against what the runner actually emits rather than a hand-written stub."""
+    from agent_benchmarks.eval.arm_runner import ArmRunner
+    from agent_benchmarks.treatments import BaselineTreatment
+
+    arms = ["baseline", "docs", "skill:x", "docs+skill:x"]
+    base = [50, 52, 48, 51, 49, 53]
+    jitter = [1, -1, 2, -2, 1, -1]
+    evaluations = [
+        {
+            "question_id": f"q{i}",
+            "scores": {
+                "baseline": {"aggregate": b},
+                "docs": {"aggregate": b + 2 + j},
+                "skill:x": {"aggregate": b + 12 - j},
+                "docs+skill:x": {"aggregate": b + 6 + j},
+            },
+        }
+        for i, (b, j) in enumerate(zip(base, jitter, strict=True))
+    ]
+    runner = ArmRunner([BaselineTreatment(name) for name in arms])
+    return arms, runner._summarize(evaluations, "baseline")
+
+
+def test_arms_schema_accepts_significance_and_interactions():
+    arms, summary = _factorial_summary()
+    assert summary["per_arm"]["docs"]["significance"]["correction"] == "holm"
+    assert len(summary["interactions"]) == 1
+    validate_artifact("arms", {"arms": arms, "answers": [], "summary": summary})
+
+
+def test_real_factorial_output_validates_and_then_renders():
+    """Schema-valid is not the same as renderable.
+
+    Every other stats test stops at ``validate_artifact``, so a formatter that
+    raises on a field the runner really emits — a ``None`` Cohen's d_z, a
+    missing adjusted verdict — would pass the suite. This runs the whole seam:
+    real ``_summarize`` output, validated, then rendered to Markdown.
+    """
+    from agent_benchmarks.report.arms_report import render_arms_report
+
+    arms, summary = _factorial_summary()
+    artifact = {
+        "library_name": "onetbb", "model": "m", "provider": "openai",
+        "arms": arms, "baseline_arm": "baseline", "total_questions": 6,
+        "answers": [], "summary": summary,
+    }
+    validate_artifact("arms", artifact)
+    md = render_arms_report(artifact)
+    assert "## Paired significance vs baseline" in md
+    assert "## Factorial interaction" in md
+    # Both families name themselves, so a reader can tell what was corrected
+    # together rather than assuming one pooled correction.
+    assert "treatment arm(s)" in md and "interaction contrast(s)" in md
+
+
+def test_arms_schema_still_accepts_artifact_without_stats():
+    """Pre-existing arms.v1 artifacts predate these keys and must stay valid."""
+    validate_artifact("arms", {
+        "arms": ["baseline", "docs"],
+        "answers": [],
+        "summary": {"per_arm": {"docs": {"avg_aggregate": 70.0, "n": 3,
+                                        "delta_vs_baseline": 4.0}}},
+    })
+
+
+def test_arms_schema_rejects_bad_effect_label():
+    """The new block is constrained, not merely documented."""
+    with pytest.raises(ArtifactValidationError):
+        validate_artifact("arms", {
+            "arms": ["baseline", "docs"],
+            "answers": [],
+            "summary": {"per_arm": {"docs": {"significance": {"effect": "enormous"}}}},
+        })
+
+
+def test_arms_schema_rejects_bad_correction_name():
+    with pytest.raises(ArtifactValidationError):
+        validate_artifact("arms", {
+            "arms": ["baseline", "docs"],
+            "answers": [],
+            "summary": {"per_arm": {"docs": {"significance": {"correction": "bonferroni"}}}},
+        })
+
+
+def test_arms_schema_rejects_non_array_interactions():
+    with pytest.raises(ArtifactValidationError):
+        validate_artifact("arms", {
+            "arms": ["baseline", "docs"],
+            "answers": [],
+            "summary": {"interactions": {"interaction": -8.0}},
+        })

@@ -57,11 +57,17 @@ What this table teaches:
 - **The conclusion is targeted.** Ship this skill where it provably helps
   (smaller/cheaper models); gather more data for the rest.
 
-*Where the stats come from:* the two-arm (with/without) reports compute the
-paired t-test, Wilcoxon, and Cohen's d; the N-way `arms run` report shows
-average scores and deltas vs baseline (`report model-compare` adds
-baseline-vs-one-treatment significance). The full `benchmark run` pipeline
-also records a `question_set_hash` to prove question-set reuse across runs.
+*Where the stats come from:* every report path shares
+`agent_benchmarks/eval/stats.py`, so the numbers cannot drift apart. The two-arm
+(with/without) report and `report model-compare` each compute a paired t-test,
+Wilcoxon signed-rank, Cohen's d_z, and a 95% CI on the deltas. The N-way
+`arms run` report does the same for *every* arm against the one shared baseline,
+then corrects the p-values for multiplicity across the arms (Holm-Bonferroni by
+default, `--stats-correction bh` for FDR) and reports factorial-interaction
+contrasts as a second, separately corrected family — see
+[benchmarking-and-comparison.md](benchmarking-and-comparison.md#reading-the-significance-tables).
+The full `benchmark run` pipeline also records a `question_set_hash` to prove
+question-set reuse across runs.
 
 ## How the evaluation flows
 

@@ -536,3 +536,88 @@ def test_generate_combined_report_writes_file(tmp_path):
     content = out.read_text()
     assert "Model Comparison Report" in content
     assert "## Overall Summary" in content
+
+
+# --- shared statistics layer (eval/stats.py) ------------------------------
+
+WITH = [60, 62, 58, 61, 59, 63]
+WITHOUT = [50, 52, 48, 51, 49, 53]
+
+
+def test_significance_test_matches_shared_paired_test():
+    """model_compare must not re-derive what eval.stats already computes."""
+    from agent_benchmarks.eval import stats
+    from agent_benchmarks.report.model_compare import significance_test
+
+    jittered = [w + (1 if i % 2 else -1) for i, w in enumerate(WITH)]
+    mine = significance_test(jittered, WITHOUT)
+    shared = stats.paired_test(jittered, WITHOUT)
+
+    for key in ("n", "delta_mean", "delta_std", "cohens_d", "effect",
+                "p_ttest", "p_wilcoxon", "significant"):
+        assert mine[key] == shared[key], key
+
+
+def test_significance_test_suppresses_verdict_on_constant_deltas():
+    """Constant deltas make SciPy report p == 0; that must not read as certainty."""
+    from agent_benchmarks.report.model_compare import significance_test
+
+    sig = significance_test(WITH, WITHOUT)  # every delta is exactly +10
+    assert sig["delta_mean"] == 10.0
+    assert sig["p_ttest"] is None
+    assert sig["significant"] is None
+    assert sig["t_stat"] is None
+
+
+def test_significance_test_reports_t_stat_for_varying_deltas():
+    from agent_benchmarks.report.model_compare import significance_test
+
+    jittered = [w + (1 if i % 2 else -1) for i, w in enumerate(WITH)]
+    assert significance_test(jittered, WITHOUT)["t_stat"] is not None
+
+
+def test_significance_test_requires_min_pairs():
+    from agent_benchmarks.eval import stats
+    from agent_benchmarks.report.model_compare import significance_test
+
+    n = stats.MIN_PAIRS_FOR_TEST - 1
+    assert significance_test(WITH[:n], WITHOUT[:n]) is None
+
+
+def test_eval_report_significance_uses_sample_sd():
+    """The eval_report copy divided by n, inflating d_z; it now matches the rest."""
+    from agent_benchmarks.eval import stats
+    from agent_benchmarks.report.eval_report import significance_test as er_sig
+
+    evals = [
+        {"with_docs": {"aggregate": w + (1 if i % 2 else -1)},
+         "without_docs": {"aggregate": wo}}
+        for i, (w, wo) in enumerate(zip(WITH, WITHOUT, strict=True))
+    ]
+    got = er_sig(evals)
+    expected = stats.paired_test(
+        [e["with_docs"]["aggregate"] for e in evals],
+        [e["without_docs"]["aggregate"] for e in evals],
+    )
+    assert got["delta_std"] == expected["delta_std"]
+    assert got["cohens_d"] == expected["cohens_d"]
+    assert got["effect"] == expected["effect"]
+
+
+def test_report_renders_na_instead_of_none_for_suppressed_pvalues(tmp_path):
+    """A suppressed p-value must not leak the literal 'None' into the table."""
+    from agent_benchmarks.report import model_compare
+
+    run = {
+        "arms": ["baseline", "docs"],
+        "baseline_arm": "baseline",
+        "evaluations": [
+            {"question_id": f"q{i}", "question_text": f"Q{i}",
+             "scores": {"baseline": {"aggregate": 50.0}, "docs": {"aggregate": 60.0}}}
+            for i in range(6)
+        ],
+    }
+    out = tmp_path / "report.md"
+    model_compare.generate_combined_report([("m", run)], [], ["m"], out)
+    text = out.read_text(encoding="utf-8")
+    assert "| None |" not in text

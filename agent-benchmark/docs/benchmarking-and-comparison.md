@@ -218,6 +218,36 @@ python cli.py arms run \
 The `baseline` arm is the control. Every other arm is compared against it. Keep
 the answer model and judge fixed when comparing arms.
 
+### Reading the significance tables
+
+Arms are compared **paired per question** against the one shared `baseline`
+sample: a question contributes a pair only when both arms produced an aggregate,
+so the delta varies by treatment rather than by a re-drawn control.
+
+Because one run tests several arms at once, p-values are corrected for
+multiplicity. `--stats-correction holm` (the default, Holm-Bonferroni) controls
+the family-wise error rate; `--stats-correction bh` (Benjamini-Hochberg)
+controls the false discovery rate and is the better choice when screening many
+arms. Arm contrasts and factorial-interaction contrasts are corrected as
+**separate families** — pooling them would inflate the multiplier on both — and
+each row records its `correction_family`, `family_size`, and `family_tested`.
+
+The **Sig.** column follows the *adjusted* p-value, not the raw one. Three
+values are possible:
+
+| Sig. | Meaning |
+|---|---|
+| `yes` | adjusted p < 0.05 **and** Wilcoxon < 0.05 when it could be computed |
+| `no` | the tests ran and did not clear 0.05 |
+| `—` | no test could run — fewer than 6 complete pairs, or the deltas are constant (a degenerate sample, where Cohen's d_z is *unbounded* rather than negligible) |
+
+A `—` is not a null result. Cohen's d_z and the p columns render `—` in the same
+situation rather than printing `0.00`, which would read as a measured no-effect.
+
+The 95% CI is a Student-t interval on the paired deltas, so it excludes zero
+exactly when the t-test rejects; `ci_method` records which estimator produced it
+(`student_t`, `percentile_bootstrap`, or `degenerate`).
+
 ## Multi-model comparison
 
 Use `report model-compare` to compare judged treatment-arm JSON files from
@@ -229,7 +259,9 @@ baseline and the treatment arm as the context arm, then computes:
 
 - overall context-arm, baseline, and delta per run,
 - statistical significance of context-arm minus baseline (paired t-test,
-  Wilcoxon, Cohen\u2019s d_z) when scipy is installed,
+  Wilcoxon signed-rank, Cohen's d_z) \u2014 scipy is a hard dependency, so these are
+  always computed; they report `None` only when a run has fewer than
+  `eval.stats.MIN_PAIRS_FOR_TEST` (6) complete pairs or the deltas are constant,
 - difficulty breakdown on common question IDs,
 - head-to-head winners on common question IDs,
 - ranking by absolute context-arm score and by delta.

@@ -26,17 +26,19 @@ generate_section_report(runs, run_ids, section_name, treatment_arm=None)
 from __future__ import annotations
 
 import json
+import math
+import statistics
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-try:
-    from scipy import stats as sp_stats
+from agent_benchmarks.eval import stats as arm_stats
 
-    HAS_SCIPY = True
-except ImportError:
-    HAS_SCIPY = False
+#: Mirrors :data:`agent_benchmarks.eval.stats.HAS_SCIPY` — the hypothesis tests
+#: now live there, so probing for SciPy twice could only ever disagree. Still a
+#: module-level name so reports can gate their statistics section on it.
+HAS_SCIPY = arm_stats.HAS_SCIPY
 
 try:
     from zoneinfo import ZoneInfo
@@ -470,48 +472,40 @@ def _fmt_delta(d: float | None) -> str:
 def significance_test(
     with_scores: list[float], without_scores: list[float]
 ) -> dict | None:
-    """Paired t-test, Wilcoxon, and Cohen's d_z (sample SD).  Requires scipy."""
-    if len(with_scores) < 5 or not HAS_SCIPY:
+    """Paired t-test, Wilcoxon, and Cohen's d_z (sample SD).  Requires scipy.
+
+    Delegates to :func:`agent_benchmarks.eval.stats.paired_test` so this report
+    and the arms report cannot drift apart on effect-size bands, p-value
+    rounding, or the zero-variance guard (SciPy reports ``p == 0`` on constant
+    deltas, which would read here as overwhelming significance).
+
+    ``t_stat`` is kept for continuity with existing artifacts. It is the
+    one-sample statistic on the deltas, which for paired data is the same
+    quantity ``ttest_rel`` reported.
+    """
+    if not HAS_SCIPY or len(with_scores) < arm_stats.MIN_PAIRS_FOR_TEST:
         return None
+
+    result = arm_stats.paired_test(with_scores, without_scores)
+    if result is None:
+        return None
+
+    # This path applies no multiplicity correction, so leaving the keys present
+    # would read as "corrected and unremarkable" rather than "not corrected".
+    result.pop("p_adjusted", None)
+    result.pop("significant_adjusted", None)
+
+    if result["p_ttest"] is None:
+        # No test ran; "not significant" would overstate what is known.
+        result["significant"] = None
 
     deltas = [w - wo for w, wo in zip(with_scores, without_scores, strict=True)]
-    d_mean = sum(deltas) / len(deltas)
-    if len(deltas) < 2:
-        return None
-    d_std = (sum((x - d_mean) ** 2 for x in deltas) / (len(deltas) - 1)) ** 0.5
-
-    result: dict[str, Any] = {
-        "n": len(with_scores),
-        "delta_mean": round(d_mean, 2),
-        "delta_std": round(d_std, 2),
-    }
-
-    t_stat, p_ttest = sp_stats.ttest_rel(with_scores, without_scores)
-    result["t_stat"] = round(t_stat, 3)
-    result["p_ttest"] = round(p_ttest, 4)
-
-    try:
-        _, p_wilcox = sp_stats.wilcoxon(deltas)
-        result["p_wilcoxon"] = round(p_wilcox, 4)
-    except Exception:
-        result["p_wilcoxon"] = None
-
-    result["cohens_d"] = round(d_mean / d_std, 3) if d_std > 0 else 0.0
-    result["significant"] = bool(
-        p_ttest < 0.05
-        and (result["p_wilcoxon"] is None or result["p_wilcoxon"] < 0.05)
+    sd = statistics.stdev(deltas)
+    result["t_stat"] = (
+        round(statistics.mean(deltas) / (sd / math.sqrt(len(deltas))), 3)
+        if sd > 0
+        else None
     )
-
-    abs_d = abs(result["cohens_d"])
-    if abs_d < 0.2:
-        result["effect"] = "negligible"
-    elif abs_d < 0.5:
-        result["effect"] = "small"
-    elif abs_d < 0.8:
-        result["effect"] = "medium"
-    else:
-        result["effect"] = "large"
-
     return result
 
 
@@ -832,10 +826,15 @@ def generate_section_report(
                 else:
                     sig = None
                 if sig:
-                    sig_mark = "OK Yes" if sig["significant"] else "No"
+                    # p-values are None when no test could run (zero-variance
+                    # deltas); "N/A" is honest where "None" would just look broken.
+                    sig_mark = "N/A" if sig["significant"] is None else (
+                        "OK Yes" if sig["significant"] else "No"
+                    )
+                    p_ttest = sig["p_ttest"] if sig["p_ttest"] is not None else "N/A"
                     p_wilcox = sig["p_wilcoxon"] if sig["p_wilcoxon"] is not None else "N/A"
                     lines.append(
-                        f"| **{run_id}** | {_fmt_delta(sig['delta_mean'])} | {sig['p_ttest']} | "
+                        f"| **{run_id}** | {_fmt_delta(sig['delta_mean'])} | {p_ttest} | "
                         f"{p_wilcox} | {_fmt_delta(sig['cohens_d'])} | {sig['effect']} | {sig_mark} |"
                     )
         lines += [""]

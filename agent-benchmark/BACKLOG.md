@@ -4,6 +4,40 @@
 
 ---
 
+### #61 — Paired inference across treatment arms (statistical rigor)
+**Scope:** Evaluation statistics / reporting contracts
+**Status:** LANDED (arms track)
+
+Make an arms-run verdict defensible. Previously each arm carried an unpaired
+delta of means with no test, no interval, and no multiplicity control, so a
+four-arm sweep produced four independent 5%-error claims presented as one table.
+
+Delivered:
+- `eval/stats.py` — `paired_vectors` (complete cases only, so the test is
+  genuinely paired against one *shared* baseline), `paired_test` (t-test +
+  Wilcoxon with `zero_method="zsplit"` so tied pairs stay in `n`, Cohen's d_z on
+  the sample SD), `mean_ci` (Student-t interval, coherent with `p_ttest` —
+  it excludes zero exactly when the t-test rejects; percentile bootstrap
+  retained for discrete outcomes and as the SciPy-absent fallback),
+  `adjust_pvalues` (Holm-Bonferroni default, Benjamini-Hochberg opt-in),
+  `arm_significance` (family-wise correction across the arms of one run).
+- `eval/interactions.py` — factorial contrast `combined - A - B + baseline`,
+  corrected as its **own** hypothesis family rather than pooled with the arms.
+- Honest absence: `cohens_d` / `significant` / `significant_adjusted` are
+  `None`, not `0.0` / `False`, when no test could run (no SciPy, fewer than
+  `MIN_PAIRS_FOR_TEST=6` pairs, or zero-variance deltas — where d_z is
+  *unbounded*, not negligible). Reports render `—`, not a fabricated null.
+- `arms.v1` schema: nullable stats fields plus `p_adjusted`,
+  `significant_adjusted`, `correction`, `correction_family`, `family_size`,
+  `family_tested`, `ci_method`, `n_wilcoxon`. SciPy is now a hard dependency.
+
+Follow-ups: paired inference on the binary task track (McNemar) currently pairs
+on `(task, repeat)`, which is pseudo-replication; correction across harnesses in
+`harnesses/runner.py` duplicates the method name; `model_compare.py` still reads
+the raw verdict.
+
+---
+
 ### #60 — Exploration quality as a measurable layer (FastContext-informed)
 **Scope:** Evaluation architecture / telemetry
 **Status:** LANDED (all 7 slices) — design in
