@@ -31,10 +31,56 @@ Delivered:
   `significant_adjusted`, `correction`, `correction_family`, `family_size`,
   `family_tested`, `ci_method`, `n_wilcoxon`. SciPy is now a hard dependency.
 
-Follow-ups: paired inference on the binary task track (McNemar) currently pairs
-on `(task, repeat)`, which is pseudo-replication; correction across harnesses in
-`harnesses/runner.py` duplicates the method name; `model_compare.py` still reads
-the raw verdict.
+Follow-ups: all three landed in #62 — the McNemar `(task, repeat)`
+pseudo-replication is now disclosed, `_correct_across_harnesses` takes the
+method as a parameter, and `model_compare.py` reads `significant_adjusted`.
+
+---
+
+### #62 — Prompt/response caching and the execution-verified significance track
+**Scope:** LLM cost controls / statistics on the binary task track
+**Status:** LANDED
+
+Two things this PR pays for. First, arms runs re-sent a 12k-character skill body
+on every question at full input price: `cache_hit_ratio` was a constant 0.0%
+because the answer prompt asked the question *before* the injected context, so
+there was no reusable prefix to cache at all. Second, the executable-task track
+reported pass-rate deltas with no test behind them.
+
+Delivered:
+- `caching.py` — provider prompt caching (`build_messages` for the single-prompt
+  shape, `annotate_system_breakpoint` for the agentic loop, which re-sends its
+  system prompt every turn) plus an opt-in response cache
+  (`AGENT_BENCHMARK_RESPONSE_CACHE`). Only *question-independent* context is
+  offered for caching (`context_is_static`); reranked `docs` retrieval would pay
+  the write surcharge on every call and never hit.
+- The answer prompt now puts context before the question. **This changes model
+  output** — scores from before and after are not directly comparable.
+- `eval/binary_stats.py` — McNemar's **exact** test (no SciPy: the null is
+  `Binomial(b+c, 0.5)`), the full 2×2 table, and a bootstrap interval on the
+  paired delta. Concordant cells are reported so a null result can be told apart
+  from a suite with no headroom.
+- `harnesses/runner.py` — Holm correction across the harnesses of one sweep as
+  its own `correction_family`, and cells excluded from the pairing counted
+  against every cell either harness *attempted*.
+
+Deliberate limits, disclosed rather than hidden:
+- The two caches are independent by construction: the response-cache key hashes
+  message *text*, so toggling the prompt cache cannot discard paid-for entries.
+  `max_tokens` is in the key; a truncated completion is a different answer.
+- The response cache does **not** apply to the agentic loop — replaying a
+  completion would skip the tool calls that track exists to measure.
+- A replayed hit reports the *recorded* usage, so cost stays comparable across
+  runs, which also means a cached run's latency is a recording. Hence opt-in.
+- `--repeats` does not buy the power it looks like: repeats pair as separate
+  `(task, repeat)` cells, so `n` grows while independent units do not.
+  `n_units` / `pseudo_replicated` say so and the report prints a caveat.
+
+Follow-ups: a clustered McNemar (GEE or cluster bootstrap) so `--repeats`
+actually adds power instead of only disclosing that it does not;
+`MIN_CACHEABLE_PREFIX_CHARS` is a character heuristic because no provider
+tokenizer is available at that point; `report/model_compare.py` is over 1000
+lines and wants splitting against the repo's 500-line ceiling.
 
 ---
 

@@ -10,7 +10,8 @@ from agent_benchmarks.plugins import create_plugins, plugin_set_metadata, wrap_t
 
 def _patch_llm(monkeypatch, captured):
     def fake_call(prompt, model, provider="openai", api_key=None, system=None, **kw):
-        captured.append({"prompt": prompt, "system": system})
+        captured.append({"prompt": prompt, "system": system,
+                         "cache_prefix": kw.get("cache_prefix")})
         return f"answer (system={'yes' if system else 'no'})", {
             "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15
         }
@@ -305,3 +306,63 @@ def test_matrix_run_also_exposes_stats_correction():
          "--matrix-cells", "cells.json", "--stats-correction", "bh"]
     )
     assert args.stats_correction == "bh"
+
+
+# ── cacheable prompt prefix ──────────────────────────────────────────────────
+
+
+def test_context_precedes_the_question_in_the_prompt():
+    """Providers only reuse a prefix, so the stable half has to come first."""
+    from agent_benchmarks.eval.arm_runner import (
+        ANSWER_PROMPT_WITH_CONTEXT,
+        CONTEXT_PROMPT_PREFIX,
+        CONTEXT_PROMPT_SUFFIX,
+    )
+
+    full = ANSWER_PROMPT_WITH_CONTEXT.format(question="Q?", context="CTX")
+    assert full.index("CTX") < full.index("Q?")
+    # The split must not introduce a third copy of the wording.
+    assert full == (CONTEXT_PROMPT_PREFIX.format(context="CTX")
+                    + CONTEXT_PROMPT_SUFFIX.format(question="Q?"))
+
+
+def test_static_context_is_passed_as_a_cache_prefix(monkeypatch):
+    """A skill body is identical for every question — a real cacheable prefix."""
+    captured = []
+    _patch_llm(monkeypatch, captured)
+
+    skill = load_skill("data/skills/onetbb-quickstart")
+    runner = ArmRunner([SkillTreatment(skill)])
+    runner.run("oneTBB", QUESTIONS, concurrency=1)
+
+    prefixes = [c["cache_prefix"] for c in captured]
+    assert all(p for p in prefixes)
+    # Identical across questions — that is the whole point.
+    assert len(set(prefixes)) == 1
+    # And the question stays out of the cached half.
+    assert QUESTIONS[0]["question"] not in prefixes[0]
+
+
+def test_volatile_context_is_not_offered_for_caching(monkeypatch):
+    """Query-driven retrieval would pay the write surcharge and never hit."""
+    from agent_benchmarks.treatments import DocTreatment
+
+    class _Client:
+        def get_library_docs(self, library_id, query, max_results=5):
+            return [{"content": f"chunk for {query}", "relevance_score": 0.9}]
+
+    captured = []
+    _patch_llm(monkeypatch, captured)
+    runner = ArmRunner([DocTreatment(_Client())])
+    runner.run("oneTBB", QUESTIONS, concurrency=1)
+
+    assert [c["cache_prefix"] for c in captured] == [None, None]
+    # Content is unchanged; it just travels as one string.
+    assert "chunk for" in captured[0]["prompt"]
+
+
+def test_baseline_arm_sends_no_prefix(monkeypatch):
+    captured = []
+    _patch_llm(monkeypatch, captured)
+    ArmRunner([BaselineTreatment()]).run("oneTBB", QUESTIONS[:1], concurrency=1)
+    assert captured[0]["cache_prefix"] is None

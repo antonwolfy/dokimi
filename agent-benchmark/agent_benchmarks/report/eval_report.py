@@ -217,7 +217,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     if sig:
         sig_label = ("✅ **Statistically significant** (p < 0.05)" if sig.get("significant")
                      else "❌ **Not statistically significant** (p ≥ 0.05)" if sig.get("significant") is False
-                     else "⚠️ Cannot determine (no SciPy, too few pairs, or "
+                     else "⚠️ Cannot determine (too few pairs, or "
                           "zero-variance deltas)")
         # Use the band eval.stats already computed. Recomputing it here needed
         # abs(cohens_d), which raises on the None that a zero-variance sample

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Dict, Iterable, List, Optional
 
 from agent_benchmarks.treatments.base import AgentConfig, Treatment
@@ -91,7 +91,13 @@ class Plugin:
             shapers = list(metadata.get("output_shapers", []))
             shapers.append(self)
             metadata["output_shapers"] = shapers
-        return AgentConfig(
+        # replace(), not a field-by-field AgentConfig(...): listing the fields
+        # here silently dropped context_is_static, so wrapping a static-context
+        # arm (a skill body) in any plugin set turned its provider prompt
+        # caching off with nothing in the artifact to say so. Any field added to
+        # AgentConfig later would have been dropped the same way.
+        return replace(
+            cfg,
             system_prompt=system_prompt,
             injected_context=list(cfg.injected_context),
             tools=list(cfg.tools),
@@ -155,12 +161,8 @@ class PluginWrappedTreatment(Treatment):
         if cfg.system_prompt:
             metadata["system_prompt_sha256"] = digest_text(cfg.system_prompt)
             metadata["system_prompt_extended_by_plugins"] = cfg.system_prompt != arm_prompt
-        return AgentConfig(
-            system_prompt=cfg.system_prompt,
-            injected_context=cfg.injected_context,
-            tools=cfg.tools,
-            metadata=metadata,
-        )
+        # replace() for the same reason as in Plugin.apply above.
+        return replace(cfg, metadata=metadata)
 
 
 def take_output_shapers(cfg: AgentConfig) -> tuple[list["Plugin"], Dict[str, Any]]:

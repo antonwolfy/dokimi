@@ -6,6 +6,8 @@ turns, streaming TTFT, and the per-row metrics{} block plus the retained
 token_usage alias.
 """
 
+import pytest
+
 import agent_benchmarks.llm as llm_mod
 from agent_benchmarks.llm import _extract_usage
 from agent_benchmarks.metrics.usage import UsageRecord, to_record
@@ -201,3 +203,101 @@ def test_stream_call_measures_ttft(monkeypatch):
     assert text == "Hello world"
     assert rec.ttft_sec is not None and rec.ttft_sec >= 0.0
     assert rec.total_tokens == 7  # usage read from terminal chunk
+
+
+# ── caching wired into the completion path ───────────────────────────────────
+class _Message:
+    def __init__(self, content):
+        self.content = content
+
+
+class _FullChoice:
+    def __init__(self, content):
+        self.message = _Message(content)
+
+
+class _FullResp:
+    def __init__(self, content, usage):
+        self.choices = [_FullChoice(content)]
+        self.usage = usage
+
+
+def _stub_completion(monkeypatch, calls, content="answer"):
+    """Replace litellm.completion; record the kwargs each call receives."""
+    try:
+        import litellm
+    except ImportError as exc:  # pragma: no cover - depends on the interpreter
+        # Not just "litellm is optional": on 3.10 it is not importable at all.
+        # litellm's anthropic pass-through module does `from typing import
+        # NotRequired`, which lands in typing only in 3.11, so `import litellm`
+        # raises ImportError under the 3.10 leg of the test matrix even though
+        # the package installed fine. This repo declares requires-python
+        # ">=3.10", so treat an unimportable litellm the way the rest of this
+        # file already does (see test_cost_none_when_no_pricing): skip the
+        # assertion, do not fail the suite.
+        pytest.skip(f"litellm is not importable here: {exc}")
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return _FullResp(content, _Usage(prompt=9, completion=2, total=11))
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    monkeypatch.setattr(llm_mod, "_safe_completion_cost", lambda r, m, **kw: 0.001)
+
+
+def test_cache_prefix_becomes_a_breakpoint_on_anthropic(monkeypatch):
+    from agent_benchmarks import caching
+
+    monkeypatch.delenv(caching.RESPONSE_CACHE_ENV, raising=False)
+    calls: list = []
+    _stub_completion(monkeypatch, calls)
+
+    prefix = "x" * caching.MIN_CACHEABLE_PREFIX_CHARS
+    llm_mod.llm_call_with_usage(
+        "**Question:** why?", model="claude-3-5-sonnet-20241022",
+        provider="anthropic", api_key="k", cache_prefix=prefix,
+    )
+
+    blocks = calls[0]["messages"][0]["content"]
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert blocks[1]["text"] == "**Question:** why?"
+
+
+def test_no_cache_prefix_keeps_the_plain_single_string_request(monkeypatch):
+    """The default path must look exactly as it did before caching existed."""
+    calls: list = []
+    _stub_completion(monkeypatch, calls)
+
+    llm_mod.llm_call_with_usage("ask", model="gpt-4o-mini", provider="openai", api_key="k")
+
+    assert calls[0]["messages"] == [{"role": "user", "content": "ask"}]
+
+
+def test_response_cache_replays_without_calling_the_provider(monkeypatch, tmp_path):
+    from agent_benchmarks import caching
+
+    monkeypatch.setenv(caching.RESPONSE_CACHE_ENV, str(tmp_path))
+    calls: list = []
+    _stub_completion(monkeypatch, calls)
+
+    first = llm_mod.llm_call_with_usage("ask", model="gpt-4o-mini", provider="openai", api_key="k")
+    second = llm_mod.llm_call_with_usage("ask", model="gpt-4o-mini", provider="openai", api_key="k")
+
+    assert len(calls) == 1               # second call served from disk
+    assert second[0] == first[0]
+    # Replayed usage keeps reporting what the real call cost, not $0.
+    assert second[1].cost_usd == first[1].cost_usd == 0.001
+    assert second[1].total_tokens == 11
+
+
+def test_response_cache_distinguishes_different_prompts(monkeypatch, tmp_path):
+    from agent_benchmarks import caching
+
+    monkeypatch.setenv(caching.RESPONSE_CACHE_ENV, str(tmp_path))
+    calls: list = []
+    _stub_completion(monkeypatch, calls)
+
+    llm_mod.llm_call_with_usage("ask", model="gpt-4o-mini", provider="openai", api_key="k")
+    llm_mod.llm_call_with_usage("ask?", model="gpt-4o-mini", provider="openai", api_key="k")
+
+    assert len(calls) == 2

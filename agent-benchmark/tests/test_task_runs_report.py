@@ -45,7 +45,7 @@ def _artifact():
             },
             "comparisons": {
                 "docker-claude-skill:s/SKILL.md": {
-                    "baseline_harness": "docker-claude", "pass_rate_delta": 0.0,
+                    "baseline_harness": "docker-claude", "paired_pass_rate_delta": 0.0,
                     "passed_delta": 0, "operation_count_delta": 0, "cost_delta_usd": 0.35},
             },
         },
@@ -131,3 +131,71 @@ def test_per_task_cost_unknown_renders_dash():
     md = render_task_runs_report(data)
     assert "| t1 | easy | 1/1 | — |" in md
     assert "$0.0000" not in md
+
+
+# ── McNemar section ───────────────────────────────────────────────────────────
+
+
+def _with_mcnemar(**overrides):
+    data = _artifact()
+    mc = {
+        "test": "mcnemar_exact", "n": 10, "n_gained": 6, "n_lost": 0,
+        "n_both_passed": 3, "n_both_failed": 1, "n_discordant": 6, "n_excluded": 0,
+        "paired_pass_rate_delta": 0.6, "ci_lo": 0.3, "ci_hi": 0.9, "ci_confidence": 0.95,
+        "p_exact": 0.0312, "p_adjusted": 0.0312, "correction": "holm",
+        "family_size": 1, "significant": True, "significant_adjusted": True,
+        "n_units": 10, "pseudo_replicated": False,
+    }
+    mc.update(overrides)
+    data["summary"]["comparisons"]["docker-claude-skill:s/SKILL.md"]["mcnemar"] = mc
+    return data
+
+
+def test_mcnemar_section_reports_the_discordant_cells():
+    md = render_task_runs_report(_with_mcnemar())
+    assert "## Paired significance vs baseline (McNemar)" in md
+    section = md.split("## Paired significance vs baseline (McNemar)")[1]
+    row = next(line for line in section.splitlines()
+               if line.startswith("| `docker-claude-skill:s/SKILL.md` |"))
+    assert row == ("| `docker-claude-skill:s/SKILL.md` | +60.00 pp | "
+                   "[+30.0, +90.0] pp | 6 | 0 | 3 | 1 | 0.0312 | 0.0312 | yes | 10 |")
+
+
+def test_mcnemar_section_absent_when_the_artifact_has_no_test():
+    """Older artifacts predate the block; the rest of the report still renders."""
+    md = render_task_runs_report(_artifact())
+    assert "McNemar" not in md
+    assert "## Comparison vs baseline" in md
+
+
+def test_no_discordant_pair_renders_a_dash_not_a_verdict():
+    md = render_task_runs_report(_with_mcnemar(
+        n_gained=0, n_lost=0, n_discordant=0, paired_pass_rate_delta=0.0,
+        p_exact=None, p_adjusted=None, significant=None, significant_adjusted=None,
+    ))
+    section = md.split("## Paired significance vs baseline (McNemar)")[1]
+    row = next(line for line in section.splitlines()
+               if line.startswith("| `docker-claude-skill:s/SKILL.md` |"))
+    # No p-value and no yes/no: absent evidence, not evidence of no effect.
+    assert row.endswith("| — | — | — | 10 |")
+    assert "| None |" not in md
+
+
+def test_excluded_cells_are_disclosed():
+    md = render_task_runs_report(_with_mcnemar(n_excluded=3))
+    assert "3 cell-exclusion(s)" in md
+    assert "cell-exclusion(s)" not in render_task_runs_report(_with_mcnemar())
+
+
+def test_pseudo_replication_is_disclosed_when_repeats_are_paired_as_cells():
+    """10 pairs from 4 tasks is not a 10-unit sample, and the report has to say so.
+
+    McNemar assumes independent pairs; repeats of one task share its difficulty,
+    so p is anti-conservative. A clean-looking 0.0312 with no caveat would be
+    read as a claim at α.
+    """
+    md = render_task_runs_report(_with_mcnemar(n_units=4, pseudo_replicated=True))
+    assert "only 4 independent task(s)" in md
+    assert "anti-conservative" in md
+    # The n=n_units case must stay silent rather than warn on every single run.
+    assert "anti-conservative" not in render_task_runs_report(_with_mcnemar())

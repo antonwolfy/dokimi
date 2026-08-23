@@ -103,7 +103,7 @@
                     "type": "number"
                   },
                   "cohens_d": {
-                    "description": "Cohen's d_z on the paired deltas (sample SD, ddof=1). Null when the deltas have zero variance: d_z is then unbounded, not zero.",
+                    "description": "Cohen's d_z on the paired deltas (sample SD, ddof=1). Null when the deltas are constant and non-zero, where d_z is unbounded rather than zero; 0.0 when every delta is zero.",
                     "type": [
                       "number",
                       "null"
@@ -253,7 +253,7 @@
                 "type": "number"
               },
               "cohens_d": {
-                "description": "Cohen's d_z on the paired contrasts (sample SD, ddof=1). Null when the contrasts have zero variance.",
+                "description": "Cohen's d_z on the interaction contrasts (sample SD, ddof=1). Null when the contrast is constant and non-zero; 0.0 when every contrast is zero.",
                 "type": [
                   "number",
                   "null"

@@ -16,10 +16,12 @@ prompt_digests(run_data, arm)
 extract_scores(run_data, force_treatment_arm=None)
     Extract per-question scores from an arms JSON artifact.
 
-generate_combined_report(regular_runs, golden_runs, run_ids, out_path, treatment_arm=None)
+generate_combined_report(regular_runs, golden_runs, run_ids, out_path,
+                         treatment_arm=None, correction="holm")
     Write a Markdown comparison report to *out_path*.
 
-generate_section_report(runs, run_ids, section_name, treatment_arm=None)
+generate_section_report(runs, run_ids, section_name, treatment_arm=None,
+                        correction="holm")
     Return a list of Markdown lines for one question-set section (regular or golden).
 """
 
@@ -520,8 +522,13 @@ def generate_combined_report(
     run_ids: list[str],
     out_path: str,
     treatment_arm: str | None = None,
+    correction: str = "holm",
 ) -> None:
-    """Write a Markdown comparison report to *out_path*."""
+    """Write a Markdown comparison report to *out_path*.
+
+    ``correction`` is the family-wise correction applied across the runs in each
+    section — see :func:`agent_benchmarks.eval.stats.adjust_pvalues`.
+    """
     lines: list[str] = []
 
     lines += [
@@ -543,7 +550,8 @@ def generate_combined_report(
             "# Regular Questions Analysis",
             "",
         ]
-        lines += generate_section_report(regular_runs, run_ids, "Regular", treatment_arm)
+        lines += generate_section_report(regular_runs, run_ids, "Regular", treatment_arm,
+                                        correction)
         lines += [
             "",
             "---",
@@ -551,13 +559,16 @@ def generate_combined_report(
             "# Golden Questions Analysis",
             "",
         ]
-        lines += generate_section_report(golden_runs, run_ids, "Golden", treatment_arm)
+        lines += generate_section_report(golden_runs, run_ids, "Golden", treatment_arm,
+                                        correction)
 
     elif regular_runs:
-        lines += generate_section_report(regular_runs, run_ids, "Regular", treatment_arm)
+        lines += generate_section_report(regular_runs, run_ids, "Regular", treatment_arm,
+                                        correction)
 
     elif golden_runs:
-        lines += generate_section_report(golden_runs, run_ids, "Golden", treatment_arm)
+        lines += generate_section_report(golden_runs, run_ids, "Golden", treatment_arm,
+                                        correction)
 
     output = "\n".join(lines)
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
@@ -570,8 +581,13 @@ def generate_section_report(
     run_ids: list[str],
     section_name: str,
     treatment_arm: str | None = None,
+    correction: str = "holm",
 ) -> list[str]:
-    """Return Markdown lines for one question-set section."""
+    """Return Markdown lines for one question-set section.
+
+    ``correction`` names the multiplicity correction applied across the runs
+    compared in this section (``"holm"`` or ``"bh"``).
+    """
 
     # Extract and intersect to common questions only
     all_run_scores_raw: dict[str, list[dict]] = {}
@@ -808,13 +824,12 @@ def generate_section_report(
                 "",
             ]
         else:
-            lines += [
-                "_p-values are unadjusted; treat many pairwise comparisons as exploratory. "
-                "Significant = t-test < 0.05 and Wilcoxon < 0.05 (or unavailable)._",
-                "",
-                "| Run | Delta | p (t-test) | p (Wilcoxon) | Cohen's d_z | Effect | Significant? |",
-                "|---|---:|---:|---:|---:|---|---|",
-            ]
+            # Every run in the section is one test of the same "did the
+            # treatment help?" question, so they form a family: with k runs,
+            # the chance that at least one clears 0.05 by luck alone is far
+            # above 0.05. Correct across the family before calling anything
+            # significant, exactly as the arms report does across arms.
+            sigs: dict[str, dict | None] = {}
             for run_id in run_ids:
                 scores = all_run_scores[run_id]
                 # Filter for paired scores: both baseline and treatment must be non-None
@@ -822,20 +837,52 @@ def generate_section_report(
                           if s["with_docs"] is not None and s["without_docs"] is not None]
                 if paired:
                     with_scores, without_scores = zip(*paired, strict=True)
-                    sig = significance_test(list(with_scores), list(without_scores))
+                    sigs[run_id] = significance_test(list(with_scores), list(without_scores))
                 else:
-                    sig = None
+                    sigs[run_id] = None
+
+            tested = [rid for rid in run_ids if sigs[rid] and sigs[rid]["p_ttest"] is not None]
+            adjusted = arm_stats.adjust_pvalues(
+                [sigs[rid]["p_ttest"] for rid in tested], method=correction
+            )
+            for rid, p_adj in zip(tested, adjusted, strict=True):
+                sig = sigs[rid]
+                sig["p_adjusted"] = p_adj
+                # Same conjunction as the raw verdict, with the adjusted p in
+                # place of the raw one.
+                sig["significant_adjusted"] = bool(
+                    p_adj is not None and p_adj < arm_stats.ALPHA
+                    and (sig["p_wilcoxon"] is None or sig["p_wilcoxon"] < arm_stats.ALPHA)
+                )
+
+            label = "Holm-Bonferroni" if correction == "holm" else "Benjamini-Hochberg"
+            lines += [
+                f"_p-values are adjusted across the {len(tested)} run(s) compared here "
+                f"({label}); the raw column is shown for reference. "
+                "Significant = adjusted p < 0.05 and Wilcoxon < 0.05 (or unavailable)._",
+                "",
+                "| Run | Delta | p (t-test) | p (adjusted) | p (Wilcoxon) | Cohen's d_z "
+                "| Effect | Significant? |",
+                "|---|---:|---:|---:|---:|---:|---|---|",
+            ]
+            for run_id in run_ids:
+                sig = sigs[run_id]
                 if sig:
                     # p-values are None when no test could run (zero-variance
                     # deltas); "N/A" is honest where "None" would just look broken.
-                    sig_mark = "N/A" if sig["significant"] is None else (
-                        "OK Yes" if sig["significant"] else "No"
-                    )
+                    verdict = sig.get("significant_adjusted")
+                    if sig["significant"] is None or verdict is None:
+                        sig_mark = "N/A"
+                    else:
+                        sig_mark = "OK Yes" if verdict else "No"
                     p_ttest = sig["p_ttest"] if sig["p_ttest"] is not None else "N/A"
+                    p_adj = sig.get("p_adjusted")
+                    p_adj_str = p_adj if p_adj is not None else "N/A"
                     p_wilcox = sig["p_wilcoxon"] if sig["p_wilcoxon"] is not None else "N/A"
                     lines.append(
                         f"| **{run_id}** | {_fmt_delta(sig['delta_mean'])} | {p_ttest} | "
-                        f"{p_wilcox} | {_fmt_delta(sig['cohens_d'])} | {sig['effect']} | {sig_mark} |"
+                        f"{p_adj_str} | {p_wilcox} | {_fmt_delta(sig['cohens_d'])} "
+                        f"| {sig['effect']} | {sig_mark} |"
                     )
         lines += [""]
 

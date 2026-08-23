@@ -344,6 +344,113 @@
                   "number",
                   "null"
                 ]
+              },
+              "mcnemar": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "Paired significance on the binary pass/fail outcomes, per (task, repeat) cell against the baseline harness. McNemar's exact test: only the discordant cells carry evidence. Null when no cell is shared with the baseline. p_exact and significant are null when there is no discordant pair at all — no evidence either way, as distinct from evidence of no difference. p_adjusted is Holm-corrected across the non-baseline harnesses in the same sweep.",
+                "properties": {
+                  "test": {
+                    "const": "mcnemar_exact"
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "n_gained": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Cells this harness passed and the baseline failed."
+                  },
+                  "n_lost": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Cells the baseline passed and this harness failed."
+                  },
+                  "n_both_passed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "n_both_failed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "n_discordant": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "n_excluded": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Cells dropped from the pairing, measured against every cell either harness attempted: present for one harness only, or the harness errored."
+                  },
+                  "n_units": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Independent units behind the n pairs (the distinct tasks). Equals n when repeats is 1."
+                  },
+                  "pseudo_replicated": {
+                    "type": "boolean",
+                    "description": "True when n_units < n, i.e. repeats were paired as separate cells. McNemar assumes independent pairs, so p_exact is then anti-conservative."
+                  },
+                  "paired_pass_rate_delta": {
+                    "type": "number",
+                    "description": "(n_gained - n_lost) / n over the shared cells, as a fraction. Distinct from the sibling pass_rate_delta, which subtracts two marginal pass rates over every row each harness ran."
+                  },
+                  "ci_lo": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "ci_hi": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "ci_confidence": {
+                    "type": "number"
+                  },
+                  "p_exact": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "p_adjusted": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "correction": {
+                    "type": "string"
+                  },
+                  "correction_family": {
+                    "const": "harnesses",
+                    "description": "Names the hypothesis family these p-values were corrected within. The judged track's arm and interaction families are corrected separately, so the multiplier here counts harnesses only."
+                  },
+                  "family_size": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "significant": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "significant_adjusted": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": true
               }
             }
           }

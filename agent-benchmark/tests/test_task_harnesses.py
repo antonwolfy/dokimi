@@ -239,3 +239,170 @@ def test_summarize_task_results_counts_operations():
     summary = summarize_task_results(rows)
     assert summary["per_harness"]["h1"]["pass_rate"] == 0.5
     assert summary["per_harness"]["h1"]["operations_by_type"] == {"tool": 2, "loop": 1}
+
+
+# ── paired binary significance (McNemar) on the execution-verified track ─────
+
+
+def _row(task, harness, passed, *, repeat=1, error=None):
+    metrics = {"operation_count": 0, "operations_by_type": {}}
+    if error:
+        metrics["error"] = error
+    return {"task": task, "harness": harness, "passed": passed, "reward": None if error else float(passed),
+            "elapsed_sec": 1.0, "repeat": repeat, "metrics": metrics}
+
+
+def _sweep(pairs, *, baseline="noskill", treatment="skill"):
+    """One row per task for both harnesses; ``pairs`` is [(base, treat), ...]."""
+    rows = []
+    for i, (base, treat) in enumerate(pairs):
+        rows.append(_row(f"t{i}", baseline, base))
+        rows.append(_row(f"t{i}", treatment, treat))
+    return summarize_task_results(rows, baseline_harness=baseline)
+
+
+def test_comparison_carries_a_paired_binary_test():
+    # Six tasks the skill fixes, four both arms already solve.
+    summary = _sweep([(False, True)] * 6 + [(True, True)] * 4)
+    mc = summary["comparisons"]["skill"]["mcnemar"]
+    assert mc["test"] == "mcnemar_exact"
+    assert mc["n"] == 10
+    assert mc["n_gained"] == 6 and mc["n_lost"] == 0
+    assert mc["n_both_passed"] == 4
+    assert mc["p_exact"] < 0.05
+    assert mc["significant"] is True
+    assert mc["significant_adjusted"] is True
+
+
+def test_baseline_harness_is_not_compared_against_itself():
+    summary = _sweep([(False, True)] * 6)
+    assert "noskill" not in summary["comparisons"]
+
+
+def test_no_pairing_without_a_baseline_harness():
+    rows = [_row("t0", "skill", True), _row("t0", "noskill", False)]
+    assert summarize_task_results(rows)["comparisons"] == {}
+
+
+def test_harness_errors_are_excluded_rather_than_counted_as_failures():
+    """A docker crash is missing data; charging it to the treatment would lie."""
+    rows = [
+        _row("t0", "noskill", False), _row("t0", "skill", True),
+        _row("t1", "noskill", False), _row("t1", "skill", True),
+        _row("t2", "noskill", False),
+        _row("t2", "skill", False, error="RuntimeError: docker build failed"),
+    ]
+    mc = summarize_task_results(rows, baseline_harness="noskill")["comparisons"]["skill"]["mcnemar"]
+    assert mc["n"] == 2                 # t2 dropped, not scored as a loss
+    assert mc["n_gained"] == 2 and mc["n_lost"] == 0
+    assert mc["n_excluded"] == 1
+
+
+def test_cells_that_errored_on_both_sides_are_counted_as_excluded():
+    """The loss is largest exactly where the old count reported zero.
+
+    Measuring exclusions against the *surviving* cells missed any cell that
+    errored on both sides, so a sweep where docker was broken for half the tasks
+    reported ``n_excluded == 0`` and looked like a clean comparison.
+    """
+    rows = [
+        _row("t0", "noskill", False), _row("t0", "skill", True),
+        _row("t1", "noskill", False), _row("t1", "skill", True),
+        _row("t2", "noskill", False, error="RuntimeError: docker build failed"),
+        _row("t2", "skill", False, error="RuntimeError: docker build failed"),
+    ]
+    mc = summarize_task_results(rows, baseline_harness="noskill")["comparisons"]["skill"]["mcnemar"]
+    assert mc["n"] == 2
+    assert mc["n_excluded"] == 1
+
+
+def test_repeats_pair_by_index_within_a_task():
+    rows = [
+        _row("t0", "noskill", False, repeat=1), _row("t0", "skill", True, repeat=1),
+        _row("t0", "noskill", True, repeat=2), _row("t0", "skill", True, repeat=2),
+    ]
+    mc = summarize_task_results(rows, baseline_harness="noskill")["comparisons"]["skill"]["mcnemar"]
+    assert mc["n"] == 2
+    assert mc["n_gained"] == 1 and mc["n_both_passed"] == 1
+    # Two pairs, but both are repeats of t0: one independent unit, and the
+    # artifact has to say so rather than letting n stand in for sample size.
+    assert mc["n_units"] == 1
+    assert mc["pseudo_replicated"] is True
+
+
+def test_one_repeat_per_task_is_not_flagged_as_pseudo_replicated():
+    summary = _sweep([(False, True)] * 6)
+    mc = summary["comparisons"]["skill"]["mcnemar"]
+    assert mc["n_units"] == mc["n"] == 6
+    assert mc["pseudo_replicated"] is False
+
+
+def test_pvalues_are_corrected_across_the_compared_harnesses():
+    rows = []
+    for i in range(6):
+        rows.append(_row(f"t{i}", "noskill", False))
+        rows.append(_row(f"t{i}", "skill-a", True))
+        rows.append(_row(f"t{i}", "skill-b", True))
+    cmp = summarize_task_results(rows, baseline_harness="noskill")["comparisons"]
+    for harness in ("skill-a", "skill-b"):
+        mc = cmp[harness]["mcnemar"]
+        assert mc["correction"] == "holm"
+        assert mc["family_size"] == 2
+        # Correction can only raise a p-value, never lower it.
+        assert mc["p_adjusted"] >= mc["p_exact"]
+
+
+def test_a_harness_with_no_shared_task_gets_no_test():
+    rows = [_row("t0", "noskill", True), _row("t1", "skill", True)]
+    cmp = summarize_task_results(rows, baseline_harness="noskill")["comparisons"]
+    assert cmp["skill"]["mcnemar"] is None
+    # The unpaired pass-rate delta is still reported; only the test is withheld.
+    assert cmp["skill"]["pass_rate_delta"] == 0.0
+
+
+def test_identical_outcomes_yield_no_verdict_rather_than_a_negative_one():
+    summary = _sweep([(True, True), (False, False), (True, True)])
+    mc = summary["comparisons"]["skill"]["mcnemar"]
+    assert mc["n_discordant"] == 0
+    assert mc["p_exact"] is None
+    assert mc["significant"] is None
+    assert mc["significant_adjusted"] is None
+
+
+def test_a_real_mcnemar_block_validates_and_then_renders():
+    """Schema-valid is not the same as renderable.
+
+    Every other test on this track stops at the summary dict, so a formatter
+    that raises on a field the runner really emits — a null ``p_exact``, the new
+    ``pseudo_replicated`` caveat — would pass the suite. This runs the whole
+    seam: real ``summarize_task_results`` output, validated, then rendered.
+    """
+    from agent_benchmarks.report.task_runs_report import render_task_runs_report
+
+    rows = []
+    for i in range(6):
+        rows += [_row(f"t{i}", "noskill", False, repeat=1),
+                 _row(f"t{i}", "skill", True, repeat=1),
+                 _row(f"t{i}", "noskill", False, repeat=2),
+                 _row(f"t{i}", "skill", True, repeat=2)]
+    artifact = {
+        "schema_version": "task_runs.v1",
+        "generated_at": "2026-01-01T00:00:00Z",
+        "model": "haiku",
+        "baseline_harness": "noskill",
+        "harnesses": ["noskill", "skill"],
+        "repeats": 2,
+        "tasks": [
+            {"name": f"t{i}", "path": f"tasks/t{i}", "metadata": {"difficulty": "easy"},
+             "verifier": {}, "agent": {}, "environment": {}}
+            for i in range(6)
+        ],
+        "results": [{**r, "operations": []} for r in rows],
+        "summary": summarize_task_results(rows, baseline_harness="noskill"),
+    }
+    validate_artifact("task_runs", artifact)
+
+    md = render_task_runs_report(artifact)
+    assert "## Paired significance vs baseline (McNemar)" in md
+    # 12 pairs from 6 tasks: the caveat has to reach the reader, not just the JSON.
+    assert "only 6 independent task(s)" in md

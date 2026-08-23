@@ -25,7 +25,19 @@ arm_significance(evaluations, baseline_arm, ...)
     family-wise correction across the arms.
 
 Re-exported from :mod:`agent_benchmarks.eval.interactions`:
-``detect_factorial_cells``, ``interaction_test``, ``interaction_significance``.
+
+detect_factorial_cells(arms)
+    Find ``(a, b, a+b)`` triples among arm names, per ``CombinedTreatment``.
+interaction_test(evaluations, ...)
+    Properly paired 2x2 interaction contrast ``AB - A - B + baseline``.
+interaction_significance(evaluations, arms, baseline_arm, ...)
+    Every detected 2x2 cell, corrected as its own hypothesis family.
+
+Everything here assumes a continuous outcome (the judge's 0–100 aggregate).
+Paired **binary** outcomes — the execution-verified task track, where a cell
+either passed its test suite or did not — belong in
+:mod:`agent_benchmarks.eval.binary_stats`, which uses McNemar's exact test
+instead.
 """
 
 from __future__ import annotations
@@ -337,11 +349,18 @@ def _describe_deltas(
     """
     d_mean = _mean(deltas)
     d_sd = _sample_sd(deltas)
-    # d_z is *unbounded* when the deltas are constant and non-zero, not zero:
-    # reporting 0.0 would label a flawless, perfectly consistent shift
-    # "negligible". None renders as "unknown", which is what we actually know.
     degenerate = _is_degenerate(d_mean, d_sd)
-    cohens_d = None if degenerate else round(d_mean / d_sd, 3)
+    if not degenerate:
+        cohens_d = round(d_mean / d_sd, 3)
+    elif d_mean == 0:
+        # Every pair identical: the limit of 0/0 here is a genuine null, and
+        # "0.0 (negligible)" says more than "unknown" would.
+        cohens_d = 0.0
+    else:
+        # d_z is *unbounded* when the deltas are constant and non-zero, not
+        # zero: reporting 0.0 would label a flawless, perfectly consistent
+        # shift "negligible". None renders as "unknown" — what we actually know.
+        cohens_d = None
     ci = mean_ci(deltas, confidence=confidence, seed=seed)
 
     result: Dict[str, Any] = {

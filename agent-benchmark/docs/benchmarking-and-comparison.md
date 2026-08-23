@@ -225,12 +225,21 @@ sample: a question contributes a pair only when both arms produced an aggregate,
 so the delta varies by treatment rather than by a re-drawn control.
 
 Because one run tests several arms at once, p-values are corrected for
-multiplicity. `--stats-correction holm` (the default, Holm-Bonferroni) controls
-the family-wise error rate; `--stats-correction bh` (Benjamini-Hochberg)
-controls the false discovery rate and is the better choice when screening many
-arms. Arm contrasts and factorial-interaction contrasts are corrected as
-**separate families** — pooling them would inflate the multiplier on both — and
-each row records its `correction_family`, `family_size`, and `family_tested`.
+multiplicity — with several arms, the chance that at least one clears 0.05 by
+luck is well above 0.05. `--stats-correction` picks the method:
+
+```bash
+python cli.py arms run ... --stats-correction bh
+```
+
+- `holm` (default) — Holm-Bonferroni, controls the family-wise error rate. The
+  honest choice with one baseline and a handful of arms.
+- `bh` — Benjamini-Hochberg, controls the false discovery rate. Use it when
+  screening many arms and some false positives are acceptable.
+
+Arm contrasts and factorial-interaction contrasts are corrected as **separate
+families** — pooling them would inflate the multiplier on both — and each row
+records its `correction_family`, `family_size`, and `family_tested`.
 
 The **Sig.** column follows the *adjusted* p-value, not the raw one. Three
 values are possible:
@@ -248,6 +257,22 @@ The 95% CI is a Student-t interval on the paired deltas, so it excludes zero
 exactly when the t-test rejects; `ci_method` records which estimator produced it
 (`student_t`, `percentile_bootstrap`, or `degenerate`).
 
+The judged artifact carries the whole block at
+`summary.per_arm.<arm>.significance`, so the table above is renderable from the
+JSON alone.
+
+When arm names form a `a`, `b`, `a+b` triple (see `CombinedTreatment`), the
+artifact also gets `summary.interactions`: the contrast
+`AB − A − B + baseline` computed per question against one shared baseline, which
+is what tells you whether combining two treatments beats the sum of their
+separate effects. Running the arms separately and subtracting run averages does
+not answer that question — the baselines drift between runs.
+
+Everything above assumes the judge's continuous 0–100 score. The
+execution-verified task track (`cli.py tasks run`) has a binary outcome per task
+and uses McNemar's exact test instead — see
+[coding-harnesses.md](coding-harnesses.md).
+
 ## Multi-model comparison
 
 Use `report model-compare` to compare judged treatment-arm JSON files from
@@ -259,7 +284,10 @@ baseline and the treatment arm as the context arm, then computes:
 
 - overall context-arm, baseline, and delta per run,
 - statistical significance of context-arm minus baseline (paired t-test,
-  Wilcoxon signed-rank, Cohen's d_z) \u2014 scipy is a hard dependency, so these are
+  Wilcoxon signed-rank, Cohen's d_z), corrected across the compared runs \u2014
+  every run tests the same "did the treatment help?" question, so they form one
+  family; `--stats-correction holm|bh` selects the method and the table shows
+  the raw p alongside the adjusted one. scipy is a hard dependency, so these are
   always computed; they report `None` only when a run has fewer than
   `eval.stats.MIN_PAIRS_FOR_TEST` (6) complete pairs or the deltas are constant,
 - difficulty breakdown on common question IDs,
@@ -341,6 +369,80 @@ from agent_benchmarks.report.model_compare import (
     prompt_digests,      # the profile_prompt_sha256 values stamped for one arm
 )
 ```
+
+## Caching
+
+Two independent caches sit behind the LLM chokepoint
+(`agent_benchmarks/caching.py`). Both are about cost, not about results: the text
+the model sees is byte-identical whether they are on or off.
+
+### Provider prompt caching
+
+Providers charge a fraction of the input price for a request prefix they have
+already seen. Anthropic-family models need an explicit breakpoint
+(`cache_control`); OpenAI and Gemini cache long prefixes on their own.
+
+Two conditions must hold, and the second used to fail silently here:
+
+1. The breakpoint has to be set — done automatically, on prefixes of at least
+   12000 characters (`MIN_CACHEABLE_PREFIX_CHARS`). Below the provider's minimum
+   the prefix is ignored and the write surcharge is pure loss; the minimum is
+   1024 tokens for most Anthropic models and 2048 for the small ones, so at ~4
+   characters per token 12000 is the first round figure that clears the higher
+   floor with margin.
+2. The reused text has to be an actual **prefix**. The answer prompt now puts
+   the injected context *before* the question for exactly this reason. Earlier
+   versions asked the question first, so a 12k-character skill document could
+   never be a reusable prefix and `cache_hit_ratio` was always 0.0%.
+
+   **This reorder changes model output.** Scores from runs made before it are
+   not directly comparable with scores made after.
+
+Only *question-independent* context is offered for caching. A skill body is the
+same for every question (`context_is_static=True`); `docs` retrieval is reranked
+per query, so annotating it would pay the write surcharge on every call and never
+hit. A combined arm is cacheable only when every context-bearing part is.
+
+The judge rubric is deliberately not cached: at ~1–2k characters it is far below
+the provider minimum.
+
+`AGENT_BENCHMARK_PROMPT_CACHE=0` turns the breakpoints off (default: on). The
+`Cache hit` column in the arms report reads `cache_hit_ratio` from
+`cost_summary`, which is `cache_read_tokens / prompt_tokens` as the provider
+reported them — so the column is now a real measurement rather than a constant
+zero.
+
+### Response caching
+
+Off unless `AGENT_BENCHMARK_RESPONSE_CACHE` names a directory:
+
+```bash
+AGENT_BENCHMARK_RESPONSE_CACHE=.cache/responses python cli.py arms run ...
+```
+
+A byte-identical request (same model, message text, streaming flag, and
+`max_tokens`) replays the stored completion instead of calling the provider. It
+pays off mainly for the `baseline` arm, which is identical across treatment runs,
+and for re-running a pipeline after changing only the reporting code.
+
+The key is computed over the message **text**, not the request structure, which
+is what keeps the two caches independent: a prompt-cache breakpoint splits one
+string into two `text` blocks without changing a character of what the model
+reads, so hashing the raw structure would make `AGENT_BENCHMARK_PROMPT_CACHE=0`
+discard every entry already paid for. `max_tokens` *is* in the key — a truncated
+completion is a different answer.
+
+`AGENT_BENCHMARK_RESPONSE_CACHE` accepts the same off values as the prompt-cache
+switch (`0`, `false`, `no`, `off`, empty), so disabling one the way you disable
+the other does not create a cache directory named `0`. Pointing it at an existing
+*file* is a configuration error and raises, rather than presenting as a cache
+that never hits.
+
+A replayed entry reports the **stored** usage record — tokens, cost and latency
+as measured when the call was really made, not `$0`/`0s`, so cost stays
+comparable across runs. The flip side: latency from a cached run is a recording,
+not a measurement. That is why this cache is opt-in, and why it should stay off
+for any run whose latency numbers you intend to quote.
 
 ## Baselines
 

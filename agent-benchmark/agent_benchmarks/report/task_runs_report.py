@@ -48,6 +48,76 @@ def _self_report(output_dir: str | None) -> tuple[str, int | None]:
     return text[:160], obj.get("num_turns")
 
 
+def _fmt_p(p: Any) -> str:
+    """Render a p-value; ``—`` means no test could run, which is not ``p = 1``."""
+    if not isinstance(p, (int, float)):
+        return "—"
+    return "<0.0001" if p < 0.0001 else f"{p:.4f}"
+
+
+def _mcnemar_lines(cmp: dict[str, Any], baseline: str | None) -> list[str]:
+    """Paired significance table for the pass/fail outcomes.
+
+    Pass rates on this track are binary per task, so the comparison is McNemar's
+    exact test on the disagreements rather than a t-test on scores.
+    """
+    rows = [(h, cr["mcnemar"]) for h, cr in cmp.items() if cr.get("mcnemar")]
+    if not rows:
+        return []
+
+    lines = [
+        "## Paired significance vs baseline (McNemar)",
+        "",
+        f"_Each harness is paired per task-repeat against `{baseline}`. Only the "
+        "**discordant** cells — tasks one arm solved and the other did not — "
+        "carry evidence; tasks both arms passed or both failed are shown so a "
+        "null result can be told apart from a suite with no headroom left. "
+        f"p is the two-sided exact binomial, adjusted across the {len(rows)} "
+        "harness(es) compared here (Holm-Bonferroni)._",
+        "",
+        "| Harness | Pass-rate Δ | 95% CI | Fixed | Broke | Both pass | Both fail "
+        "| p | p (adj) | Sig. | n |",
+        "| --- | ---: | :---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | ---: |",
+    ]
+    for harness, mc in rows:
+        significant = mc.get("significant_adjusted")
+        if significant is None:
+            significant = mc.get("significant")
+        sig_s = "—" if significant is None else ("yes" if significant else "no")
+        lo, hi = mc.get("ci_lo"), mc.get("ci_hi")
+        ci_s = (
+            f"[{lo*100:+.1f}, {hi*100:+.1f}] pp"
+            if isinstance(lo, (int, float)) and isinstance(hi, (int, float))
+            else "—"
+        )
+        lines.append(
+            f"| `{harness}` | {mc.get('paired_pass_rate_delta', 0)*100:+.2f} pp | {ci_s} | "
+            f"{mc.get('n_gained', 0)} | {mc.get('n_lost', 0)} | "
+            f"{mc.get('n_both_passed', 0)} | {mc.get('n_both_failed', 0)} | "
+            f"{_fmt_p(mc.get('p_exact'))} | {_fmt_p(mc.get('p_adjusted'))} | "
+            f"{sig_s} | {mc.get('n', 0)} |"
+        )
+    excluded = sum(mc.get("n_excluded", 0) for _, mc in rows)
+    if excluded:
+        lines += [
+            "",
+            f"_{excluded} cell-exclusion(s) summed across the comparisons above: "
+            "cells present for one harness only, or where a harness itself "
+            "errored (missing data, not a verified failure)._",
+        ]
+    if any(mc.get("pseudo_replicated") for _, mc in rows):
+        units = min(mc.get("n_units", 0) for _, mc in rows)
+        lines += [
+            "",
+            f"_⚠️ Repeats are paired as separate cells, so the {rows[0][1].get('n', 0)} "
+            f"pairs come from only {units} independent task(s). Repeats of one task "
+            "share its difficulty, so the exact p above is anti-conservative — read "
+            "it as a screening signal, not a claim at α = 0.05._",
+        ]
+    lines.append("")
+    return lines
+
+
 def render_task_runs_report(data: dict[str, Any]) -> str:
     """Render a ``task_runs.v1`` artifact as Markdown."""
     lines: list[str] = []
@@ -154,6 +224,7 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
             lines.append(f"| `{h}` | {prd_s} | {cr.get('passed_delta', 0):+} | "
                          f"{cr.get('operation_count_delta', 0):+} | {cd_s} |")
         lines.append("")
+        lines.extend(_mcnemar_lines(cmp, baseline))
 
     # ── per-task pass + cost (one column pair per harness) ──
     lines.append("## Per-task pass + cost")

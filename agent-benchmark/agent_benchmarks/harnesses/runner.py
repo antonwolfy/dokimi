@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from agent_benchmarks.eval import binary_stats
+from agent_benchmarks.eval.stats import adjust_pvalues
+
 from .models import HarnessResult, OperationRecord, TaskRunResult
 from .registry import create_harness
 from .tasks import TaskSpec
@@ -158,6 +161,7 @@ def summarize_task_results(
     if baseline_harness and baseline_harness in per_harness:
         base = per_harness[baseline_harness]
         base_pass = base.get("pass_rate")
+        outcomes, attempted = _outcomes_by_cell(rows)
         for harness, stats in per_harness.items():
             if harness == baseline_harness:
                 continue
@@ -178,9 +182,106 @@ def summarize_task_results(
                     if isinstance(arm_cost, (int, float)) and isinstance(base_cost, (int, float))
                     else None
                 ),
+                "mcnemar": _paired_binary_test(
+                    outcomes, attempted, harness, baseline_harness
+                ),
             }
+        _correct_across_harnesses(comparisons)
 
     return {"per_harness": per_harness, "comparisons": comparisons}
+
+
+def _outcomes_by_cell(
+    rows: list[dict[str, Any]],
+) -> tuple[dict[str, dict[tuple, bool]], dict[str, set[tuple]]]:
+    """``(verdicts, attempted)`` keyed by harness, over ``(task, repeat)`` cells.
+
+    ``verdicts`` holds only cells that produced a real pass/fail. Rows whose
+    harness raised carry ``metrics.error`` and are dropped: a docker build
+    failure is missing data, not a verified failure, and counting it against the
+    treatment would charge infrastructure flakiness to the skill.
+
+    ``attempted`` holds every cell that was *tried*, errors included, because
+    that is the denominator ``n_excluded`` has to be measured against — see
+    :func:`_paired_binary_test`.
+    """
+    out: dict[str, dict[tuple, bool]] = {}
+    attempted: dict[str, set[tuple]] = {}
+    for row in rows:
+        key = (row.get("task"), row.get("repeat", 1))
+        attempted.setdefault(row["harness"], set()).add(key)
+        if row.get("metrics", {}).get("error"):
+            continue
+        out.setdefault(row["harness"], {})[key] = bool(row.get("passed"))
+    return out, attempted
+
+
+def _paired_binary_test(
+    outcomes: dict[str, dict[tuple, bool]],
+    attempted: dict[str, set[tuple]],
+    harness: str,
+    baseline: str,
+) -> dict[str, Any] | None:
+    """McNemar's exact test for one harness against the baseline.
+
+    Pairs on the ``(task, repeat)`` cell. Task identity is the real matching;
+    lining repeats up by index is arbitrary between harnesses but keeps every
+    comparison within one task, which is what the pairing is for. Cells missing
+    on either side are excluded rather than treated as failures.
+    """
+    arm_cells = outcomes.get(harness, {})
+    base_cells = outcomes.get(baseline, {})
+    shared = sorted(set(arm_cells) & set(base_cells))
+    if not shared:
+        return None
+    res = binary_stats.mcnemar_test(
+        [arm_cells[k] for k in shared],
+        [base_cells[k] for k in shared],
+        # The task, not the cell: repeats of one task are not independent pairs,
+        # so with repeats > 1 the exact p is anti-conservative. mcnemar_test
+        # records that rather than letting n stand in for the sample size.
+        units=[task for task, _repeat in shared],
+    )
+    if res is not None:
+        # How much was thrown away, so a shrunken n is visible in the artifact
+        # instead of silently making the comparison look cleaner than it is.
+        # Measured against the cells *attempted*, not the ones that survived:
+        # counting only surviving cells missed every cell that errored on both
+        # sides — the docker-is-broken case, where the loss is largest and the
+        # artifact reported zero exclusions.
+        universe = attempted.get(harness, set()) | attempted.get(baseline, set())
+        res["n_excluded"] = len(universe) - len(shared)
+    return res
+
+
+def _correct_across_harnesses(
+    comparisons: dict[str, dict[str, Any]], *, correction: str = "holm"
+) -> None:
+    """Adjust the McNemar p-values across the harnesses tested in this sweep.
+
+    Every non-baseline harness answers the same "does this treatment solve more
+    tasks?" question against one shared baseline, so they are one family, just
+    as the treatment arms are on the judged track.
+
+    ``correction`` feeds both the math and the recorded label. Naming the method
+    twice — once as ``method=`` and once as a literal in the artifact — lets the
+    two drift, so a reader could be told "holm" while BH was applied.
+    """
+    tested = [h for h, cr in comparisons.items() if cr.get("mcnemar")]
+    adjusted = adjust_pvalues(
+        [comparisons[h]["mcnemar"]["p_exact"] for h in tested], method=correction
+    )
+    for harness, adj in zip(tested, adjusted, strict=True):
+        mc = comparisons[harness]["mcnemar"]
+        mc["p_adjusted"] = adj
+        mc["correction"] = correction
+        # Named so this family is not confused with the judged track's arm and
+        # interaction families, which are corrected separately.
+        mc["correction_family"] = "harnesses"
+        mc["family_size"] = len(tested)
+        mc["significant_adjusted"] = (
+            None if adj is None else bool(adj < binary_stats.ALPHA)
+        )
 
 
 def _error_result(harness_id: str, task: TaskSpec, output_dir: Path, exc: Exception) -> HarnessResult:

@@ -621,3 +621,125 @@ def test_report_renders_na_instead_of_none_for_suppressed_pvalues(tmp_path):
     model_compare.generate_combined_report([("m", run)], [], ["m"], out)
     text = out.read_text(encoding="utf-8")
     assert "| None |" not in text
+
+
+# --- multiplicity correction across the compared runs ---------------------
+
+
+def _run_with_delta(delta: float, n: int = 6) -> dict:
+    """A run whose treatment beats baseline by ~delta, with some jitter."""
+    return {
+        "arms": ["baseline", "docs"],
+        "baseline_arm": "baseline",
+        "evaluations": [
+            {
+                "question_id": f"q{i}",
+                "question_text": f"Q{i}",
+                "scores": {
+                    "baseline": {"aggregate": 50.0 + i},
+                    "docs": {"aggregate": 50.0 + i + delta + (1 if i % 2 else -1)},
+                },
+            }
+            for i in range(n)
+        ],
+    }
+
+
+def _section(runs, correction="holm"):
+    from agent_benchmarks.report.model_compare import generate_section_report
+
+    ids = [rid for rid, _ in runs]
+    return "\n".join(generate_section_report(runs, ids, "Regular", None, correction))
+
+
+def test_section_report_adjusts_pvalues_across_runs():
+    from agent_benchmarks.eval import stats
+    from agent_benchmarks.report.model_compare import significance_test
+
+    runs = [("a", _run_with_delta(3.0)), ("b", _run_with_delta(8.0))]
+    text = _section(runs)
+
+    assert "p (adjusted)" in text
+    assert "unadjusted" not in text
+    assert "Holm-Bonferroni" in text
+
+    raw = [
+        significance_test(
+            [e["scores"]["docs"]["aggregate"] for e in data["evaluations"]],
+            [e["scores"]["baseline"]["aggregate"] for e in data["evaluations"]],
+        )["p_ttest"]
+        for _, data in runs
+    ]
+    for p_adj in stats.adjust_pvalues(raw, method="holm"):
+        assert str(p_adj) in text
+
+
+def test_section_report_honors_bh():
+    text = _section([("a", _run_with_delta(3.0)), ("b", _run_with_delta(8.0))], "bh")
+    assert "Benjamini-Hochberg" in text
+
+
+def test_correction_can_flip_a_borderline_verdict():
+    """The point of the change: a raw-significant run may not survive the family."""
+    from agent_benchmarks.eval import stats
+    from agent_benchmarks.report.model_compare import significance_test
+
+    runs = [(f"r{i}", _run_with_delta(1.4 + 0.1 * i)) for i in range(4)]
+    raw = [
+        significance_test(
+            [e["scores"]["docs"]["aggregate"] for e in data["evaluations"]],
+            [e["scores"]["baseline"]["aggregate"] for e in data["evaluations"]],
+        )["p_ttest"]
+        for _, data in runs
+    ]
+    adjusted = stats.adjust_pvalues(raw, method="holm")
+    assert all(p is not None for p in raw)
+    # Correction can only ever raise a p-value, never lower it.
+    assert all(a >= r for a, r in zip(adjusted, raw, strict=True))
+    assert any(a > r for a, r in zip(adjusted, raw, strict=True))
+
+
+def test_unrunnable_test_stays_na_and_does_not_inflate_the_family():
+    """Constant deltas yield no p-value; the row must read N/A, not 'No'."""
+    flat = {
+        "arms": ["baseline", "docs"],
+        "baseline_arm": "baseline",
+        "evaluations": [
+            {"question_id": f"q{i}", "question_text": f"Q{i}",
+             "scores": {"baseline": {"aggregate": 50.0 + i},
+                        "docs": {"aggregate": 60.0 + i}}}   # every delta is +10
+            for i in range(6)
+        ],
+    }
+    text = _section([("flat", flat)])
+    assert "| None |" not in text
+
+    section = text.split("## Statistical Significance")[1]
+    row = next(line for line in section.splitlines() if line.startswith("| **flat** |"))
+    # Delta and effect band are all this data supports: no p-value, no d_z,
+    # no verdict.
+    assert row == "| **flat** | +10.0 | N/A | N/A | N/A | N/A | unknown | N/A |"
+    assert "adjusted across the 0 run(s)" in section
+
+
+def test_cli_exposes_stats_correction_for_model_compare():
+    from agent_benchmarks.cli import build_parser
+    from agent_benchmarks.eval import stats
+
+    for method in stats.CORRECTIONS:
+        args = build_parser().parse_args(
+            ["report", "model-compare", "--regular-runs", "a.json",
+             "--run-ids", "a", "--out", "out.md", "--stats-correction", method]
+        )
+        assert args.stats_correction == method
+
+    assert build_parser().parse_args(
+        ["report", "model-compare", "--regular-runs", "a.json",
+         "--run-ids", "a", "--out", "out.md"]
+    ).stats_correction == "holm"
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            ["report", "model-compare", "--regular-runs", "a.json",
+             "--run-ids", "a", "--out", "out.md", "--stats-correction", "bonferroni"]
+        )

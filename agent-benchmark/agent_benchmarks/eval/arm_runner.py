@@ -24,17 +24,28 @@ from agent_benchmarks.treatments.base import Treatment
 
 logger = logging.getLogger(__name__)
 
-ANSWER_PROMPT_WITH_CONTEXT = """You are answering a user question.
-
-**Question:** {question}
+# Split so the stable half can be a cacheable prompt prefix: providers only
+# reuse a *prefix*, so the context has to precede the question. Note this
+# reordered the prompt relative to earlier runs (the question used to come
+# first), which changes model output — scores from before and after are not
+# directly comparable.
+CONTEXT_PROMPT_PREFIX = """You are answering a user question.
 
 **Relevant context:**
 {context}
+
+"""
+
+CONTEXT_PROMPT_SUFFIX = """**Question:** {question}
 
 **Task:**
 Answer the question using the provided context above where relevant. Be specific, accurate, and actionable. Include code examples if relevant.
 
 **Answer:**"""
+
+#: The full prompt. Concatenation, not a third copy of the text, so the cached
+#: two-block form and the plain single-string form stay byte-identical.
+ANSWER_PROMPT_WITH_CONTEXT = CONTEXT_PROMPT_PREFIX + CONTEXT_PROMPT_SUFFIX
 
 ANSWER_PROMPT_PLAIN = """Answer the following user question. Be specific and include code examples if relevant.
 
@@ -215,11 +226,17 @@ class ArmRunner:
         if cfg.is_agentic:
             return self._answer_agentic_arm(cfg, question_text, t0, shapers, cfg_metadata)
 
+        cache_prefix = None
         if cfg.has_context:
             context = "\n\n---\n\n".join(c["content"] for c in cfg.injected_context)
-            prompt = ANSWER_PROMPT_WITH_CONTEXT.format(
-                question=question_text, context=context[:MAX_CONTEXT_CHARS]
-            )
+            prefix = CONTEXT_PROMPT_PREFIX.format(context=context[:MAX_CONTEXT_CHARS])
+            prompt = CONTEXT_PROMPT_SUFFIX.format(question=question_text)
+            if cfg.context_is_static:
+                # Hand the halves over separately so the provider can cache the
+                # first one; what the model sees is the same concatenation.
+                cache_prefix = prefix
+            else:
+                prompt = prefix + prompt
         else:
             prompt = ANSWER_PROMPT_PLAIN.format(question=question_text)
 
@@ -231,6 +248,7 @@ class ArmRunner:
                 api_key=self.api_key,
                 system=cfg.system_prompt,
                 max_tokens=self.max_tokens,
+                cache_prefix=cache_prefix,
             )
         except Exception as exc:
             logger.exception("Arm %s answer generation failed", treatment.name)

@@ -105,12 +105,20 @@ def test_paired_test_reports_delta_effect_and_ci():
     assert res["n"] == 6
     assert res["delta_mean"] == pytest.approx(10.0)
     assert res["delta_std"] == pytest.approx(0.0)
-    # Zero variance in the deltas -> d_z is undefined (unbounded), not zero:
-    # 0.0 would render as "negligible" for a perfectly consistent +10 shift.
+    # Zero variance with a non-zero shift: d_z is unbounded, so it is reported
+    # as unknown rather than 0.0 — which would have read as "negligible" for a
+    # perfectly consistent +10 shift.
     assert res["cohens_d"] is None
     assert res["effect"] == "unknown"
     assert res["ci_lo"] == pytest.approx(10.0)
     assert res["ci_hi"] == pytest.approx(10.0)
+
+
+def test_identical_scores_are_a_genuine_zero_effect():
+    res = stats.paired_test([50, 51, 52], [50, 51, 52])
+    assert res["delta_mean"] == 0.0
+    assert res["cohens_d"] == 0.0
+    assert res["effect"] == "negligible"
 
 
 def test_paired_test_suppresses_pvalues_on_zero_variance_deltas():

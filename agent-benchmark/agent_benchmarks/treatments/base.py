@@ -59,12 +59,19 @@ class AgentConfig:
             injection.
         metadata: Free-form provenance for the report (retrieval stats, profile
             id, skill name, …).
+        context_is_static: True when ``injected_context`` does not depend on the
+            question — a fixed skill body, not query-driven retrieval. Only then
+            is the context a reusable prompt prefix worth a provider cache
+            breakpoint (see :mod:`agent_benchmarks.caching`); marking volatile
+            context static would pay the cache-write surcharge on every call and
+            never hit.
     """
 
     system_prompt: Optional[str] = None
     injected_context: List[Dict[str, Any]] = field(default_factory=list)
     tools: List[Tool] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    context_is_static: bool = False
 
     @property
     def has_context(self) -> bool:

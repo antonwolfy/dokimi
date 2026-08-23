@@ -64,6 +64,7 @@ def cmd_report_model_compare(args: argparse.Namespace) -> None:
         run_ids,
         args.out,
         treatment_arm=pinned_arm,
+        correction=getattr(args, "stats_correction", "holm"),
     )
 
 
@@ -177,6 +178,18 @@ def register(sub, positive_int) -> None:
         help=(
             "Name of the treatment arm to use as the scored context arm. "
             "Required when a run contains more than one non-baseline arm."
+        ),
+    )
+    mc_p.add_argument(
+        "--stats-correction",
+        default="holm",
+        dest="stats_correction",
+        # Literal so registering the CLI stays stdlib-only; eval.stats.CORRECTIONS
+        # is the source of truth and a test guards against drift.
+        choices=["holm", "bh"],
+        help=(
+            "Multiple-comparison correction applied across the compared runs: "
+            "holm (family-wise error, default) or bh (false discovery rate)."
         ),
     )
     mc_p.set_defaults(func=cmd_report_model_compare)

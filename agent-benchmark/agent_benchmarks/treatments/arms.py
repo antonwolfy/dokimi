@@ -242,6 +242,9 @@ class SkillTreatment(Treatment):
         }
         return AgentConfig(
             injected_context=[chunk],
+            # The skill body is the same for every question, so it is a genuine
+            # cacheable prefix — unlike DocTreatment's query-driven chunks.
+            context_is_static=True,
             metadata={
                 "arm_kind": "skill",
                 "skill_name": self.skill.name,
@@ -322,9 +325,16 @@ class CombinedTreatment(Treatment):
             merged_metadata["dropped_system_prompts"] = with_prompt[1:]
         system_prompt = next((c.system_prompt for c in configs if c.system_prompt), None)
 
+        # A prefix is only reusable if *everything* in it is; one query-driven
+        # doc chunk anywhere in the merged context makes the whole block vary.
+        context_is_static = all(
+            c.context_is_static for c in configs if c.injected_context
+        )
+
         return AgentConfig(
             system_prompt=system_prompt,
             injected_context=merged_context,
             tools=merged_tools,
+            context_is_static=context_is_static,
             metadata=merged_metadata,
         )

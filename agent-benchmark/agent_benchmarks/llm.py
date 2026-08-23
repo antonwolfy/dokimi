@@ -9,6 +9,7 @@ import time
 import logging
 from typing import Optional
 
+from agent_benchmarks import caching
 from agent_benchmarks.metrics.usage import UsageRecord
 
 logger = logging.getLogger(__name__)
@@ -203,6 +204,7 @@ def llm_call(
     max_retries: int = 3,
     retry_delay: float = 2.0,
     system: Optional[str] = None,
+    cache_prefix: Optional[str] = None,
 ) -> str:
     """Call any LLM via litellm with automatic retry on transient errors.
 
@@ -215,6 +217,8 @@ def llm_call(
         retry_delay: Initial delay in seconds; doubles each attempt (exponential backoff).
         system: Optional system prompt. When provided it is sent as a leading
             ``system`` message — used to vary the answering agent's persona.
+        cache_prefix: Stable text preceding ``prompt``; see
+            :func:`llm_call_with_usage`.
 
     Returns:
         Model response as a plain string.
@@ -222,7 +226,7 @@ def llm_call(
     text, _ = llm_call_with_usage(
         prompt=prompt, model=model, provider=provider,
         api_key=api_key, max_retries=max_retries, retry_delay=retry_delay,
-        system=system,
+        system=system, cache_prefix=cache_prefix,
     )
     return text
 
@@ -237,6 +241,7 @@ def llm_call_with_usage(
     system: Optional[str] = None,
     stream: bool = False,
     max_tokens: Optional[int] = None,
+    cache_prefix: Optional[str] = None,
 ) -> "tuple[str, UsageRecord]":
     """Like llm_call, but returns ``(text, UsageRecord)``.
 
@@ -254,6 +259,12 @@ def llm_call_with_usage(
         max_tokens: Optional output-token ceiling. Reasoning models can spend the
             provider's default budget entirely on internal reasoning and return
             empty content, so callers benchmarking them should raise this.
+        cache_prefix: Stable leading text (instructions, injected docs, a skill
+            document) that repeats across calls. It is concatenated with
+            ``prompt`` verbatim, and on Anthropic-family models it gets an
+            explicit cache breakpoint when long enough to be worth one — see
+            :mod:`agent_benchmarks.caching`. Passing the whole prompt as
+            ``prompt`` still works and simply never caches.
 
     Returns:
         (response_text: str, usage: UsageRecord)
@@ -263,10 +274,22 @@ def llm_call_with_usage(
     api_key = _resolve_api_key(provider, api_key)
     litellm_model = _build_litellm_model(model, provider)
 
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
+    messages, _cached_prefix = caching.build_messages(
+        prompt, system=system, cache_prefix=cache_prefix,
+        model=model, provider=provider,
+    )
+
+    # max_tokens belongs in the key: it changes the response (a truncated or
+    # reasoning-starved completion is a different answer), so replaying a cache
+    # entry recorded under a different ceiling would silently mix the two.
+    cache_key = caching.response_cache_key(
+        litellm_model=litellm_model,
+        messages=messages,
+        extra={"stream": stream, "max_tokens": max_tokens},
+    )
+    hit = caching.load_response(cache_key)
+    if hit is not None:
+        return hit
 
     last_exc: Optional[Exception] = None
     delay = retry_delay
@@ -274,8 +297,10 @@ def llm_call_with_usage(
     for attempt in range(max_retries + 1):
         try:
             if stream:
-                return _stream_call(completion, litellm_model, messages, api_key,
-                                    model, provider, max_tokens=max_tokens)
+                text, usage = _stream_call(completion, litellm_model, messages, api_key,
+                                           model, provider, max_tokens=max_tokens)
+                caching.store_response(cache_key, text, usage)
+                return text, usage
 
             t0 = time.time()
             extra = {"max_tokens": max_tokens} if max_tokens else {}
@@ -287,8 +312,10 @@ def llm_call_with_usage(
             )
             latency = time.time() - t0
             text = resp.choices[0].message.content
-            return text, _extract_usage(resp, model, provider, latency_sec=latency,
-                                        litellm_model=litellm_model)
+            usage = _extract_usage(resp, model, provider, latency_sec=latency,
+                                   litellm_model=litellm_model)
+            caching.store_response(cache_key, text, usage)
+            return text, usage
 
         except Exception as exc:
             last_exc = exc
@@ -371,6 +398,13 @@ def chat_completion(
     response so callers can inspect ``choices[0].message.tool_calls``. Used by
     the agentic treatment runner.
 
+    A long system prompt gets a provider cache breakpoint
+    (:func:`caching.annotate_system_breakpoint`), because an agent loop re-sends
+    the whole conversation every turn and would otherwise pay full input price
+    for the same skill body N times over. The **response** cache is deliberately
+    not used here: replaying a stored completion would skip the tool calls the
+    loop is measuring, so a hit would be a different run, not a cheaper one.
+
     Args:
         messages: OpenAI-style message dicts.
         tools: Optional list of tool schemas (OpenAI/litellm format).
@@ -385,6 +419,9 @@ def chat_completion(
 
     api_key = _resolve_api_key(provider, api_key)
     litellm_model = _build_litellm_model(model, provider)
+    messages, _cached = caching.annotate_system_breakpoint(
+        messages, model=model, provider=provider
+    )
 
     kwargs = {}
     if tools:

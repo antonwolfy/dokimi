@@ -197,12 +197,75 @@ scripts/run_task.sh oracle terminal-bench-tasks/intel-perf-serial-accumulator /t
 - `summary.per_harness`: pass rate, elapsed time, operation totals, a rolled-up
   `cost{}` block (`total_cost_usd` is `null` when no call was priced), and a
   `per_task{}` pass breakdown.
-- `summary.comparisons`: `pass_rate_delta`, `passed_delta`, and `cost_delta_usd`
-  against `--baseline-harness`.
+- `summary.comparisons`: `pass_rate_delta`, `passed_delta`, `cost_delta_usd`, and
+  a `mcnemar{}` significance block against `--baseline-harness` (below).
 
 The artifact is schema-validated on write, like question/answer/eval/arms
 artifacts. Per-run detail (the agent's `claude --output-format json` result, the
 prompt, and `run.log`) is written under each cell's output directory.
+
+## Statistics on the execution-verified track
+
+Ground truth here is binary: the task's own test suite exited 0 or it did not.
+That rules out the paired t-test the judged Q&A track uses — on 0/1 outcomes the
+per-task deltas are `{-1, 0, +1}`, badly non-normal, and all of the information
+about a difference sits in the *disagreements*.
+
+So `summary.comparisons.<harness>.mcnemar` holds **McNemar's exact test**
+(`agent_benchmarks/eval/binary_stats.py`), pairing on the `(task, repeat)` cell
+against the baseline harness. It is computed automatically whenever
+`--baseline-harness` is set; no flag to enable. The report renders it as
+_Paired significance vs baseline (McNemar)_.
+
+The block reports the whole 2×2 table, not just a p-value:
+
+| Field | Meaning |
+|---|---|
+| `n_gained` | cells the treatment passed and the baseline failed |
+| `n_lost` | cells the baseline passed and the treatment failed |
+| `n_both_passed` / `n_both_failed` | the concordant cells |
+| `paired_pass_rate_delta`, `ci_lo`, `ci_hi` | paired delta and its bootstrap interval |
+| `p_exact` | two-sided exact binomial on the discordant count |
+| `p_adjusted` | Holm-corrected across the non-baseline harnesses in the sweep |
+| `correction_family` | always `harnesses` — the judged track's arm and interaction families are corrected separately |
+| `n_excluded` | cells dropped from the pairing (see below) |
+| `n_units`, `pseudo_replicated` | independent tasks behind `n` pairs, and whether they are fewer |
+
+Note the two similarly named deltas. `mcnemar.paired_pass_rate_delta` is
+`(n_gained - n_lost) / n` over the **shared** cells; its sibling
+`comparisons.<harness>.pass_rate_delta` subtracts two marginal pass rates over
+every row each harness ran. They disagree whenever a cell is excluded.
+
+Four properties are worth internalising before reading the number:
+
+- **Only discordant cells count.** Adding ten easy tasks both arms already solve
+  changes `paired_pass_rate_delta` (it is a rate over all tasks) but leaves
+  `p_exact` untouched. `n_both_passed` is reported so a null result can be told
+  apart from a suite with no headroom left.
+- **A small suite cannot reach significance.** Four fixes and zero regressions
+  gives *p* = 0.125; six and zero gives 0.0312. That is the honest floor of a
+  20-task suite, not a defect.
+- **`--repeats` does not buy the power it looks like.** Repeats are paired as
+  separate `(task, repeat)` cells, so `n` grows but the independent units do not:
+  repeats of one task share its difficulty, and McNemar assumes independent
+  pairs. `n_units` reports the distinct tasks, `pseudo_replicated` flags
+  `n_units < n`, and the report prints a caveat — the p-value is then
+  anti-conservative and should be read as a screening signal, not a claim at α.
+  Adding *tasks* adds real power; adding repeats mostly reduces per-cell noise.
+- **No discordant pair at all means no verdict.** `p_exact` and `significant` are
+  `null`, and the report shows a dash. Absent evidence is not evidence of no
+  difference.
+
+`n_excluded` counts cells left out of the pairing, measured against every cell
+either harness *attempted*: present for one harness only, or belonging to a row
+whose harness itself errored (`metrics.error`, e.g. a docker build failure).
+Those are missing data, not verified failures — scoring them as failures would
+charge infrastructure flakiness to the treatment.
+
+The exact binomial is used rather than the chi-square approximation because the
+discordant count on a suite this size is routinely under 10, where the
+approximation is unreliable. It needs no SciPy, so this test is always available
+— unlike the judged track's `p_ttest`.
 
 ## Operation Telemetry
 
@@ -232,6 +295,11 @@ ran the same task set under the same model and task commit.
 
 The Q&A `arms run` path remains separate. It measures context artifacts with an
 LLM judge. The `tasks run` path measures executable work with verifier pass rate.
+The two therefore need different statistics — continuous scores against a
+baseline arm ([benchmarking-and-comparison.md](benchmarking-and-comparison.md))
+versus paired binary outcomes against a baseline harness (above) — and their
+numbers are not interchangeable. A skill that wins on the judged track has not
+been shown to make anything run.
 
 ## External Sources
 
