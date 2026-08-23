@@ -117,6 +117,11 @@ def test_read_task_manifest_loads_executable_and_skips_the_rest(tmp_path):
     assert by_name["onetbb-real-task-answer-quality"].skipped
     assert "not an executable Harbor task" in by_name["onetbb-real-task-answer-quality"].reason
 
+    # Both of these are the *expected* kind of not-loaded, so neither may reach
+    # the scan's exit code -- the other half of separating skips from failures.
+    assert not by_name["onetbb-planned-task"].failed
+    assert not by_name["onetbb-real-task-answer-quality"].failed
+
 
 def test_read_task_manifest_falls_back_to_bare_scan_without_manifest(tmp_path):
     _write_task(tmp_path, "evaluation/harbor/tasks", "bare-task")
@@ -170,8 +175,55 @@ def test_read_task_manifest_rejects_task_name_escaping_tasks_root(tmp_path):
 
     entries = read_task_manifest(tmp_path)
     assert len(entries) == 1
-    assert entries[0].skipped
+    assert not entries[0].loaded
     assert "escapes tasks root" in entries[0].reason
+    # Classified as a failure, not a skip: a rejected traversal must reach the
+    # scan's exit code, the way the skills side already reports `catalog_path
+    # escapes root` as an error. Reported as a skip it would print the same
+    # word as a benign `status: "planned"` entry and exit 0.
+    assert entries[0].failed
+    assert not entries[0].skipped
+
+
+def test_read_task_manifest_reports_a_broken_present_task_as_a_failure(tmp_path):
+    # Declared executable, directory on disk, unparseable task.toml. Reported
+    # as a skip this reads exactly like `status: "planned"` and the scan exits
+    # 0 -- so a pre-flight scan of a catalog that cannot run says it is clean.
+    _write_task(tmp_path, "evaluation/harbor/tasks", "onetbb-broken-task")
+    (tmp_path / "evaluation/harbor/tasks/onetbb-broken-task/task.toml").write_text(
+        "[metadata\ndifficulty = \"easy\"\n", encoding="utf-8"
+    )
+    (tmp_path / "evaluation" / "harbor" / "suites.json").write_text(
+        '{"suites": [{"skill": "x", "tasks": ['
+        '{"name": "onetbb-broken-task", "status": "implemented", "track": "executable"}'
+        ']}]}',
+        encoding="utf-8",
+    )
+
+    entries = read_task_manifest(tmp_path)
+    assert len(entries) == 1
+    assert not entries[0].loaded
+    assert entries[0].failed
+    assert not entries[0].skipped
+    assert "failed to load" in entries[0].reason
+
+
+def test_read_task_manifest_reports_a_task_missing_instruction_as_a_failure(tmp_path):
+    # The other way `load_task` refuses an on-disk task: a valid task.toml with
+    # a required file missing. Same classification as the malformed-TOML case.
+    _write_task(tmp_path, "evaluation/harbor/tasks", "onetbb-no-instruction")
+    (tmp_path / "evaluation/harbor/tasks/onetbb-no-instruction/instruction.md").unlink()
+    (tmp_path / "evaluation" / "harbor" / "suites.json").write_text(
+        '{"suites": [{"skill": "x", "tasks": ['
+        '{"name": "onetbb-no-instruction", "status": "implemented", "track": "executable"}'
+        ']}]}',
+        encoding="utf-8",
+    )
+
+    entries = read_task_manifest(tmp_path)
+    assert len(entries) == 1
+    assert entries[0].failed
+    assert not entries[0].skipped
 
 
 def test_read_skill_manifest_raises_clear_error_on_malformed_yaml(tmp_path):

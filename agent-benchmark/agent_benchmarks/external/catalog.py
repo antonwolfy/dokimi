@@ -64,7 +64,16 @@ class SkillCatalogEntry:
 
 @dataclass
 class TaskCatalogEntry:
-    """One task as reported by a catalog scan."""
+    """One task as reported by a catalog scan.
+
+    Three outcomes, not two. ``skipped`` is a declared entry a scan is
+    *expected* to pass over -- ``status: "planned"`` with no task directory on
+    disk yet, or a ``track`` this repo's ``tasks run`` doesn't drive.
+    ``failed`` is an entry that should have worked and didn't. Only ``failed``
+    makes ``catalog scan`` exit non-zero, which is the reason a pre-flight scan
+    is worth running at all: collapsing both into ``skipped`` reports a catalog
+    that cannot run as clean, using the same word the benign cases print.
+    """
 
     name: str
     status: Optional[str]
@@ -72,11 +81,12 @@ class TaskCatalogEntry:
     path: Optional[Path]
     task: Optional[TaskSpec] = None
     skipped: bool = False
+    failed: bool = False
     reason: Optional[str] = None
 
     @property
     def loaded(self) -> bool:
-        return self.task is not None and not self.skipped
+        return self.task is not None and not self.skipped and not self.failed
 
 
 def read_skill_manifest(root: Path) -> list[SkillCatalogEntry]:
@@ -170,13 +180,16 @@ def read_task_manifest(
             task_dir = tasks_root / name
 
             if not _within(task_dir, tasks_root):
+                # A failure, not a skip: the manifest asked us to leave the
+                # checkout, which is the same thing ``read_skill_manifest``
+                # reports as an error for ``catalog_path``.
                 entries.append(
                     TaskCatalogEntry(
                         name=name,
                         status=status,
                         track=track,
                         path=None,
-                        skipped=True,
+                        failed=True,
                         reason=f"task name escapes tasks root: {name!r}",
                     )
                 )
@@ -211,13 +224,15 @@ def read_task_manifest(
             try:
                 task = load_task(task_dir)
             except (FileNotFoundError, ValueError) as exc:
+                # The entry is declared executable and its directory is on
+                # disk, so this is the case the scan exists to catch.
                 entries.append(
                     TaskCatalogEntry(
                         name=name,
                         status=status,
                         track=track,
                         path=task_dir,
-                        skipped=True,
+                        failed=True,
                         reason=f"failed to load: {exc}",
                     )
                 )

@@ -155,26 +155,47 @@ jobs:
           name: terminal-bench-oneapi-logs-${{ matrix.task }}
           path: ${{ github.workspace }}/logs/
 
-  # NOT a load-bearing check: `harbor run` does not propagate a non-zero
-  # exit code for errored/cancelled trials in harbor 0.21.0, and on this
-  # runner it has failed two different ways across two real CI runs of this
-  # PR -- a swallowed "docker compose ... unknown flag: --project-name"
-  # (no Compose v2 on this runner) and a hard "network_mode='no-network' is
-  # not supported" crash. Either way, a green "harbor run -a oracle" step
-  # here does not mean the run actually passed; treat this job as proving
-  # only that `pip install harbor` and the task image build succeed.
-  # continue-on-error + the result.json dump below are deliberate: they
-  # surface the real Harbor exit state for a human without blocking merges
-  # on infra (Compose v2, Harbor's network_mode support) this repo does not
-  # control. Promote to blocking once that infra is fixed and result.json
-  # is parsed and asserted on here.
+  # What this job proves, and what it deliberately does not.
+  #
+  # BLOCKING: `pip install harbor` resolves at the pinned version and the
+  # task image builds. Those are this repo's own contract and they must not
+  # regress silently.
+  #
+  # NOT BLOCKING: the `harbor run -a oracle` step. Two independent reasons
+  # a green run there would mean nothing:
+  #
+  #   1. `harbor run` does not propagate a non-zero exit code for
+  #      errored/cancelled trials, so success is unobservable from $?.
+  #   2. This runner cannot satisfy what the task asks for. It has failed
+  #      three ways across real CI runs: a swallowed "docker compose ...
+  #      unknown flag: --project-name" (no Compose v2 here), and -- since
+  #      Harbor started rejecting policies it cannot enforce -- a hard
+  #      "network_mode='no-network' is not supported by
+  #      EnvironmentType.DOCKER". The latter is Harbor being correct:
+  #      onetbb-parallel-sort's task.toml sets `allow_internet = false`,
+  #      Harbor maps that to network_mode='no-network', and the docker
+  #      provider only advertises the `disable_internet` capability when
+  #      `_egress_control_kernel_support()` holds -- which it does not in
+  #      this dind runner. Refusing beats running the oracle with an
+  #      internet connection the task forbade.
+  #
+  # So continue-on-error sits on that ONE step, not on the job: an infra
+  # limitation this repo does not control stays non-fatal, while a broken
+  # `pip install` or a broken Dockerfile still reddens CI. The result.json
+  # dump and artifact upload below keep the real Harbor exit state visible
+  # to a human either way. Promote the run step to blocking once the runner
+  # has Compose v2 + egress control, and assert on result.json here.
+  #
+  # Harbor is pinned: an unpinned `pip install harbor` silently moved this
+  # job from 0.21.0 to 0.22.0 and changed its failure mode mid-PR. Bump
+  # deliberately, so a new Harbor release is a reviewed diff and not a
+  # surprise red X on an unrelated PR.
   harbor-oracle-smoke:
     name: Harbor install/build smoke test (harbor run is best-effort)
     runs-on: ubuntu-latest
     permissions:
       contents: read
     timeout-minutes: 15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -183,13 +204,14 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install Harbor
-        run: pip install harbor
+        run: pip install 'harbor==0.22.0'
       - name: Build task image
         run: |
           docker build \
             -t intel-hpc-bench/onetbb-parallel-sort:latest \
             terminal-bench-tasks/onetbb-parallel-sort/environment/
       - name: harbor run -a oracle (best-effort; see job comment)
+        continue-on-error: true
         run: |
           harbor run \
             -p terminal-bench-tasks/onetbb-parallel-sort \

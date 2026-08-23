@@ -113,6 +113,60 @@ def test_catalog_scan_exits_nonzero_on_load_error(tmp_path, capsys):
     assert exc_info.value.code == 1
 
 
+def test_catalog_scan_exits_nonzero_on_a_task_that_exists_but_cannot_load(tmp_path, capsys):
+    # The tasks-half sibling of the test above. Both halves need their own case:
+    # skills failures carry an `error`, task failures a `failed` flag, and the
+    # tasks half reached the exit code through a separate branch that nothing
+    # exercised -- so `catalog scan` reported a broken catalog as clean.
+    _write_task(tmp_path, "onetbb-broken-task")
+    (tmp_path / "evaluation/harbor/tasks/onetbb-broken-task/task.toml").write_text(
+        "[metadata\ndifficulty = \"easy\"\n", encoding="utf-8"
+    )
+    (tmp_path / "evaluation" / "harbor" / "suites.json").write_text(
+        '{"suites": [{"skill": "x", "tasks": ['
+        '{"name": "onetbb-broken-task", "status": "implemented", "track": "executable"}'
+        ']}]}',
+        encoding="utf-8",
+    )
+
+    parser = build_parser()
+    args = parser.parse_args(
+        ["catalog", "scan", "--root", str(tmp_path), "--kind", "tasks"]
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        args.func(args)
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    assert "ERROR" in out
+    assert "skipped" not in out
+
+
+def test_catalog_scan_exits_zero_when_every_not_loaded_entry_is_a_benign_skip(tmp_path, capsys):
+    # The guard against over-correcting: a catalog whose only non-loading
+    # entries are `status: "planned"` and a non-executable track is exactly what
+    # uxlfoundation/skills looks like today (43 of its 49 declared tasks), and it
+    # must still exit 0 or the new CI smoke job reddens on a healthy upstream.
+    _write_task(tmp_path, "onetbb-answer-quality-task")
+    (tmp_path / "evaluation" / "harbor" / "suites.json").write_text(
+        '{"suites": [{"skill": "x", "tasks": ['
+        '{"name": "onetbb-planned-task", "status": "planned", "track": "executable"},'
+        '{"name": "onetbb-answer-quality-task", "status": "implemented",'
+        ' "track": "answer-quality"}'
+        ']}]}',
+        encoding="utf-8",
+    )
+
+    parser = build_parser()
+    args = parser.parse_args(
+        ["catalog", "scan", "--root", str(tmp_path), "--kind", "tasks"]
+    )
+    args.func(args)  # no SystemExit
+
+    out = capsys.readouterr().out
+    assert "skipped" in out
+    assert "ERROR" not in out
+
+
 def test_catalog_scan_rejects_missing_root(tmp_path):
     parser = build_parser()
     args = parser.parse_args(

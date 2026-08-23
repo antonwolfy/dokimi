@@ -42,11 +42,15 @@ version uses different flags, pass `--command-template` and keep the same output
 contract. When Harbor is not installed, prefer the `docker-*` harnesses — they
 build, solve, and verify against local Docker directly and record telemetry.
 
-Harbor 0.21.0 does not propagate a non-zero process exit code for
-errored/cancelled trials, and this repo's CI runner has hit Harbor
-environment-start failures (a Docker Compose v2 gap, a `network_mode`
-incompatibility). A `harbor run` invocation exiting 0 is therefore **not**
-sufficient evidence the trial actually passed — parse its `result.json`
+Harbor (pinned to 0.22.0 in CI) does not propagate a non-zero process exit
+code for errored/cancelled trials, and this repo's CI runner has hit Harbor
+environment-start failures: a Docker Compose v2 gap, and a `network_mode`
+rejection. The latter is Harbor behaving correctly — a task declaring
+`allow_internet = false` becomes `network_mode='no-network'`, which the docker
+provider only accepts when the host kernel supports egress control, so on a
+runner without it Harbor refuses the task instead of running it with the
+internet the task forbade. A `harbor run` invocation exiting 0 is therefore
+**not** sufficient evidence the trial actually passed — parse its `result.json`
 (`stats.n_errored_trials`, `stats.evals.<id>.metrics[].mean`) before trusting
 a Harbor-backed harness result. The `docker-*` harnesses don't have this gap:
 `tasks run`'s own `task_runs.v1` artifact (`summary.per_harness.<h>.pass_rate`)
@@ -256,8 +260,13 @@ but not yet implemented (`status: "planned"`, no task directory on disk
 yet) or aren't executable Harbor tasks at all (`track: "answer-quality"` /
 `"hardware"`, a different evaluation track this repo's `tasks run` doesn't
 drive). Skips are expected and don't fail the scan; a load *error* on an
-entry that does exist does. Without a manifest, it falls back to a bare
-directory scan (same as `discover_skills`/`discover_tasks`).
+entry that does exist does, and so does a manifest entry whose
+`catalog_path` or task `name` resolves outside the checkout you pointed
+`--root` at. Both print `ERROR:` and exit 1, so the scan is usable as a
+pre-flight gate before `tasks run` — read the exit code, not just the
+output, because "skipped" is by design not a failure. Without a manifest,
+it falls back to a bare directory scan (same as
+`discover_skills`/`discover_tasks`).
 
 Once scanned, use the entries the same way as local ones:
 
