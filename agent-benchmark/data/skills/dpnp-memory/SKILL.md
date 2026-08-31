@@ -23,11 +23,20 @@ for i in range(100):
     dpnp.add(a, b, out=result)  # Reuses result buffer, no new allocation
 ```
 
-## DPNP Memory Model
+## Memory Model
 
-DPNP arrays are allocated in SYCL unified shared memory (USM) on the device (GPU or CPU). This contrasts with NumPy arrays, which live in CPU heap memory. Memory is freed when Python's reference count drops to zero (typically immediate when a variable goes out of scope); cyclic references are handled by the garbage collector. In long-running scripts or Jupyter notebooks, implicit references (e.g., notebook output cells) can cause memory accumulation. DPNP selects a default device at import time using the SYCL default selector heuristic (`sycl::default_selector_v`), which scores available devices and picks the best one — not necessarily the first GPU. You can query the result with `dpctl.select_default_device()` (returns a SyclDevice object; does not change the default). To override device selection, pass `device=` or `sycl_queue=` to dpnp array constructors; use filter selector strings like `"level_zero:gpu:0"` for explicit targeting. Device memory capacity varies by hardware (integrated GPUs share host RAM; discrete GPUs have dedicated memory). Allocation overhead is higher than CPU malloc, so pre-allocation is important for performance in loops.
+DPNP arrays are backed by SYCL unified shared memory (USM) on a given device, managed by dpctl memory objects. These memory objects, `MemoryUSMDevice`, `MemoryUSMShared`, and `MemoryUSMHost` each represent a different USM type, which is generally chosen when constructing an array via a `usm_type` parameter (`"device"`, `"shared"`, or `"host"`). The `usm_type` can be queried with the
+`array.usm_type` property. In contrast, NumPy arrays only live in CPU heap memory. Allocation overhead for USM is higher than CPU
+malloc, so pre-allocation is important for performance in loops.
 
-## Checking Array Location
+Memory is freed when Python's reference count drops to zero (typically immediate when a variable goes out of scope); cyclic references are handled by the garbage collector. DPCTL and DPNP manage the reference counts of the memory objects and arrays to prevent garbage
+collection during device code execution.
+
+The memory objects themselves are meant to be operated on directly only by power users and by code already working with dpctl; otherwise use the dpnp API. Note also that dpnp submits work to the device asynchronously, so an operation can still be in flight after the Python call has returned. `dpnp.synchronize_array_data(arr)` blocks until the work queued on that array's data has finished — needed before handing the buffer to non-dpnp code, and before timing anything, since an unsynchronized measurement times only the submission.
+
+## Setting and Checking Array Location
+
+DPNP selects a default device at import time using the SYCL default selector heuristic (`sycl::default_selector_v`), which scores available devices and picks the best one — not necessarily the first GPU. You can query the result with `dpctl.select_default_device()` (returns a SyclDevice object; does not change the default). To override device selection, pass `device=` or `sycl_queue=` to dpnp array constructors; use filter selector strings like `"level_zero:gpu:0"` for explicit targeting. The `ONEAPI_DEVICE_SELECTOR` environment variable can also be used to only expose a subset of devices at a time (e.g., `ONEAPI_DEVICE_SELECTOR="opencl:cpu"` will only select `opencl:cpu` devices, while `ONEAPI_DEVICE_SELECTOR="opencl:*"` will select all OpenCL devices). Device memory capacity varies by hardware (integrated GPUs share host RAM; discrete GPUs have dedicated memory).
 
 Every dpnp array has `array.sycl_device` and `array.sycl_queue` properties. Use these to verify which device holds the array. List available devices with `dpctl.get_devices()`. Device names follow the pattern `backend:device_type:index`, for example `opencl:gpu:0` for OpenCL GPU 0, `level_zero:gpu:0` for Level Zero GPU 0, or `opencl:cpu:0` for CPU fallback. Level Zero is the preferred backend for Intel GPUs (lower overhead than OpenCL). If multiple GPUs are present, the default selector picks based on its heuristic — use explicit filter strings like `"level_zero:gpu:0"` or `"opencl:gpu:1"` to target a specific device.
 
