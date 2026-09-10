@@ -1,11 +1,14 @@
 """Products config loading + cross-registry drift detection.
 
-The repo has two registries: ``products.yaml`` (the canonical product-identity
-registry, loaded by :class:`agent_benchmarks.registry.ProductRegistry`) and
-``config/products.yaml`` (LLM/runtime config for the eval track, which also
-restates product identity). The duplicated identity is a drift risk, so this
-module treats the top-level ``products.yaml`` as canonical and detects when
-the two disagree on the GitHub repo for a shared product.
+The repo has two config files: ``products.yaml`` (the canonical
+product-identity registry, loaded by
+:class:`agent_benchmarks.registry.ProductRegistry`) and
+``config/products.yaml`` (LLM/runtime config for the eval track). The
+committed runtime config declares no products, but a caller may add a
+``products:`` block holding per-product eval-track overrides — and any
+identity restated there is a drift risk, so this module treats the top-level
+``products.yaml`` as canonical and detects when the two disagree on the GitHub
+repo for a shared product.
 """
 
 from __future__ import annotations

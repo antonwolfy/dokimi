@@ -44,17 +44,38 @@ def test_export_jsonl(tmp_path):
     assert (out / "README.md").exists()
 
 
-def test_export_real_fixture_jsonl(tmp_path):
-    fixture = Path(__file__).resolve().parents[1] / "answers" / "onetbb.json"
-    if not fixture.exists():
-        pytest.skip("fixture missing")
-    primary = export_artifact("answers", fixture, tmp_path / "out", fmt="jsonl")
+def test_export_answers_artifact_jsonl(tmp_path):
+    """The answers kind flattens a nested per-arm record, which the questions kind does not
+    exercise. This used to point at a captured product run under a path that never existed,
+    so it skipped on every run; the payload is written here instead.
+    """
+    src = tmp_path / "a.json"
+    src.write_text(json.dumps({
+        "schema_version": "answers.v1",
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "total_questions": 1,
+        "answers": [
+            {
+                "question_id": "q1",
+                "question_text": "What is X?",
+                "library_name": "demo",
+                "with_docs": {"answer": "a", "tokens": 3},
+                "without_docs": {"answer": "b", "tokens": 2},
+            }
+        ],
+    }))
+    primary = export_artifact("answers", src, tmp_path / "out", fmt="jsonl")
     assert primary.exists()
-    assert primary.read_text().strip()
+    rows = [json.loads(line) for line in primary.read_text().strip().splitlines()]
+    assert len(rows) == 1
+    assert rows[0]["question_id"] == "q1"
+    assert rows[0]["model"] == "gpt-4o-mini"
+    assert json.loads(rows[0]["with_docs"])["answer"] == "a"
 
 
 def test_dataset_card_contents():
-    card = dataset_card("questions", Path("data/questions/onetbb.json"), 5, ["id", "text"])
+    card = dataset_card("questions", Path("my_questions.json"), 5, ["id", "text"])
     assert "questions.v1" in card
     assert "Rows:** 5" in card
 

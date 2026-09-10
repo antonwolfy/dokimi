@@ -11,11 +11,12 @@ coverage.json
 .env
 
 # Generated benchmark outputs and temporary reports.
-# Curated, version-controlled fixtures live under agent-benchmark/data/;
+# Curated, version-controlled inputs live under agent-benchmark/data/;
 # everything below is scratch produced by CLI runs and must not be committed.
-# The benchmark now lives in a subdirectory of the umbrella repo, so these are
-# anchored to agent-benchmark/ (anchoring also keeps them from matching the
-# curated data/<name>/ dirs, which share names like baselines/ and answers/).
+# The project lives in a subdirectory, so these patterns are anchored to
+# agent-benchmark/. Keep the anchors: an unanchored `questions/` or `answers/`
+# would also match a same-named directory in an evaluation-content checkout
+# placed inside this tree.
 /agent-benchmark/results/
 /agent-benchmark/reports/
 /agent-benchmark/dashboard.json
@@ -26,7 +27,8 @@ coverage.json
 *.log
 *.tar.gz
 
-# Default CLI output locations (curated copies are kept under data/).
+# Default CLI output locations (answers.py, evaluate.py, questions.py,
+# personas.py and run.py write here when --output is not given).
 /agent-benchmark/answers/
 /agent-benchmark/eval/
 /agent-benchmark/questions/
@@ -45,4 +47,3 @@ dist/
 
 # Working notes / scratch planning (not for commit)
 /change_plan.md
-/software-packaging-for-agents/packaging-vision-review.md

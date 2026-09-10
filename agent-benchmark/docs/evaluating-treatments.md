@@ -68,12 +68,19 @@ carry the same stamped judge model and provider.
 ```bash
 python cli.py arms run \
   --product oneTBB \
-  --questions data/questions/onetbb_golden.json \
-  --arms "baseline,docs,profile:data/agent_profiles/concise_expert.md,skill:data/skills/onetbb-quickstart" \
+  --questions <content-checkout>/questions/onetbb_golden.json \
+  --arms "baseline,docs,profile:data/agent_profiles/concise_expert.md,skill:<content-checkout>/skills/onetbb-quickstart" \
   --judge \
   --out-json results/arms/oneTBB.json \
   --out-md results/arms/oneTBB.md
 ```
+
+Question sets and product skills are evaluation content: they are not committed
+here, so every example below names them as `<content-checkout>/…` — a checkout of
+your own content repository. Agent profiles under `data/agent_profiles/` and
+`data/skills/fastcontext/` are the fixtures this repo does commit.
+[external-content.md](external-content.md) shows how to lay such a checkout out
+and how to check it loads before spending money on a run.
 
 Without `--judge` the command only generates answers (cheap, no judge calls).
 Outputs default to `results/arms/<product>.{json,md}` (ignored by git).
@@ -107,8 +114,8 @@ JSON
 
 python cli.py arms matrix-run \
   --product oneTBB \
-  --questions data/questions/onetbb_golden.json \
-  --arms "baseline,docs,skill:data/skills/onetbb-quickstart" \
+  --questions <content-checkout>/questions/onetbb_golden.json \
+  --arms "baseline,docs,skill:<content-checkout>/skills/onetbb-quickstart" \
   --matrix-cells results/arms/matrix.json \
   --judge \
   --out-dir results/arms/oneTBB-matrix
@@ -139,8 +146,10 @@ artifact per cell, a `matrix_rollup.v1` JSON/Markdown report, and paired
   library id). Requires the optional `mcp` SDK: `pip install mcp`.
 - **`profile:<path>`** — a Markdown file; the body (frontmatter stripped) is the
   system prompt. See [`data/agent_profiles/concise_expert.md`](../data/agent_profiles/concise_expert.md).
-  The arm is **named after the frontmatter `id`, not the path**: `profile:data/agent_profiles/dpnp-expert.md`
-  appears in reports and in `--baseline-arm` as `profile:dpnp-expert`. With no
+  The arm is **named after the frontmatter `id`, not the path**: an arm passed as
+  `profile:data/agent_profiles/concise_expert.md` appears in reports and in `--baseline-arm`
+  as `profile:concise_expert`, and a file renamed without touching its `id` keeps the old arm
+  name. With no
   frontmatter — or with malformed YAML, which is ignored silently — the id falls back to
   the filename stem, so name profile files after their id.
 
@@ -191,16 +200,20 @@ artifact per cell, a `matrix_rollup.v1` JSON/Markdown report, and paired
     payloads — every profile body and every `SKILL.md` body under `data/` — and fails at
     95%, so a fixture is caught while it is still growing rather than after it truncates.
     Its message prints the current largest fixture, so no percentage is hardcoded anywhere.
+    It also fails when either channel has no fixture at all: a scan over an empty directory
+    would otherwise report success while measuring nothing.
   - `test_over_cap_bundled_resources_are_known` covers the third channel, the bundled
-    files `ViewSkillTool` serves. These are **not** in the injected scan, and one committed
-    resource is already over the cap
-    (`intel-performance-patterns/patterns/simd-upconversion-impl.md`, ~213%). It is
-    allowlisted by name so it stays visible, and anything *new* going over fails the test.
-    Splitting that file, or raising the cap, is tracked separately — this PR only stops the
-    truncation from being silent.
+    files `ViewSkillTool` serves. These are **not** in the injected scan. Its
+    `OVER_CAP_RESOURCES` allowlist is currently empty — no committed resource exceeds the
+    cap — and anything new going over fails the test until it is split or listed there with
+    a reason, which keeps a truncation visible in code instead of silent.
+  - Neither test sees a skill in an external content checkout. A skill you pass as
+    `skill:<path>` is capped the same way at run time and records
+    `skill_truncated` / `skill_chars_source`, so check those fields in the artifact.
 - **`skill:<path>`** — a `SKILL.md` file or its directory, following the Agent
   Skills convention (frontmatter `name`/`description` + Markdown body). See
-  [`data/skills/onetbb-quickstart/SKILL.md`](../data/skills/onetbb-quickstart/SKILL.md).
+  [`data/skills/fastcontext/SKILL.md`](../data/skills/fastcontext/SKILL.md) for the shape;
+  product skills come from a content checkout.
 - **`agent[:<doc-source>]`** — agentic doc use. The model is given a
   `search_documentation` tool over `<doc-source>` (default `context7`) and
   chooses when and what to query. Tune the loop with `--max-iterations`.
@@ -208,14 +221,15 @@ artifact per cell, a `matrix_rollup.v1` JSON/Markdown report, and paired
   name + one-line description and calls a `view_skill_*` tool to load the full
   instructions on demand (progressive disclosure).
 - **`<spec1>+<spec2>`** — combined treatment. Merges multiple treatments into a
-  single arm by concatenating their contexts. Example: `docs+skill:data/skills/dpnp-quickstart`
+  single arm by concatenating their contexts. Example:
+  `docs+skill:<content-checkout>/skills/onetbb-quickstart`
   retrieves docs AND injects the skill, allowing measurement of synergistic effects.
   The `+` operator works between any treatment types except `baseline`.
 
 Example comparing injection vs agentic use of the same MCP server:
 
 ```bash
-python cli.py arms run --product oneTBB --questions data/questions/onetbb_golden.json \
+python cli.py arms run --product oneTBB --questions <content-checkout>/questions/onetbb_golden.json \
   --arms "baseline,mcp:http=https://mcp.context7.com/mcp,agent:mcp:http=https://mcp.context7.com/mcp" \
   --judge --max-iterations 6
 ```
@@ -223,16 +237,19 @@ python cli.py arms run --product oneTBB --questions data/questions/onetbb_golden
 Example testing combined treatments (docs + skill together):
 
 ```bash
+QUESTIONS=<content-checkout>/questions/onetbb_golden.json
+SKILL=<content-checkout>/skills/onetbb-quickstart
+
 # 4-way comparison: baseline, docs-only, skill-only, and docs+skill combined
-python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
-  --arms "baseline,docs,skill:data/skills/dpnp-quickstart,docs+skill:data/skills/dpnp-quickstart" \
-  --context7-id "intelpython_github_io_dpnp" \
+python cli.py arms run --product oneTBB --questions "$QUESTIONS" \
+  --arms "baseline,docs,skill:$SKILL,docs+skill:$SKILL" \
+  --context7-id "uxlfoundation/onetbb" \
   --judge
 
 # Or just baseline vs combined (to test synergy hypothesis)
-python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
-  --arms "baseline,docs+skill:data/skills/dpnp-quickstart" \
-  --context7-id "intelpython_github_io_dpnp" \
+python cli.py arms run --product oneTBB --questions "$QUESTIONS" \
+  --arms "baseline,docs+skill:$SKILL" \
+  --context7-id "uxlfoundation/onetbb" \
   --judge
 ```
 
@@ -246,20 +263,21 @@ as: `(docs+skill)_delta - docs_delta - skill_delta`. Positive = synergy, negativ
 
 ```bash
 # Docs + profile (expert persona with comprehensive reference)
-python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
+python cli.py arms run --product oneTBB --questions "$QUESTIONS" \
   --arms "baseline,docs+profile:data/agent_profiles/concise_expert.md" \
-  --context7-id "intelpython_github_io_dpnp" \
+  --context7-id "uxlfoundation/onetbb" \
   --judge
 
 # Triple combination (docs + profile + skill)
-python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
-  --arms "baseline,docs+profile:data/agent_profiles/dpnp-expert.md+skill:data/skills/dpnp-quickstart" \
-  --context7-id "intelpython_github_io_dpnp" \
+python cli.py arms run --product oneTBB --questions "$QUESTIONS" \
+  --arms "baseline,docs+profile:data/agent_profiles/concise_expert.md+skill:$SKILL" \
+  --context7-id "uxlfoundation/onetbb" \
   --judge
 
 # Test if multiple skills complement each other
-python cli.py arms run --product dpnp --questions data/questions/dpnp.json \
-  --arms "baseline,skill:data/skills/dpnp-quickstart,skill:data/skills/dpnp-memory,skill:data/skills/dpnp-quickstart+skill:data/skills/dpnp-memory" \
+OTHER_SKILL=<content-checkout>/skills/onetbb-flow-graph
+python cli.py arms run --product oneTBB --questions "$QUESTIONS" \
+  --arms "baseline,skill:$SKILL,skill:$OTHER_SKILL,skill:$SKILL+skill:$OTHER_SKILL" \
   --judge
 ```
 
@@ -279,32 +297,49 @@ You are a senior systems engineer. Lead with code, be terse, …
 A persona states *how to approach a problem*; a skill states *what is true about a
 library*. Keeping them separate is what makes a comparison between them mean anything —
 a persona that lists APIs is documentation delivered through the system-prompt channel,
-and it is measuring the skill, not the persona. The committed dpnp fixtures are a ladder
-that holds the channel fixed and varies only what it carries:
+and it is measuring the skill, not the persona. A persona measurement is therefore a ladder
+of profiles that holds the channel fixed and varies only what each one carries:
 
-| Profile | Carries | Role |
-|---------|---------|------|
-| `dpnp-expert.md` | identity, convictions, reasoning order — no API names | the persona |
-| `dpnp-expert-style.md` | voice and stance only, no dpnp content | style floor |
-| `dpnp-skilltext.md` | `dpnp-quickstart`'s own text, verbatim | channel control vs the `skill:` arm |
-| `dpnp-briefing.md` | a dpnp fact sheet | experimental: facts without a skill's structure |
-| `generic-expert.md` | expert framing with no product in it | negative control |
+| Rung | Carries | Role |
+|------|---------|------|
+| product persona | identity, convictions, reasoning order — no API names | the treatment under test |
+| style-only variant | voice and stance, no product content | style floor: how much is tone alone |
+| channel control | the skill's own text, verbatim | isolates the channel from the content |
+| briefing | a product fact sheet | facts without a skill's structure |
+| generic expert | expert framing with no product in it | negative control |
 
-`tests/test_agent_profiles.py` pins those roles. It fails if the persona grows an API name
-— dotted names, the keyword arguments that carry dpnp's device semantics, or a bare call —
-or reuses five consecutive words of the skill, and if `dpnp-skilltext.md` stops matching the
-skill it mirrors (at which point the control varies content *and* channel, and isolates
-nothing). The denylist is `API_SHAPES` in that file, and a companion test asserts it is not
-vacuous; it is a denylist, so it catches the shapes we have thought of, not every possible
-leak. When the skill changes, regenerate the channel control rather than hand-editing it:
+Only the two rungs that carry no product content are committed here —
+`concise_expert.md` (style floor) and `generic-expert.md` (negative control). The product
+persona, its style-only variant, the channel control and the briefing name a product, so
+they are evaluation content: write them in your content repository and pass them as
+`profile:<path>`.
+
+`tests/test_agent_profiles.py` pins those roles for whatever profiles are committed. It
+fails if a profile grows an API name — dotted names, keyword arguments, or a bare call — or
+reuses five consecutive words of a committed skill, and if the negative control starts
+naming a registered product. The denylist is `API_SHAPES` in that file, and companion tests
+assert neither check is vacuous; it is a denylist, so it catches the shapes we have thought
+of, not every possible leak. The same file also demonstrates paraphrase detection on
+synthetic fixtures, so an external ladder can be checked the same way.
+
+A channel control must stay byte-identical to the skill it mirrors — otherwise it varies
+content *and* channel and isolates nothing — so generate it rather than hand-editing it.
+Both paths are required, since skill and profile alike live wherever you keep them:
 
 ```bash
-python scripts/sync_skilltext_profile.py --check   # exit 1 if drifted, no write
-python scripts/sync_skilltext_profile.py           # rewrite the body, keep the frontmatter
+python scripts/sync_skilltext_profile.py \
+  --skill <content-checkout>/skills/onetbb-quickstart \
+  --profile <content-checkout>/agent_profiles/onetbb-skilltext.md \
+  --check          # exit 1 if drifted, no write
+
+python scripts/sync_skilltext_profile.py \
+  --skill <content-checkout>/skills/onetbb-quickstart \
+  --profile <content-checkout>/agent_profiles/onetbb-skilltext.md
+                   # rewrite the body, keep the frontmatter
 ```
 
 Re-syncing changes the prompt text and therefore `profile_prompt_sha256`, so cells already
-scored on `profile:dpnp-skilltext` measured the old text: re-run them rather than pooling.
+scored on that arm measured the old text: re-run them rather than pooling.
 
 **Skill** (`skills/<name>/SKILL.md`):
 
@@ -377,7 +412,7 @@ python cli.py report model-compare \
 ```
 
 It names the arm it scored — the "Models Compared" table gains a **Treatment arm** column,
-and the summary/ranking headers read `profile:dpnp-expert` instead of a generic
+and the summary/ranking headers read `profile:concise_expert` instead of a generic
 "Context arm" — because a `profile:` report and a `docs:` report are otherwise the same
 document. It aborts, rather than warns, when the runs cannot be pooled:
 
@@ -395,8 +430,8 @@ A differing `question_set_hash` and two runs on the same model are warnings, not
 number out of it:
 
 ```bash
-python scripts/check_treatment_batch.py results/arms/persona-dpnp-expert \
-  --profile data/agent_profiles/dpnp-expert.md
+python scripts/check_treatment_batch.py results/arms/persona-batch \
+  --profile data/agent_profiles/concise_expert.md
 python scripts/check_treatment_batch.py results/arms/skills \
   --treatment-arm 'skill:*' --expect-n regular=40,golden=20 --expect-files 12
 ```
@@ -409,8 +444,8 @@ compares each cell's stamped digest against the file's current text and reports
 `STALE ARTIFACT`, which is what catches a cell a runner would otherwise skip as done.
 
 `--expect-n` maps a *filename suffix* to a question count, and the defaults (`regular=40`,
-`golden=20`) are the dpnp sizes only — golden sets run 20, 24 or 111 questions depending on
-the product, so a batch over another product must pass its own. Two things keep that from
+`golden=20`) are one product's sizes only — observed golden sets run 20, 24 or 111 questions
+depending on the product, so a batch over another product must pass its own. Two things keep that from
 turning into a green row of wrong counts: a filename matching none of the suffixes is
 reported rather than silently gated against the artifact's own `total_questions` (the runner
 writes that field as `len(records)`, so every count check would hold by construction), and a
@@ -436,8 +471,7 @@ Two gates are deliberately statistical rather than absolute:
   faithful to how skills/MCP are consumed, but still read-only and in-process.
   (3) Running a skill's bundled *scripts* needs real sandboxing and belongs on
   the executable [terminal-bench track](contributing-terminal-bench-task.md)
-  (tracked in BACKLOG #56) — the in-process loop deliberately exposes only
-  read-only tools.
+  — the in-process loop deliberately exposes only read-only tools.
 - **Single-answer judging under-measures skills and persona prompts**, whose
   value is often procedural. Treat the deltas as a proxy; use the task track for
   behavioral signal.

@@ -12,14 +12,31 @@ from agent_benchmarks.registry import ProductRegistry
 
 
 def test_committed_configs_have_no_drift():
-    """products.yaml and config/products.yaml must agree on shared identity."""
+    """The committed pair must agree, and the check must see a shared product.
+
+    config/products.yaml declares no products of its own, so a bare
+    ``detect_registry_drift()`` compares nothing. Adding one product that does
+    agree with the registry proves the clean answer is a real comparison and
+    not an empty loop.
+    """
     assert detect_registry_drift() == []
+
+    registry = ProductRegistry()
+    with_repo = [e for e in registry.list() if e.repo]
+    assert with_repo, "no registry entry declares a repo, nothing to compare"
+    entry = with_repo[0]
+    products = load_products_config()
+    products.products = {entry.key: {"github_repo": entry.repo}}
+    assert detect_registry_drift(products=products) == []
 
 
 def test_load_products_config():
     cfg = load_products_config()
-    assert "oneTBB" in cfg.products
     assert cfg.llm  # answerer/judge/generator block present
+    assert cfg.llm["answerer"]["default"]
+    assert cfg.raw["retrieval"]["top_k"] >= 1
+    # Product identity lives in the top-level products.yaml, not here.
+    assert cfg.products == {}
 
 
 def _registry(tmp_path, body: str) -> ProductRegistry:
@@ -60,3 +77,63 @@ def test_config_check_cli_passes():
     from agent_benchmarks.config_check import main
 
     assert main() == 0
+
+
+def _declare_covered(monkeypatch, key: str = "demo") -> None:
+    """Make the registry the CLI reads declare one `covered` product.
+
+    The committed products.yaml declares no product `covered` (its evaluation
+    content lives in an external repository, so nothing in this checkout can
+    satisfy the promise). These tests still have to prove the CLI threads the
+    roots it is given into the coverage check, so they supply a registry that
+    does make the promise.
+    """
+    monkeypatch.setattr(
+        "agent_benchmarks.coverage._load_products",
+        lambda path=None: {key: {"coverage_status": "covered"}},
+    )
+
+
+def test_config_check_cli_accepts_content_roots(tmp_path, monkeypatch):
+    """The coverage half is checked against caller-named external roots."""
+    from agent_benchmarks.config_check import main
+
+    _declare_covered(monkeypatch)
+    tasks_root = tmp_path / "tasks"
+    tasks_root.mkdir()
+    questions_root = tmp_path / "questions"
+    questions_root.mkdir()
+
+    # Empty roots cannot satisfy a `covered` declaration, so the check must
+    # notice rather than pass vacuously.
+    assert main(["--tasks-root", str(tasks_root), "--questions-root", str(questions_root)]) == 1
+
+
+def test_config_check_cli_reports_the_covered_products(tmp_path, capsys, monkeypatch):
+    from agent_benchmarks.config_check import main
+
+    _declare_covered(monkeypatch)
+    tasks_root = tmp_path / "tasks"
+    tasks_root.mkdir()
+    assert main(["--tasks-root", str(tasks_root)]) == 1
+    err = capsys.readouterr().err
+    assert "work half missing" in err
+    # awareness is unresolved (no --questions-root), so it is not reported broken
+    assert "awareness half missing" not in err
+
+
+def test_config_check_cli_passes_with_populated_content_roots(tmp_path, monkeypatch):
+    """A `covered` declaration the roots do satisfy exits 0."""
+    from agent_benchmarks.config_check import main
+
+    _declare_covered(monkeypatch)
+    tasks_root = tmp_path / "tasks"
+    (tasks_root / "demo-task").mkdir(parents=True)
+    (tasks_root / "demo-task" / "task.toml").write_text(
+        '[metadata]\ntags = ["demo"]\n', encoding="utf-8"
+    )
+    questions_root = tmp_path / "questions"
+    questions_root.mkdir()
+    (questions_root / "demo_golden.json").write_text("[]", encoding="utf-8")
+
+    assert main(["--tasks-root", str(tasks_root), "--questions-root", str(questions_root)]) == 0

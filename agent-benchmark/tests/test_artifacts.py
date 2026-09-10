@@ -24,35 +24,129 @@ def test_all_kinds_have_schema_files():
         assert schema.exists(), f"missing schema for {kind}: {schema}"
 
 
-def test_committed_fixtures_validate():
-    """Real committed fixtures must satisfy their schemas (locks the contract)."""
-    cases = [
-        ("questions", REPO / "data" / "questions" / "onetbb.json"),
-        ("questions", REPO / "data" / "questions" / "onedal.json"),
-        ("questions", REPO / "data" / "questions" / "intel_performance_skills_golden.json"),
-        ("answers", REPO / "data" / "answers" / "onetbb.json"),
-        ("eval", REPO / "data" / "eval" / "onetbb.json"),
-    ]
-    for kind, path in cases:
-        assert path.exists(), f"missing committed fixture: {path}"
-        load_artifact(kind, path)  # raises on failure
+# One minimal but realistic payload per pipeline artifact kind. These replace
+# the captured product runs the suite used to load from data/: no answer run or
+# judge output is committed any more, so the contract under test is the envelope
+# plus the record shape, which a synthetic payload locks just as well.
+PIPELINE_PAYLOADS: dict[str, dict] = {
+    "questions": {
+        "library": "demo",
+        "questions": [
+            {
+                "id": "q1",
+                "text": "How do I install the library?",
+                "category": "installation",
+                "difficulty": "easy",
+                "level": "triage",
+                "expected_topics": ["install"],
+            }
+        ],
+    },
+    "answers": {
+        "generated_at": "2026-01-01T00:00:00Z",
+        "model": "demo-model",
+        "provider": "openai",
+        "total_questions": 1,
+        "answers": [
+            {
+                "question_id": "q1",
+                "question_text": "How do I install the library?",
+                "library_name": "demo",
+                "with_docs": {"answer": "pip install demo", "tokens": 5},
+                "without_docs": {"answer": "unsure", "tokens": 2},
+            }
+        ],
+    },
+    "eval": {
+        "evaluated_at": "2026-01-01T00:00:00Z",
+        "judge_model": "demo-judge",
+        "judge_provider": "openai",
+        "total_evaluations": 1,
+        "evaluations": [
+            {
+                "question_id": "q1",
+                "question_text": "How do I install the library?",
+                "with_docs": {"aggregate": 80.0},
+                "without_docs": {"aggregate": 60.0},
+                "delta": 20.0,
+            }
+        ],
+    },
+}
 
 
-def test_perf_golden_level_backfill():
-    """Lock the difficulty/level two-axis rubric on the perf golden set.
+@pytest.mark.parametrize("kind", sorted(PIPELINE_PAYLOADS))
+def test_pipeline_artifact_kinds_round_trip(kind, tmp_path):
+    """Every pipeline artifact kind must survive save -> load with validation on.
 
-    Every question carries a ``level`` from the schema enum, and the
-    ``negative_case`` flag (when present) is the boolean ``True`` convention
-    documented in docs/difficulty-rubric.md.
+    Locks the same contract the committed product fixtures used to lock: the
+    stamped ``schema_version`` envelope and the per-record shape each schema in
+    ``agent_benchmarks/schemas/`` requires.
     """
-    path = REPO / "data" / "questions" / "intel_performance_skills_golden.json"
-    data = load_artifact("questions", path)
-    questions = data["questions"]
-    valid_levels = {"triage", "diagnosis", "end_to_end"}
+    payload = PIPELINE_PAYLOADS[kind]
+    out = tmp_path / f"{kind}.json"
+
+    save_artifact(kind, payload, out)  # validates on the way out
+    loaded = load_artifact(kind, out)  # and again on the way in
+
+    assert loaded["schema_version"] == SCHEMA_VERSIONS[kind]
+    # The record list is non-empty, so the item subschema is really exercised
+    # (an empty list validates against every one of these schemas).
+    records = loaded[{"questions": "questions", "answers": "answers", "eval": "evaluations"}[kind]]
+    assert len(records) == 1
+    assert records[0]["question_id" if kind != "questions" else "id"] == "q1"
+
+
+RUBRIC_LEVELS = ("triage", "diagnosis", "end_to_end")
+
+
+def test_the_two_axis_rubric_round_trips(tmp_path):
+    """Lock the difficulty/level two-axis rubric of docs/difficulty-rubric.md.
+
+    A question set may carry a ``level`` from the schema enum on every question, and the
+    ``negative_case`` flag is the boolean ``True`` convention (``metadata`` is not a declared
+    property, so it rides along as an extra key). No question set is committed any more, so
+    the rubric is asserted on a payload written here rather than on a captured product set —
+    which also lets the negative case be covered, and the enum be shown to be enforced.
+    """
+    payload = {
+        "library": "demo",
+        "questions": [
+            {"id": f"q{i}", "text": f"Question {i}?", "difficulty": "intermediate", "level": level}
+            for i, level in enumerate(RUBRIC_LEVELS, start=1)
+        ]
+        + [
+            {
+                "id": "q4",
+                "text": "Should I use the GPU path for a 10-element array?",
+                "difficulty": "intermediate",
+                "level": "triage",
+                "metadata": {"negative_case": True},
+            }
+        ],
+    }
+    out = tmp_path / "golden.json"
+    save_artifact("questions", payload, out)
+
+    questions = load_artifact("questions", out)["questions"]
+    assert len(questions) == 4
     for q in questions:
-        assert q.get("level") in valid_levels, f"{q.get('id')}: bad/missing level {q.get('level')!r}"
+        assert q.get("level") in RUBRIC_LEVELS, f"{q['id']}: bad/missing level {q.get('level')!r}"
         flag = q.get("metadata", {}).get("negative_case")
-        assert flag in (None, True), f"{q.get('id')}: negative_case must be true or absent, got {flag!r}"
+        assert flag in (None, True), f"{q['id']}: negative_case must be true or absent, got {flag!r}"
+    assert [q for q in questions if q.get("metadata", {}).get("negative_case")], (
+        "the negative case did not survive the round trip"
+    )
+
+
+def test_a_level_outside_the_rubric_is_rejected(tmp_path):
+    """The enum is what makes the rubric a contract rather than a convention."""
+    with pytest.raises(ArtifactValidationError):
+        save_artifact(
+            "questions",
+            {"questions": [{"id": "q1", "text": "Q?", "level": "deep_dive"}]},
+            tmp_path / "bad.json",
+        )
 
 
 def test_stamp_sets_version():

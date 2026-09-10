@@ -1,9 +1,9 @@
 """The channel-control sync script: `scripts/sync_skilltext_profile.py`.
 
-`test_agent_profiles.py::test_channel_control_is_the_skill_text_verbatim` is what fails when
-the skill and the profile drift apart, and it names this script as the fix. These tests are
-what make that instruction true — a fix command that does not actually re-sync is worse than
-no command, because the next person edits the fixture by hand and gets the frontmatter wrong.
+`--check` is what fails when a skill and the profile mirroring it drift apart, and it names
+the plain invocation as the fix. These tests are what make that instruction true — a fix
+command that does not actually re-sync is worse than no command, because the next person edits
+the profile by hand and gets the frontmatter wrong.
 """
 
 import importlib.util
@@ -213,7 +213,24 @@ def test_missing_skill_directory_is_an_error(tmp_path, monkeypatch):
         run_main(monkeypatch, "--skill", str(tmp_path / "nope"), "--profile", str(tmp_path / "p.md"))
 
 
-def test_the_committed_fixture_is_in_sync(monkeypatch):
-    """Same guarantee as the verbatim test in test_agent_profiles.py, through the script
-    that is advertised as the fix — so the instruction and the assertion cannot disagree."""
-    assert run_main(monkeypatch, "--check") == 0
+def test_both_paths_are_required(monkeypatch, capsys):
+    """The skill and the profile are evaluation content: there is no in-repo pair to default
+    to, and defaulting to one would silently sync the wrong files."""
+    with pytest.raises(SystemExit) as excinfo:
+        run_main(monkeypatch)
+    assert excinfo.value.code == 2
+    assert "--skill" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit):
+        run_main(monkeypatch, "--skill", "some-skill")
+
+
+def test_the_out_of_sync_message_names_both_paths(tmp_path, monkeypatch, capsys):
+    """The message is the fix instruction; with required flags a bare command would not run."""
+    skill = write_skill(tmp_path, "Original.")
+    profile = tmp_path / "tmp-skilltext.md"
+    profile.write_text(FRONTMATTER + "stale\n", encoding="utf-8")
+    assert run_main(monkeypatch, "--check", "--skill", str(skill), "--profile", str(profile)) == 1
+    err = capsys.readouterr().err
+    assert f"--skill {skill}" in err
+    assert f"--profile {profile}" in err

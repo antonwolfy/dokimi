@@ -277,7 +277,7 @@ class CombinedTreatment(Treatment):
     - system_prompt: first non-None value wins
     - metadata: tracks all sub-treatment metadata
 
-    Example spec: ``docs+skill:data/skills/dpnp-quickstart``
+    Example spec: ``docs+skill:data/skills/fastcontext``
     """
 
     def __init__(self, treatments: List[Treatment], name: Optional[str] = None):

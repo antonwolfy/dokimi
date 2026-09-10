@@ -13,6 +13,22 @@ With `--doc-source` you can point it at a local directory or any URL instead.
 | `okf:<path>` | Google OKF (Open Knowledge Format) bundle — a directory of Markdown files with YAML frontmatter |
 | `mcp:<ref>` | Retrieve through a real MCP server (requires `pip install mcp`) |
 
+### Naming the library for `context7` and `mcp:`
+
+A Context7 library ID is not derivable from a product name, so nothing guesses
+one. For `--doc-source context7` (and MCP servers that take a library id) the id
+is resolved in this order:
+
+1. `--context7-id <id>` on the command line, if given;
+2. the product's `context7_id:` in the registry (`products.yaml`, or a custom one
+   passed with `--registry` — see
+   [external-content.md](external-content.md#6-products-this-repository-has-never-heard-of));
+3. otherwise the command stops with an error naming both options above.
+
+IDs look like `uxlfoundation/oneTBB` (a GitHub repo) or
+`intelpython_github_io_dpnp` (a documentation website). `local:`, `url:` and
+`okf:` sources need no id at all.
+
 The `mcp:<ref>` form is `<transport>=<target>[;opt=val...]`, e.g.
 `mcp:cmd=npx -y @upstash/context7-mcp`,
 `mcp:http=https://mcp.context7.com/mcp;tool=get-library-docs`, or

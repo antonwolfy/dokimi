@@ -2,7 +2,7 @@
 
 Companion to ``agent_benchmarks/metrics/exploration.py`` (citation scoring),
 implementing the trajectory-shape slice of
-``docs/decisions/2026-06-23-exploration-quality-fastcontext.md`` (BACKLOG #60).
+``docs/decisions/2026-06-23-exploration-quality-fastcontext.md``.
 
 Given the ``OperationRecord`` list a harness already collects (see
 ``operations.py``), summarize *how* the agent explored before it acted: how many

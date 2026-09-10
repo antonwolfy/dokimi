@@ -14,10 +14,17 @@ Design decisions taken here (resolving the ADR's open questions):
   ``coverage_status`` fields live alongside identity rather than in a third
   sync surface.
 * **work signal is *derived*, not hand-listed:** a product's tasks are computed
-  by scanning ``terminal-bench-tasks/*/task.toml`` ``tags`` for the product key.
-  This avoids the ADR's noted negative ("a per-product ``tasks`` list is a
-  second place task identity lives") — the task directory stays the single
-  source of truth.
+  by scanning ``<tasks-root>/*/task.toml`` ``tags`` for the product key, where
+  ``<tasks-root>`` is supplied by the caller (``--tasks-root``, or the
+  ``tasks_dir`` argument). This avoids the ADR's noted negative ("a per-product
+  ``tasks`` list is a second place task identity lives") — the task directory
+  stays the single source of truth.
+* **roots are explicit:** awareness (``<questions-root>/<key>_golden.json``) and
+  work (``<tasks-root>``) are resolved against roots the caller names; the
+  evaluation content itself lives outside this repository. When a root is not
+  given, that half is simply *unresolved* and the corresponding
+  ``coverage_status: covered`` half-check is not applied — declaration validity
+  is still checked.
 * **O1 — soft enforcement:** :func:`coverage_issues` only reports a *hard* error
   for a broken declaration (a product that declares ``coverage_status: covered``
   but resolves to no task, or names a ``questions`` file that does not exist).
@@ -28,6 +35,8 @@ Awareness and work are never blended into one scalar (ADR §3.4).
 """
 
 from __future__ import annotations
+
+import argparse
 
 try:
     import tomllib  # Python 3.11+
@@ -41,8 +50,6 @@ import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PRODUCTS_PATH = _REPO_ROOT / "products.yaml"
-_TASKS_DIR = _REPO_ROOT / "terminal-bench-tasks"
-_QUESTIONS_DIR = _REPO_ROOT / "data" / "questions"
 
 # Honest self-report states (ADR §3.1).
 STATUS_COVERED = "covered"            # has questions AND >=1 task
@@ -60,6 +67,10 @@ class ProductCoverage:
     tasks: list[str] = field(default_factory=list)       # task dir names (derived)
     declared_status: str | None = None                   # from products.yaml
     missing_questions: list[str] = field(default_factory=list)  # declared-but-absent
+    # Was a root supplied for each half? A half with no root is *unresolved*
+    # rather than empty, so `covered` cannot be contradicted by it.
+    questions_root_given: bool = True
+    tasks_root_given: bool = True
 
     @property
     def has_awareness(self) -> bool:
@@ -108,18 +119,34 @@ def _task_product_tags(tasks_dir: Path) -> dict[str, set[str]]:
     return out
 
 
-# Product key -> extra tag aliases that also indicate a task covers it.
-# Derived from observed task tags (e.g. sklearnex tasks tag both sklearnex and
-# the onedal library they accelerate).
-_TAG_ALIASES: dict[str, set[str]] = {
-    "onedal": {"sklearnex"},
-    "intel_performance_skills": {"intel-performance-skills"},
-}
+def _tag_aliases(cfg: dict) -> set[str]:
+    """Extra task tags that also indicate a task covers this product.
+
+    Read from the product's optional ``tag_aliases:`` list in products.yaml
+    (e.g. oneDAL lists ``sklearnex``, because sklearnex tasks exercise the
+    oneDAL library they accelerate). Absent key -> no aliases.
+    """
+    declared = cfg.get("tag_aliases")
+    if isinstance(declared, str):
+        declared = [declared]
+    if not isinstance(declared, list):
+        return set()
+    return {str(alias).lower() for alias in declared if isinstance(alias, str)}
 
 
-def _tasks_for_product(key: str, task_tags: dict[str, set[str]]) -> list[str]:
-    aliases = {key} | _TAG_ALIASES.get(key, set())
-    return sorted(name for name, tags in task_tags.items() if aliases & tags)
+def _tasks_for_product(
+    key: str, task_tags: dict[str, set[str]], aliases: set[str] | None = None
+) -> list[str]:
+    wanted = {key} | (aliases or set())
+    return sorted(name for name, tags in task_tags.items() if wanted & tags)
+
+
+def _display_path(path: Path) -> str:
+    """Repo-relative string for an in-repo path, absolute string otherwise."""
+    try:
+        return path.relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def resolve_coverage(
@@ -128,18 +155,30 @@ def resolve_coverage(
     tasks_dir: Path | None = None,
     questions_dir: Path | None = None,
 ) -> list[ProductCoverage]:
-    """Resolve per-product coverage from the registry, tasks, and question sets."""
+    """Resolve per-product coverage from the registry, tasks, and question sets.
+
+    Args:
+        products: registry mapping (defaults to the canonical ``products.yaml``).
+        tasks_dir: root holding one directory per executable task, each with a
+            ``task.toml``. Omit it to leave the work half unresolved.
+        questions_dir: root holding ``<product_key>_golden.json`` question sets.
+            Omit it to leave the awareness half unresolved.
+
+    Both roots live outside this repository; nothing is assumed about their
+    location.
+    """
     products = products if products is not None else _load_products()
-    tasks_dir = Path(tasks_dir or _TASKS_DIR)
-    questions_dir = Path(questions_dir or _QUESTIONS_DIR)
-    task_tags = _task_product_tags(tasks_dir)
+    task_tags = _task_product_tags(Path(tasks_dir)) if tasks_dir is not None else {}
+    questions_dir = Path(questions_dir) if questions_dir is not None else None
 
     result: list[ProductCoverage] = []
     for key, cfg in products.items():
         cfg = cfg if isinstance(cfg, dict) else {}
         declared_status = cfg.get("coverage_status")
 
-        # Awareness: explicit `questions:` list, else the conventional golden file.
+        # Awareness: explicit `questions:` list, else the conventional golden file
+        # under questions_dir. Declared relative paths resolve against the repo
+        # root (that is where products.yaml lives); absolute paths pass through.
         declared_q = cfg.get("questions")
         if isinstance(declared_q, str):
             declared_q = [declared_q]
@@ -147,37 +186,52 @@ def resolve_coverage(
             declared_q = []
         questions: list[str] = []
         missing: list[str] = []
-        candidates = declared_q or [f"data/questions/{key}_golden.json"]
-        for rel in candidates:
-            path = _REPO_ROOT / rel
-            if path.is_file():
-                questions.append(rel)
-            elif declared_q:  # only a *declared* path counts as missing/broken
-                missing.append(rel)
+        if declared_q:
+            for rel in declared_q:
+                path = Path(rel)
+                if not path.is_absolute():
+                    path = _REPO_ROOT / rel
+                if path.is_file():
+                    questions.append(str(rel))
+                else:  # only a *declared* path counts as missing/broken
+                    missing.append(str(rel))
+        elif questions_dir is not None:
+            candidate = questions_dir / f"{key}_golden.json"
+            if candidate.is_file():
+                questions.append(_display_path(candidate))
 
         result.append(
             ProductCoverage(
                 key=key,
                 questions=questions,
-                tasks=_tasks_for_product(key, task_tags),
+                tasks=_tasks_for_product(key, task_tags, _tag_aliases(cfg)),
                 declared_status=declared_status,
                 missing_questions=missing,
+                questions_root_given=questions_dir is not None or bool(declared_q),
+                tasks_root_given=tasks_dir is not None,
             )
         )
     return result
 
 
-def coverage_issues(coverages: list[ProductCoverage] | None = None) -> list[str]:
+def coverage_issues(
+    coverages: list[ProductCoverage] | None = None,
+    *,
+    tasks_dir: Path | None = None,
+    questions_dir: Path | None = None,
+) -> list[str]:
     """Hard-error issues for CI (ADR O1: soft enforcement).
 
     Only a *broken declaration* is an error:
-      * ``coverage_status: covered`` but no task resolves, or no question set;
+      * ``coverage_status: covered`` but no task resolves, or no question set —
+        checked only for the halves whose root was supplied;
       * a declared ``questions`` file that does not exist;
       * an unknown ``coverage_status`` value.
     A missing work half on an undeclared/`questions-only`/`planned` product is a
     tracked gap, not an error.
     """
-    coverages = coverages if coverages is not None else resolve_coverage()
+    if coverages is None:
+        coverages = resolve_coverage(tasks_dir=tasks_dir, questions_dir=questions_dir)
     issues: list[str] = []
     for c in coverages:
         if c.declared_status is not None and c.declared_status not in _VALID_STATUSES:
@@ -191,12 +245,12 @@ def coverage_issues(coverages: list[ProductCoverage] | None = None) -> list[str]
                 f"{', '.join(c.missing_questions)}"
             )
         if c.declared_status == STATUS_COVERED:
-            if not c.has_work:
+            if c.tasks_root_given and not c.has_work:
                 issues.append(
                     f"{c.key}: coverage_status=covered but no terminal-bench task "
                     f"tags it (work half missing)"
                 )
-            if not c.has_awareness:
+            if c.questions_root_given and not c.has_awareness:
                 issues.append(
                     f"{c.key}: coverage_status=covered but no question set resolves "
                     f"(awareness half missing)"
@@ -206,9 +260,13 @@ def coverage_issues(coverages: list[ProductCoverage] | None = None) -> list[str]
 
 def coverage_matrix_rows(
     coverages: list[ProductCoverage] | None = None,
+    *,
+    tasks_dir: Path | None = None,
+    questions_dir: Path | None = None,
 ) -> list[dict]:
-    """Render-ready rows for the COVERAGE.md product x {questions, tasks} matrix."""
-    coverages = coverages if coverages is not None else resolve_coverage()
+    """Render-ready rows for the product x {questions, tasks} coverage matrix."""
+    if coverages is None:
+        coverages = resolve_coverage(tasks_dir=tasks_dir, questions_dir=questions_dir)
     rows = []
     for c in sorted(coverages, key=lambda x: x.key):
         rows.append(
@@ -224,20 +282,52 @@ def coverage_matrix_rows(
     return rows
 
 
-def _print_matrix() -> None:
+def _print_matrix(
+    tasks_dir: Path | None = None, questions_dir: Path | None = None
+) -> None:
     """CLI entry: print the coverage matrix as a Markdown table to stdout."""
-    rows = coverage_matrix_rows()
+    coverages = resolve_coverage(tasks_dir=tasks_dir, questions_dir=questions_dir)
+    rows = coverage_matrix_rows(coverages)
     print("| Product | Awareness (questions) | Work (tasks) | Status |")
     print("| --- | --- | --- | --- |")
     for r in rows:
         aware = "yes" if r["awareness"] == "yes" else "no"
         print(f"| `{r['product']}` | {aware} | {r['work']} | {r['status']} |")
-    issues = coverage_issues()
+    if tasks_dir is None:
+        print("\nNote: no --tasks-root given; the work half is unresolved.")
+    if questions_dir is None:
+        print("Note: no --questions-root given; the awareness half is unresolved.")
+    issues = coverage_issues(coverages)
     if issues:
         print("\nISSUES:")
         for i in issues:
             print(f"  - {i}")
 
 
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="python -m agent_benchmarks.coverage",
+        description="Print the product x {awareness, work} coverage matrix.",
+    )
+    parser.add_argument(
+        "--tasks-root",
+        default=None,
+        help="Directory of executable task dirs (each with task.toml) whose "
+             "tags derive the work half, e.g. "
+             "/path/to/content-repo/evaluation/harbor/tasks",
+    )
+    parser.add_argument(
+        "--questions-root",
+        default=None,
+        help="Directory holding <product_key>_golden.json question sets that "
+             "derive the awareness half, e.g. /path/to/content-repo/questions",
+    )
+    return parser.parse_args(argv)
+
+
 if __name__ == "__main__":
-    _print_matrix()
+    _args = _parse_args()
+    _print_matrix(
+        tasks_dir=Path(_args.tasks_root) if _args.tasks_root else None,
+        questions_dir=Path(_args.questions_root) if _args.questions_root else None,
+    )

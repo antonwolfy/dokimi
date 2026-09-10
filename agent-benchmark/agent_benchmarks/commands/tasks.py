@@ -5,11 +5,38 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+_TASKS_ROOT_HELP = (
+    "Directory holding one sub-directory per task (each with task.toml). "
+    "Required for bare task names and for --all; the tasks live in a separate "
+    "evaluation-content checkout, e.g. "
+    "--tasks-root /path/to/content-repo/evaluation/harbor/tasks"
+)
+
+
+def _tasks_root(args: argparse.Namespace) -> Path | None:
+    """Resolve --tasks-root, refusing a path that is not a directory.
+
+    Task discovery itself tolerates an absent directory, because a content
+    checkout may legitimately ship no executable tasks. A root the user named
+    explicitly is different: a typo there would otherwise look like a suite
+    with zero tasks.
+    """
+
+    if not args.tasks_root:
+        return None
+    root = Path(args.tasks_root)
+    if not root.is_dir():
+        raise SystemExit(f"--tasks-root is not a directory: {root}")
+    return root
+
 
 def cmd_tasks_list(args: argparse.Namespace) -> None:
     from agent_benchmarks.harnesses import discover_tasks
 
-    tasks = discover_tasks(Path(args.tasks_root) if args.tasks_root else None)
+    try:
+        tasks = discover_tasks(_tasks_root(args))
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     for task in tasks:
         tags = task.metadata.get("tags") or []
         difficulty = task.metadata.get("difficulty", "?")
@@ -26,12 +53,15 @@ def cmd_tasks_harnesses(args: argparse.Namespace) -> None:
 def cmd_tasks_run(args: argparse.Namespace) -> None:
     from agent_benchmarks.harnesses import TaskSuiteRunner, discover_tasks, load_task
 
-    root = Path(args.tasks_root) if args.tasks_root else None
-    if args.all:
-        tasks = discover_tasks(root)
-    else:
-        task_names = [t.strip() for t in args.tasks.split(",") if t.strip()]
-        tasks = [load_task(t, root=root) for t in task_names]
+    root = _tasks_root(args)
+    try:
+        if args.all:
+            tasks = discover_tasks(root)
+        else:
+            task_names = [t.strip() for t in args.tasks.split(",") if t.strip()]
+            tasks = [load_task(t, root=root) for t in task_names]
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     if not tasks:
         raise SystemExit("No tasks selected. Pass --tasks <name[,name]> or --all.")
 
@@ -94,7 +124,7 @@ def register(sub, positive_int) -> None:
     tasks_sub = tasks_p.add_subparsers(dest="tasks_cmd", required=True)
 
     list_p = tasks_sub.add_parser("list", help="List terminal-bench task metadata")
-    list_p.add_argument("--tasks-root", default=None)
+    list_p.add_argument("--tasks-root", default=None, help=_TASKS_ROOT_HELP)
     list_p.set_defaults(func=cmd_tasks_list)
 
     harnesses_p = tasks_sub.add_parser("harnesses", help="List known coding harness aliases")
@@ -111,7 +141,7 @@ def register(sub, positive_int) -> None:
     )
     run_p.add_argument("--baseline-harness", default=None, dest="baseline_harness")
     run_p.add_argument("--model", default=None, help="Model ref passed to the harness")
-    run_p.add_argument("--tasks-root", default=None)
+    run_p.add_argument("--tasks-root", default=None, help=_TASKS_ROOT_HELP)
     run_p.add_argument("--output-dir", default="results/task-runs", dest="output_dir")
     run_p.add_argument("--out-json", default=None, dest="out_json")
     run_p.add_argument("--out-md", default=None, dest="out_md",

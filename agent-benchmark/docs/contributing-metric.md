@@ -120,11 +120,13 @@ jq '.documents[0].metrics' baselines/current.json
 ```
 
 The new metric should appear with a score in `[0, 1]` and contribute to the
-weighted total. The compare command picks it up automatically:
+weighted total. The compare command picks it up automatically, against a base
+snapshot you took before the change (there is no committed baseline — see
+[`benchmarking-and-comparison.md`](benchmarking-and-comparison.md#static-documentation-benchmark)):
 
 ```bash
 python cli.py compare \
-  --base data/baselines/baseline.json \
+  --base baselines/baseline.json \
   --candidate baselines/current.json \
   --spec benchmarks/spec.v1.yaml \
   --out-md reports/compare.md

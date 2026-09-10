@@ -124,8 +124,8 @@ def test_consistency_ok_different_models():
 
 
 def test_non_baseline_arms_reads_the_arms_header():
-    data = {"baseline_arm": "baseline", "arms": ["baseline", "skill:dpnp-quickstart"]}
-    assert non_baseline_arms(data) == {"skill:dpnp-quickstart"}
+    data = {"baseline_arm": "baseline", "arms": ["baseline", "skill:demo-skill"]}
+    assert non_baseline_arms(data) == {"skill:demo-skill"}
 
 
 def test_non_baseline_arms_falls_back_to_the_scored_record():
@@ -141,10 +141,10 @@ def test_non_baseline_arms_unions_over_every_record():
     data = _eval_run(
         [
             {"id": "Q1", "scores": {"baseline": {"aggregate": 60}}},  # treatment call failed
-            _q("Q2", arm="profile:dpnp-expert"),
+            _q("Q2", arm="profile:concise_expert"),
         ]
     )
-    assert non_baseline_arms(data) == {"profile:dpnp-expert"}
+    assert non_baseline_arms(data) == {"profile:concise_expert"}
 
 
 def test_non_baseline_arms_empty_when_nothing_but_baseline():
@@ -197,13 +197,13 @@ def _profile_run(run_id, digest, arm="profile:p", n=2, **kw):
 
 def test_consistency_rejects_runs_measuring_different_treatments():
     """A `profile:` delta beside a `skill:` delta is confounded, not a model comparison."""
-    runs = [_armed_run("a", "profile:dpnp-expert"), _armed_run("b", "skill:dpnp-quickstart")]
+    runs = [_armed_run("a", "profile:concise_expert"), _armed_run("b", "skill:demo-skill")]
     with pytest.raises(SystemExit, match="different treatment arms"):
         check_run_consistency(runs, "regular")
 
 
 def test_consistency_accepts_runs_sharing_one_treatment():
-    runs = [_armed_run("a", "profile:dpnp-expert"), _armed_run("b", "profile:dpnp-expert")]
+    runs = [_armed_run("a", "profile:concise_expert"), _armed_run("b", "profile:concise_expert")]
     assert check_run_consistency(runs, "regular") == []
 
 
@@ -236,8 +236,8 @@ def test_consistency_rejects_different_treatments_even_when_one_run_is_ambiguous
     then pooled with a `skill:` delta with exit 0 and a report on disk.
     """
     runs = [
-        _scored_run("a", "profile:dpnp-expert"),
-        _scored_run("b", "skill:dpnp-quickstart", declared_extra=("docs",)),
+        _scored_run("a", "profile:concise_expert"),
+        _scored_run("b", "skill:demo-skill", declared_extra=("docs",)),
     ]
     with pytest.raises(SystemExit, match="different treatment arms"):
         check_run_consistency(runs, "regular")
@@ -247,8 +247,8 @@ def test_consistency_rejects_a_group_whose_third_run_is_baseline_only():
     """Same failure mode from the other side: a run with no non-baseline arm at all used to
     make the group unanimous by disappearing from it."""
     runs = [
-        _scored_run("a", "profile:dpnp-expert"),
-        _scored_run("b", "skill:dpnp-quickstart"),
+        _scored_run("a", "profile:concise_expert"),
+        _scored_run("b", "skill:demo-skill"),
         ("c", {"baseline_arm": "baseline", "arms": ["baseline"], "model": "c", "provider": "p"}),
     ]
     with pytest.raises(SystemExit, match="different treatment arms"):
@@ -259,8 +259,8 @@ def test_an_unscored_arm_does_not_make_two_runs_look_different():
     """The flip side: the arm a run is *scored* on is what it measures, so a declared-but-
     unscored extra arm must not be read as a second treatment."""
     runs = [
-        _scored_run("a", "profile:dpnp-expert", declared_extra=("docs",)),
-        _scored_run("b", "profile:dpnp-expert"),
+        _scored_run("a", "profile:concise_expert", declared_extra=("docs",)),
+        _scored_run("b", "profile:concise_expert"),
     ]
     assert check_run_consistency(runs, "regular") == []
 
@@ -459,8 +459,8 @@ def test_extract_scores_skips_question_where_baseline_absent_from_scores():
     """baseline_arm is set on the run but a specific question's scores dict
     doesn't contain that key at all — question must be silently skipped."""
     run = _eval_run([
-        {"id": "Q1", "scores": {"skill:dpnp": {"aggregate": 70}}},  # no "baseline" key
-        {"id": "Q2", "scores": {"baseline": {"aggregate": 50}, "skill:dpnp": {"aggregate": 70}}},
+        {"id": "Q1", "scores": {"skill:demo": {"aggregate": 70}}},  # no "baseline" key
+        {"id": "Q2", "scores": {"baseline": {"aggregate": 50}, "skill:demo": {"aggregate": 70}}},
     ])
     scores = extract_scores(run)
     assert len(scores) == 1
@@ -509,12 +509,12 @@ def test_section_report_basic_output():
 
 def test_section_report_names_the_treatment_arm_it_scored():
     """Without the name, a persona report and a docs report are the same document."""
-    run_a = _eval_run([_q("Q1", 60, 80, arm="profile:dpnp-expert")], model="m-a")
-    run_b = _eval_run([_q("Q1", 55, 75, arm="profile:dpnp-expert")], model="m-b")
+    run_a = _eval_run([_q("Q1", 60, 80, arm="profile:concise_expert")], model="m-a")
+    run_b = _eval_run([_q("Q1", 55, 75, arm="profile:concise_expert")], model="m-b")
     text = "\n".join(generate_section_report([("a", run_a), ("b", run_b)], ["a", "b"], "Regular"))
     assert "| Run ID | Answer model | Judge model | Treatment arm |" in text
-    assert "`profile:dpnp-expert`" in text
-    assert "### By absolute quality (profile:dpnp-expert)" in text
+    assert "`profile:concise_expert`" in text
+    assert "### By absolute quality (profile:concise_expert)" in text
     assert "Context arm" not in text
 
 

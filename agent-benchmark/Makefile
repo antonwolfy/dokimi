@@ -1,10 +1,23 @@
+# Base snapshot for `benchmark-compare`. The repository ships no committed
+# baseline: take your own with `make benchmark-run` (writes the git-ignored
+# baselines/current.json), copy it once as the base you want to track against,
+# then compare later runs against it:
+#
+#   make benchmark-run
+#   cp baselines/current.json baselines/baseline.json
+#   # ... change docs ...
+#   make benchmark-run
+#   make benchmark-compare                      # or: make benchmark-compare BASE=<path>
+BASE ?= baselines/baseline.json
+
 .PHONY: validate-benchmark-spec benchmark-run benchmark-compare
 
 benchmark-run:
 	python cli.py run --root . --spec benchmarks/spec.v1.yaml --out-json baselines/current.json --out-md reports/current.md
 
 benchmark-compare:
-	python cli.py compare --base data/baselines/baseline.json --candidate baselines/current.json --out-json reports/compare.json --out-md reports/compare.md
+	@test -f "$(BASE)" || { echo "ERROR: base snapshot $(BASE) not found. Take one with 'make benchmark-run', copy baselines/current.json to it, or pass BASE=<path>."; exit 1; }
+	python cli.py compare --base $(BASE) --candidate baselines/current.json --out-json reports/compare.json --out-md reports/compare.md
 
 validate-benchmark-spec:
 	@command -v yq >/dev/null 2>&1 || { echo "ERROR: yq is not installed"; exit 1; }

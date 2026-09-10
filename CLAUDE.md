@@ -1,11 +1,14 @@
 # Agent instructions for this repository
 
-This repo is the "Software Packaging for Agents" umbrella. It has two halves:
+This repo is a measurement framework: it evaluates whether documentation, a
+skill, an MCP doc source, or an agent persona prompt actually improves a coding
+agent's answers and task outcomes.
 
-- `software-packaging-for-agents/` — vision/architecture docs only (no code).
-  Six tracks: author → build → measure → package → discover → serve.
-- `agent-benchmark/` — the measurement engine, a self-contained Python project.
-  All runnable code, tests, and CI live here.
+- `agent-benchmark/` — the framework, a self-contained Python project. All
+  runnable code, tests, and CI live here; there is nothing else to build.
+- The evaluation content being measured (skills, executable tasks, golden
+  question sets) is supplied to the framework by path — `skill:<path>`,
+  `--tasks-root`, `--questions` — so it can live wherever it is maintained.
 
 ## Working in `agent-benchmark/`
 
@@ -29,15 +32,24 @@ See `agent-benchmark/CONTRIBUTING.md` for the full set of checks to run before a
     problems exist). The domain→product mapping lives only here.
   - `config/products.yaml` — LLM/runtime config for the eval track only;
     identity stated there must not drift from `products.yaml`.
-- Executable tasks live in `agent-benchmark/terminal-bench-tasks/` (Docker +
-  oracle solution + pytest verifier). CI builds and verifies them offline.
+- Executable tasks (Docker + oracle solution + pytest verifier) are evaluation
+  content and live in a separate content repository. Point the framework at a
+  checkout with `--tasks-root`; the format is specified in
+  `agent-benchmark/docs/contributing-terminal-bench-task.md`. CI proves the
+  harnesses against an external catalog, not against in-repo tasks.
 
 ## Conventions
 
-- Never commit generated artifacts: `results/`, `reports/`, `baselines/current.json`,
-  coverage files, logs, tarballs. Curated fixtures go under `agent-benchmark/data/`.
+- Never commit generated artifacts: `results/`, `reports/`, and anything written
+  to `baselines/`, `answers/` or `eval/`, coverage files, logs, tarballs. Only
+  curated *inputs* go under `agent-benchmark/data/`, and only the fixtures the
+  framework's own tests and examples need (`skills/fastcontext/`,
+  `agent_profiles/`, `explore_tasks/`) — question sets and product skills are
+  evaluation content, passed in by path from a content checkout. Captured runs
+  stay out of the tree and their formats are locked by
+  `agent_benchmarks/schemas/`.
 - Status reports and phase plans do not belong in the repo — use PR
-  descriptions, issues, and `agent-benchmark/BACKLOG.md`.
+  descriptions and issues.
 - All changes to `main` go through pull requests.
 - Persisted answer/eval JSON keeps legacy `with_docs`/`without_docs` keys for
   the two answer conditions — do not rename them in data files.

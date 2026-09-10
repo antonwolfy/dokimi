@@ -74,6 +74,7 @@ class EvaluationPipeline:
         force_regen: bool = False,
         questions_from: Optional[Path] = None,
         product_key: Optional[str] = None,
+        questions_root: Optional[Path] = None,
     ):
         """
         Initialize pipeline.
@@ -101,6 +102,16 @@ class EvaluationPipeline:
                 'local:<path>', or 'url:<url>'
             context7_id: Explicit Context7 library ID (e.g., 'intel/mkl-dnn').
                 Overrides the auto-resolved ID when doc_source is 'context7'.
+            questions_from: Reuse an existing question set (file, or a run
+                directory holding questions/<product_key>.json).
+            product_key: Registry key used for output file names and golden
+                question-set lookup (defaults to ``product``).
+            questions_root: Directory holding golden question sets named
+                ``<product_key>_golden.json``, for example a checkout of the
+                evaluation-content repository. When given and the file is
+                present it is auto-included as the manual question set; when it
+                is absent a warning is logged. Without this argument (and
+                without ``custom_questions_path``) the run has no golden set.
         """
         if not repo and not description:
             raise ValueError(
@@ -115,11 +126,10 @@ class EvaluationPipeline:
         self.description = description
         self.output_dir = Path(output_dir)
 
-        # Auto-discover golden questions for this product if not explicitly provided.
-        # Convention: data/questions/<product_lower>_golden.json next to the project root (two levels
-        # up from this file: agent_benchmarks/orchestrator/pipeline.py → agent_benchmarks/ → project root)
-        _project_root = Path(__file__).resolve().parent.parent.parent
-        _auto_golden = _project_root / "data" / "questions" / f"{self.product_key.lower()}_golden.json"
+        # Golden question set: explicit path wins; otherwise look for the
+        # convention name <product_key>_golden.json under the caller-supplied
+        # questions root (the question sets live outside this repository).
+        self.questions_root = Path(questions_root) if questions_root else None
         if custom_questions_path:
             _custom_path = Path(custom_questions_path)
             if not _custom_path.exists():
@@ -127,11 +137,25 @@ class EvaluationPipeline:
                     f"--custom-questions path does not exist: {_custom_path}"
                 )
             self.custom_questions_path = _custom_path
-        elif _auto_golden.exists():
-            self.custom_questions_path = _auto_golden
-            logger.info(f"Auto-including golden questions: {_auto_golden}")
+        elif self.questions_root is not None:
+            _auto_golden = self.questions_root / f"{self.product_key.lower()}_golden.json"
+            if _auto_golden.is_file():
+                self.custom_questions_path = _auto_golden
+                logger.info(f"Auto-including golden questions: {_auto_golden}")
+            else:
+                self.custom_questions_path = None
+                logger.warning(
+                    f"questions root {self.questions_root} has no golden set for "
+                    f"{self.product_key.lower()}; running without a golden question set"
+                )
         else:
             self.custom_questions_path = None
+            logger.warning(
+                "no questions root given; questions will be generated for "
+                f"{self.product_key.lower()} instead of read from a curated golden "
+                "set. Pass --questions-root <checkout>/questions (or "
+                "--custom-questions <file>) to measure against a fixed set"
+            )
 
         self.model = model
         self.provider = provider

@@ -46,7 +46,7 @@ def create_harness(harness: str, *, command_template: str | None = None):
         if not skill:
             raise ValueError(
                 "docker-claude-skill harness requires a skill path, e.g. "
-                "docker-claude-skill:data/skills/intel-performance-patterns/SKILL.md"
+                "docker-claude-skill:/path/to/skills-repo/skills/<name>/SKILL.md"
             )
         return DockerSolverHarness(harness_id=harness, mode="claude", skill_path=skill)
     if harness.startswith("terminal-bench:"):

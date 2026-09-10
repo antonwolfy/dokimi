@@ -1,4 +1,4 @@
-"""ExploreBench task discovery (BACKLOG #60, ADR §3.4).
+"""ExploreBench task discovery (exploration-quality ADR §3.4).
 
 An exploration task poses a localization question over a repository/doc tree and
 declares the reference locations a good explorer should cite. Tasks are small
@@ -7,7 +7,7 @@ YAML files::
     id: onetbb_flow_graph_locate_buffering
     product: oneTBB
     query: "Find the docs and example code for a bounded flow-graph pipeline."
-    repo_root: .            # optional; defaults to the agent-benchmark repo
+    repo_root: .            # optional; else --repo-root, else this repo
     references:
       - path: docs/flow_graph.md
         lines: [120, 180]
@@ -91,7 +91,9 @@ def _parse_lines(value) -> tuple[int, int] | None:
     return (min(start, end), max(start, end))
 
 
-def _task_from_data(data: dict, path: Path) -> ExploreTask:
+def _task_from_data(
+    data: dict, path: Path, default_repo_root: Path | None = None
+) -> ExploreTask:
     missing = [k for k in ("id", "query", "references") if k not in data]
     if missing:
         raise ValueError(f"Explore task {path} missing required field(s): {missing}")
@@ -102,7 +104,12 @@ def _task_from_data(data: dict, path: Path) -> ExploreTask:
     if not references:
         raise ValueError(f"Explore task {path} has no references")
     repo_root = data.get("repo_root")
-    resolved_root = (path.parent / repo_root).resolve() if repo_root else REPO_ROOT
+    if repo_root:
+        resolved_root = (path.parent / repo_root).resolve()
+    elif default_repo_root is not None:
+        resolved_root = Path(default_repo_root).resolve()
+    else:
+        resolved_root = REPO_ROOT
     known = {"id", "product", "query", "references", "repo_root"}
     return ExploreTask(
         id=str(data["id"]),
@@ -115,19 +122,28 @@ def _task_from_data(data: dict, path: Path) -> ExploreTask:
     )
 
 
-def load_explore_task(ref: str, root: Path | None = None) -> ExploreTask:
+def load_explore_task(
+    ref: str, root: Path | None = None, default_repo_root: Path | None = None
+) -> ExploreTask:
     """Load one task by id (or path) from the explore-tasks root.
 
     A direct file path is loaded as-is. Otherwise ``ref`` is matched against
     each file's parsed ``id`` first (the documented selector that ``explore
     list`` advertises) and only then against the filename stem, so a file whose
     ``id`` differs from its name cannot shadow the task that owns that id.
+
+    Args:
+        ref: task id, filename stem, or path to a task YAML file.
+        root: directory of task YAML files (defaults to ``data/explore_tasks``).
+        default_repo_root: tree a task scores against when its YAML omits
+            ``repo_root:`` (defaults to this repository, which is only right
+            for the self-dogfooding tasks bundled here).
     """
     root = Path(root or EXPLORE_TASKS_ROOT)
     candidate = Path(ref)
     if candidate.is_file():
         data = yaml.safe_load(candidate.read_text(encoding="utf-8")) or {}
-        return _task_from_data(data, candidate)
+        return _task_from_data(data, candidate, default_repo_root)
 
     files = _task_files(root)
     loaded = [(path, yaml.safe_load(path.read_text(encoding="utf-8")) or {}) for path in files]
@@ -137,21 +153,27 @@ def load_explore_task(ref: str, root: Path | None = None) -> ExploreTask:
         raise ValueError(f"Ambiguous explore task id {ref!r} matches multiple files: {paths}")
     if id_matches:
         path, data = id_matches[0]
-        return _task_from_data(data, path)
+        return _task_from_data(data, path, default_repo_root)
     # Fall back to filename stem only when no task declares this id.
     for path, data in loaded:
         if path.stem == ref:
-            return _task_from_data(data, path)
+            return _task_from_data(data, path, default_repo_root)
     raise FileNotFoundError(f"Explore task not found: {ref!r} under {root}")
 
 
-def discover_explore_tasks(root: Path | None = None) -> list[ExploreTask]:
-    """Load every exploration task under the explore-tasks root, sorted by id."""
+def discover_explore_tasks(
+    root: Path | None = None, default_repo_root: Path | None = None
+) -> list[ExploreTask]:
+    """Load every exploration task under the explore-tasks root, sorted by id.
+
+    ``default_repo_root`` is the tree a task scores against when its YAML omits
+    ``repo_root:``; it defaults to this repository.
+    """
     root = Path(root or EXPLORE_TASKS_ROOT)
     tasks = []
     for path in _task_files(root):
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        tasks.append(_task_from_data(data, path))
+        tasks.append(_task_from_data(data, path, default_repo_root))
     by_id: dict[str, list[Path]] = {}
     for t in tasks:
         by_id.setdefault(t.id, []).append(t.path)

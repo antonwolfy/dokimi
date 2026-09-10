@@ -207,14 +207,21 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
 
         # Setup documentation source client
         doc_source = getattr(args, "doc_source", "context7")
-        from agent_benchmarks.mcp.factory import create_doc_source_client
+        from agent_benchmarks.mcp.factory import (
+            create_doc_source_client,
+            resolve_library_id_for_product,
+        )
         mcp_client = create_doc_source_client(doc_source)
         context7_id = getattr(args, "context7_id", None)
         if context7_id:
-            library_id = context7_id
-            print(f"Using explicit Context7 library ID: {library_id}")
-        else:
-            library_id = mcp_client.resolve_library_id(args.product)
+            print(f"Using explicit Context7 library ID: {context7_id}")
+        try:
+            library_id = resolve_library_id_for_product(
+                args.product, mcp_client, explicit_id=context7_id
+            )
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            raise SystemExit(1) from exc
 
         extractor = RagasSeedExtractor(mcp_client=mcp_client, cache_dir=Path(".cache/topics"))
         topics = extractor.extract_topics(

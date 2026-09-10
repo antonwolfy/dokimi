@@ -19,7 +19,7 @@ def _parse_combined_spec(spec: str) -> List[str]:
     """Parse a combined spec like 'docs+skill:path' into parts.
 
     Splits on '+' but only between treatment types, not within paths.
-    Example: 'docs+skill:data/skills/my+folder' → ['docs', 'skill:data/skills/my+folder']
+    Example: 'docs+skill:/path/to/my+folder' → ['docs', 'skill:/path/to/my+folder']
     """
     TREATMENT_STARTS = [
         "baseline",
@@ -86,7 +86,7 @@ def create_treatment(
         disclosure and decides whether to load it.
     ``<spec1>+<spec2>[+...]``
         Combined treatment — merges multiple treatments into one arm.
-        Example: ``docs+skill:data/skills/dpnp-quickstart``
+        Example: ``docs+skill:data/skills/fastcontext``
         The contexts from all sub-treatments are concatenated.
 
     Raises:
@@ -114,7 +114,11 @@ def create_treatment(
         from agent_benchmarks.skills import load_skill
         path = spec[len("skill-agent:"):]
         if not path:
-            raise ValueError("'skill-agent:' arm requires a path, e.g. 'skill-agent:data/skills/onetbb-quickstart'")
+            raise ValueError(
+                "'skill-agent:' arm requires a path, e.g. "
+                "'skill-agent:data/skills/fastcontext' or "
+                "'skill-agent:/path/to/skills-repo/skills/<name>'"
+            )
         return SkillAgentTreatment(load_skill(path))
 
     if spec == "agent" or spec.startswith("agent:"):
@@ -157,7 +161,10 @@ def create_treatment(
         from agent_benchmarks.skills import load_skill
         path = spec[len("skill:"):]
         if not path:
-            raise ValueError("'skill:' arm requires a path, e.g. 'skill:data/skills/onetbb-quickstart'")
+            raise ValueError(
+                "'skill:' arm requires a path, e.g. 'skill:data/skills/fastcontext' "
+                "or 'skill:/path/to/skills-repo/skills/<name>'"
+            )
         return SkillTreatment(load_skill(path))
 
     raise ValueError(

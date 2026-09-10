@@ -132,7 +132,7 @@ LLM-as-judge scores each answer on five 0–100 dimensions
 (correctness, completeness, specificity, code_quality, actionability), then
 computes an aggregate and the context-arm minus baseline delta.
 
-Multi-judge panel (see [BACKLOG.md](../BACKLOG.md) #29):
+Multi-judge panel:
 
 ```bash
 python cli.py eval panel-score \
@@ -197,10 +197,17 @@ python cli.py evaluate --product $PRODUCT --repo $REPO
 | `reports/<product>.md` | Human-readable analysis (git-ignored) |
 | `DASHBOARD.md` | Cross-library summary |
 
-Curated fixtures live under `data/` (`data/questions/`, `data/answers/`,
-`data/eval/`, `data/baselines/`) and are committed when they are part of a
-reproducible benchmark; ad-hoc runs stay under the git-ignored `reports/` and
-`results/` directories. See [`data/README.md`](../data/README.md).
+Curated *inputs* live under `data/` (`data/skills/fastcontext/`,
+`data/agent_profiles/`, `data/explore_tasks/`) — the fixtures the framework's own
+examples and tests need. Question sets, product skills and personas are
+evaluation content, kept in a separate content repository and passed in by path
+(`--questions <path>`, `--questions-root <dir>`, `skill:<path>`) —
+[external-content.md](external-content.md) walks through pointing the framework
+at such a checkout.
+Everything the pipeline produces — answers,
+eval scores, benchmark snapshots, reports — stays under the git-ignored
+`answers/`, `eval/`, `baselines/`, `reports/` and `results/` directories. See
+[`data/README.md`](../data/README.md).
 
 ## Cost estimate
 

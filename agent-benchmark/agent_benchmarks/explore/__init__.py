@@ -1,4 +1,4 @@
-"""ExploreBench: the standalone exploration-quality track (BACKLOG #60).
+"""ExploreBench: the standalone exploration-quality track.
 
 Scores whether an agent can *locate* the right files and line ranges for a task
 (file:line citations vs. reference locations), independent of whether it can use

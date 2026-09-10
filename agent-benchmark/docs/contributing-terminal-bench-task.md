@@ -1,132 +1,233 @@
-# Adding a terminal-bench task
+# Authoring an executable (terminal-bench) task
 
-Tasks under `terminal-bench-tasks/` evaluate LLM coding agents on real Intel
-oneAPI workloads: the agent gets an `instruction.md` and an environment, has
-to produce working code, and is graded by pytest inside a Docker sandbox.
+An executable task evaluates an LLM coding agent on real work: the agent gets an
+`instruction.md` and a container, has to produce working code, and is graded by a
+deterministic verifier inside Docker. The verifier's pass/fail *is* the metric —
+no LLM judge is involved.
 
-CI builds each task's container and runs the oracle solution offline to make
-sure the task is solvable and the verifier rejects obvious no-ops.
+Task definitions are evaluation content, so they live in a separate content
+repository, not here. This framework runs them from a checkout you name:
 
-This guide covers the contributor flow. The format reference lives in
-`terminal-bench-tasks/README.md`; the coverage matrix is in
-`terminal-bench-tasks/COVERAGE.md`.
+```bash
+python cli.py tasks list --tasks-root <checkout>/evaluation/harbor/tasks
+python cli.py tasks run  --tasks-root <checkout>/evaluation/harbor/tasks \
+  --tasks <task-name> --harnesses docker-oracle --out-json results/runs.json
+```
+
+This page is the format reference: everything a task directory must contain for
+`tasks list`/`tasks run`, the `docker-*` harnesses and the coverage contract to
+read it. Contribute the task itself to the content repository; contribute changes
+to this format here, next to the code that parses it
+([`agent_benchmarks/harnesses/tasks.py`](../agent_benchmarks/harnesses/tasks.py),
+[`agent_benchmarks/harnesses/docker_solver.py`](../agent_benchmarks/harnesses/docker_solver.py)).
 
 ## 1 — Pick a task
 
-Aim for one focused API or concept per task. Good candidates currently come
-from [`BACKLOG.md`](../BACKLOG.md) item #48 and the gaps listed in
-[COVERAGE.md](../terminal-bench-tasks/COVERAGE.md). When adapting external
-code, record the source in
-[PROVENANCE.md](../terminal-bench-tasks/PROVENANCE.md) and confirm the
-license allows redistribution.
-
-A task should:
+Aim for one focused API or concept per task. A task should:
 
 - Exercise a single primary API (`parallel_for`, `parallel_reduce`,
-  `flow::graph`, …) plus minimal scaffolding.
-- Be small enough to compile and run reliably under CI's `--network none`
-  sandbox in well under the configured `verifier.timeout_sec`.
+  `flow::graph`, `dpnp.fft`, …) plus minimal scaffolding.
+- Be small enough to compile and run reliably in an offline
+  (`--network none`) sandbox well inside its `verifier.timeout_sec`.
 - Be strong enough to reject keyword-only or no-op solutions — the verifier
-  must check observable behavior, not just file presence or comment
-  patterns.
+  must check observable behavior, not just file presence or comment patterns.
 
-## 2 — Lay out the directory
+Difficulty, level and trigger tagging is defined in
+[`difficulty-rubric.md`](./difficulty-rubric.md); a task should be placed on that
+grid deliberately rather than labelled by intuition.
+
+## 2 — Directory layout
+
+One directory per task, named in lower-kebab-case with the library prefix that
+matches the primary API surface (`onetbb-…`, `onemkl-…`, `dpnp-…`):
 
 ```text
-terminal-bench-tasks/onetbb-<name>/
-  instruction.md          # task description shown to the agent
-  task.toml               # config: timeouts, Docker image, metadata
+<tasks-root>/<library>-<concept>/
+  instruction.md          # REQUIRED: task description handed to the agent
+  task.toml               # REQUIRED: metadata, timeouts, container settings
   environment/
-    Dockerfile            # base image + preinstalled libs
-    <seed files>          # starter source, headers, data
+    Dockerfile            # REQUIRED: base image + preinstalled libs + baseline
+    <seed files>          # starter source, headers, data (build context)
   tests/
-    test.sh               # entry point; writes /logs/verifier/reward.txt
+    test.sh               # REQUIRED: entry point; writes the reward file
     test_*.py             # pytest cases
   solution/
-    solve.sh              # oracle solution (not shown to the agent)
+    solve.sh              # REQUIRED for the oracle harness; never shown to the agent
 ```
 
-Use an existing task as a template, e.g. `onetbb-nstream/` for compute
-kernels or `onetbb-flow-graph/` for pipelines.
+`instruction.md` and `task.toml` are hard requirements: `load_task()` raises
+`FileNotFoundError` without either, and directory discovery only treats a
+directory as a task when it contains `task.toml`.
 
-## 3 — Naming and metadata conventions
+## 3 — `task.toml`
 
-- Directory name: `onetbb-<concept>` (lower-kebab-case). Use the library
-  prefix that matches the primary API surface (`onemkl-…`, `onednn-…`).
-- `task.toml` fields:
-  - `metadata.difficulty` — `easy` / `medium` / `hard`.
-  - `metadata.category` — usually `programming`.
-  - `metadata.tags` — include the library (`onetbb`), the concept
-    (`parallel-reduce`), and any provenance tag (`parres`).
-  - `verifier.timeout_sec` — keep ≤ 60s for CI.
-  - `agent.timeout_sec` — typically 300s.
-  - `environment.docker_image` — `intel-hpc-bench/<task-name>:latest`.
-  - `environment.allow_internet = false` for CI parity.
+```toml
+version = "1.0"
 
-## 4 — Verifier requirements
+[metadata]
+author_name = "Your Name"
+author_email = "you@example.com"
+difficulty = "medium"                 # easy | medium | hard
+difficulty_explanation = "Requires recognizing a serial accumulator dependency"
+level = "diagnosis"                   # triage | diagnosis | end_to_end (optional)
+category = "programming"
+tags = ["c++", "performance", "onetbb"]
 
-The verifier (`tests/test.sh` + `tests/test_*.py`) must:
+[verifier]
+timeout_sec = 60.0
 
-- Compile the agent's submitted source from a stable path (mirror the
-  pattern in existing tasks).
-- Run it with deterministic input (fixed seeds; no wall-clock-dependent
-  output unless explicitly part of the task).
-- Compare output against a serial reference computed in the test itself —
-  do not check the agent's source for substrings as the only signal.
-- Check at least one structural signal too (e.g., the source uses
-  `tbb::parallel_reduce`) so a serial submission that produces the right
-  answer is still rejected.
-- Write the pytest result into `/logs/verifier/reward.txt` (`1.0` pass /
-  `0.0` fail), matching the Harbor convention.
+[agent]
+timeout_sec = 300.0
 
-## 5 — Oracle solution
-
-`solution/solve.sh` must produce a passing run end-to-end. It is invoked by
-CI with no network and must rely solely on the image and seed files. Keep
-it minimal — the oracle is a correctness baseline, not a tutorial.
-
-## 6 — Local verification
-
-```bash
-# Build the image
-docker build -t intel-hpc-bench/onetbb-<name>:latest \
-  terminal-bench-tasks/onetbb-<name>/environment
-
-# Run the oracle offline (mirrors CI)
-docker run --rm --network none \
-  -v "$PWD/terminal-bench-tasks/onetbb-<name>:/task" \
-  intel-hpc-bench/onetbb-<name>:latest \
-  bash -c "cp /task/solution/solve.sh /tmp/solve.sh && \
-           bash /tmp/solve.sh && \
-           bash /task/tests/test.sh && \
-           cat /logs/verifier/reward.txt"
+[environment]
+build_timeout_sec = 300.0
+docker_image = "intel-hpc-bench/<task-name>:latest"
+cpus = 4
+memory_mb = 2048
+storage_mb = 5120
+gpus = 0
+allow_internet = false
 ```
 
-Expected output: `1.0`.
+Field by field, with the consumer that actually reads it:
 
-Negative check — confirm the verifier rejects a no-op:
+| Field | Read by | Meaning |
+| --- | --- | --- |
+| `metadata.tags` | `tasks list`, the coverage contract | Lowercased tag list. **This is the work signal**: a task counts as work for a product when its tags contain the product's key in `products.yaml` (or one of that product's `tag_aliases:`). Include the library key (`onetbb`, `dpnp`, `intel-performance-skills`), the concept (`parallel-reduce`), and any provenance tag (`parres`). |
+| `metadata.difficulty` | `tasks list`, the task-runs report | `easy` / `medium` / `hard`; drives the difficulty rollup in the Markdown report. Missing renders as `?`. |
+| `metadata.level` | [`difficulty-rubric.md`](./difficulty-rubric.md) | Workflow depth: `triage`, `diagnosis`, `end_to_end`. Optional but recommended for skill evaluation. |
+| `metadata.difficulty_explanation`, `category`, `author_*` | humans | Provenance and review context; carried through in the run artifact. |
+| `agent.timeout_sec` | `TaskSpec.timeout_sec`, the solver harnesses | Wall-clock budget for the agent's attempt. Typically 300. |
+| `verifier.timeout_sec` | Harbor, human reviewers | Verifier budget. Keep it small (≤ 60s where possible) so CI stays fast. |
+| `environment.build_timeout_sec` | `docker-*` harnesses | Image-build budget; used instead of the default when set (oneAPI/pip-heavy images need > 10 min). |
+| `environment.docker_image` | Harbor | Image tag Harbor expects to exist (`harbor run` does **not** build it for you). The in-repo `docker-*` harnesses build and tag `agent-bench/<task-name>:latest` themselves. |
+| `environment.cpus`, `memory_mb` | `docker-*` harnesses | Container limits (`--cpus`, `--memory`); default to 4 CPUs / 2048 MB when absent. A malformed value falls back to the default rather than failing the run. |
+| `environment.network_mode` | `docker-*` harnesses | `"public"` gives the solve/verify container NAT'd internet (bridge). Anything else, including absent, means `--network none`. The image *build* always gets host network. Prefer offline. |
+| `environment.allow_internet` | Harbor | Harbor's equivalent policy flag; set it `false` and keep it consistent with `network_mode`. |
+| `environment.storage_mb`, `gpus` | Harbor | Declared resource envelope. |
+
+Unknown tables and keys are ignored, so a task may carry extra fields the
+content repository needs.
+
+## 4 — `instruction.md`
+
+The full problem statement handed to the agent: what to produce, where to put
+it, how it will be judged, and the build/run command the verifier will use. It
+must be solvable from the container's contents alone — no network, no reference
+to files the agent cannot see (and never a pointer to `solution/`).
+
+## 5 — `environment/Dockerfile`
+
+- Preinstalls the toolchain and libraries, and lays down the *starting state*
+  (for a performance task, the slow baseline at `/app`).
+- Is the Docker build context: the harness runs
+  `docker build -f <task>/environment/Dockerfile <task>/environment`, so seed
+  files must sit next to the Dockerfile.
+- Should pin what it installs. Dependencies may be pulled at **build** time;
+  solve and verify then run offline.
+- Must not contain the solution.
+
+## 6 — `tests/` (the verifier)
+
+`tests/test.sh` is the entry point. The harness copies `tests/` to `/tests` in
+the container and runs `/tests/test.sh` after `mkdir -p /logs/verifier`.
+
+The contract:
+
+- Write the outcome to `/logs/verifier/reward.txt` — `1` (or `1.0`) for pass,
+  `0` (or `0.0`) for fail. The harness copies that file out; if it is missing it
+  falls back to the verifier's exit code, so also exit non-zero on failure.
+- Do not let a failure abort before the reward file is written (capture the
+  pytest exit code, write the file, then exit with it).
+
+The pytest cases must:
+
+- Compile and run the agent's submitted source from a stable path stated in
+  `instruction.md`.
+- Use deterministic input (fixed seeds, formula-driven data; no
+  wall-clock-dependent expectations unless timing *is* the task).
+- Compare against a reference computed inside the test, not against a stored
+  golden blob — and never check the agent's source for substrings as the only
+  signal.
+- Add at least one structural signal as well (e.g. the binary really links
+  oneTBB, the ufunc really dispatches to the accelerated implementation) so a
+  serial submission that happens to produce the right answer is still rejected.
+- Where the task is about speed, gate on a conservative speedup threshold
+  against a baseline built into the image, on a deterministic single-thread
+  workload.
+
+## 7 — `solution/solve.sh`
+
+The oracle: a deterministic solution that makes the verifier pass end-to-end.
+It is copied into the container as `/solution` and run as root, offline, with
+only the image and seed files available. Keep it minimal — the oracle is a
+correctness baseline for the *task*, not a tutorial. Every task needs one,
+because the `docker-oracle` harness is how a task is proven runnable without
+spending model tokens.
+
+## 8 — Local verification
 
 ```bash
-docker run --rm --network none \
-  -v "$PWD/terminal-bench-tasks/onetbb-<name>:/task" \
-  intel-hpc-bench/onetbb-<name>:latest \
+# Build the image and run the oracle through this repo's own harness
+python cli.py tasks run \
+  --tasks-root <checkout>/evaluation/harbor/tasks \
+  --tasks <library>-<concept> \
+  --harnesses docker-oracle \
+  --out-json results/oracle.json
+```
+
+Expect `passed: 1` / `pass_rate: 1.0` in the summary. To check the two halves by
+hand:
+
+```bash
+TASK=<checkout>/evaluation/harbor/tasks/<library>-<concept>
+
+docker build -t intel-hpc-bench/<library>-<concept>:latest "$TASK/environment"
+
+# Oracle must pass
+docker run --rm --network none -v "$TASK:/task" \
+  intel-hpc-bench/<library>-<concept>:latest \
+  bash -c "cp -r /task/solution /tmp/solution && bash /tmp/solution/solve.sh && \
+           bash /task/tests/test.sh; cat /logs/verifier/reward.txt"
+# → 1
+
+# Negative check: the untouched baseline must fail
+docker run --rm --network none -v "$TASK:/task" \
+  intel-hpc-bench/<library>-<concept>:latest \
   bash -c "bash /task/tests/test.sh; cat /logs/verifier/reward.txt"
+# → 0
 ```
 
-Expected output: `0.0`.
+A task that passes both checks is trustworthy; one that passes only the first
+tells you nothing about whether the verifier discriminates.
 
-## 7 — Register the task
+Also confirm the task is discoverable and tagged as intended:
 
-- Add a row to the table in
-  [`terminal-bench-tasks/README.md`](../terminal-bench-tasks/README.md).
-- Add an entry to
-  [`terminal-bench-tasks/COVERAGE.md`](../terminal-bench-tasks/COVERAGE.md)
-  with API/concept, verifier type, difficulty, and status.
-- If the task is adapted from an external source, record the upstream
-  commit, license, and any modifications in
-  [`terminal-bench-tasks/PROVENANCE.md`](../terminal-bench-tasks/PROVENANCE.md).
+```bash
+python cli.py tasks list --tasks-root <checkout>/evaluation/harbor/tasks
+python -m agent_benchmarks.coverage \
+  --tasks-root <checkout>/evaluation/harbor/tasks \
+  --questions-root <checkout>/questions
+```
 
-## 8 — CI
+The coverage matrix should count the new task under the product whose key is in
+its `metadata.tags`.
 
-The `Verify terminal-bench-tasks` workflow picks up new directories
-automatically. Confirm the green run on your PR before requesting review.
+## 9 — Provenance
+
+Record where a task came from. If it is adapted from external code, note the
+upstream repository, the commit or release consulted, the license, and what was
+changed — and confirm the license allows redistribution. A task that is
+"inspired by" upstream kernels rather than copied should say so explicitly, so
+results are never reported as official upstream benchmark numbers. The content
+repository is the right place for that record, kept next to the tasks it
+describes; keep it current in the same change that adds the task.
+
+## 10 — CI
+
+CI in this repository proves the *framework* against external content: the
+`external-catalog-smoke` job in `.github/workflows/agent-quality.yml` clones a
+pinned public catalog, scans it, and drives one of its tasks through
+`docker-oracle`, asserting the pass rate. It deliberately does not enumerate
+individual tasks — verifying a task catalog is the content repository's job, and
+this format spec is what the two sides share.

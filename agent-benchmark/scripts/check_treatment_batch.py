@@ -14,8 +14,8 @@ one file per cell. Two jobs:
    questions where *both* arms scored are comparable.
 
 Usage:
-    python scripts/check_treatment_batch.py results/unified_judge/persona-dpnp-expert \\
-        --profile data/agent_profiles/dpnp-expert.md
+    python scripts/check_treatment_batch.py results/unified_judge/persona-batch \\
+        --profile data/agent_profiles/concise_expert.md
     python scripts/check_treatment_batch.py results/unified_judge/skills \\
         --treatment-arm 'skill:*' --expect-n regular=40,golden=20
 
@@ -42,12 +42,12 @@ if str(REPO_ROOT) not in sys.path:
 
 JUDGE_MODEL = "global.anthropic.claude-sonnet-4-6"
 JUDGE_PROVIDER = "amazon-bedrock"
-# Question-set sizes keyed by the filename suffix the run_*.sh scripts use. These are the
-# *dpnp* sizes and nothing more: golden sets run 20 (dpnp, mkl-extensions), 24 (oneTBB,
-# oneMKL, oneDAL) and 111 (intel-performance-skills) questions, so a batch over another
-# product must pass --expect-n. The suffix is a filename convention, not something the
-# artifact knows, which is why `check_file` also flags a want_n that disagrees with the
-# artifact's own total_questions instead of trusting the map.
+# Question-set sizes keyed by the filename suffix the run_*.sh scripts use. These are one
+# product's sizes and nothing more — observed golden sets have run 20, 24 and 111 questions
+# depending on the product — so a batch over another product must pass --expect-n. The suffix
+# is a filename convention, not something the artifact knows, which is why `check_file` also
+# flags a want_n that disagrees with the artifact's own total_questions instead of trusting
+# the map.
 EXPECTED_N = {"regular": 40, "golden": 20}
 # The observed judge-call failure rate is ~1.25% (Intel proxy APIConnectionError),
 # so "zero errors" is not a reachable gate across ~960 calls. Gate on coverage.

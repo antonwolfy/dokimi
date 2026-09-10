@@ -179,26 +179,11 @@ class RagasSeedExtractor:
 
     @staticmethod
     def _fallback_topics(library_name: str) -> List[str]:
-        """Return generic fallback topics when extraction fails."""
-        name = library_name.lower()
-        if "tbb" in name:
-            return [
-                "parallel_for", "parallel_reduce", "parallel_pipeline",
-                "task_arena", "task_group", "flow_graph",
-                "tbb::blocked_range", "tbb::concurrent_vector",
-                "tbb::concurrent_hash_map", "tbb::mutex",
-                "tbb::enumerable_thread_specific",
-                "NUMA support", "task scheduler", "work stealing",
-                "memory allocator", "tbbmalloc",
-            ]
-        if "dal" in name or "daal" in name:
-            return [
-                "sklearn patch", "sklearnex", "daal4py",
-                "train interface", "infer interface",
-                "GPU support", "batch mode", "online mode",
-                "decision forest", "gradient boosting", "linear regression",
-                "k-means", "PCA", "SVM", "table interface",
-            ]
-        # Generic fallback
+        """Return generic fallback topics when extraction fails.
+
+        Product-specific topic lists are evaluation content: supply them with
+        ``questions generate --topics <file>`` instead of hard-coding them
+        here, so the fallback is the same for every library.
+        """
         return ["installation", "getting started", "API overview",
                 "performance tuning", "troubleshooting", "examples"]

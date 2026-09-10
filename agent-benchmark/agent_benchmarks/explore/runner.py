@@ -1,4 +1,4 @@
-"""ExploreBench suite runner (BACKLOG #60, ADR §3.4).
+"""ExploreBench suite runner (exploration-quality ADR §3.4).
 
 Runs each exploration task through one or more *arms* (explorers), parses the
 ``<final_answer>`` block each returns, scores it against the task's reference

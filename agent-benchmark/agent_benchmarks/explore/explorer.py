@@ -12,7 +12,7 @@ explorers ship here:
   ``AGENT_BENCHMARK_OP`` / ``operations.jsonl`` telemetry it produced.
 
 Both return an :class:`ExplorerResult`, so the ExploreBench runner and the
-command-wrapper harness (BACKLOG #60 slices 5 + 6) consume one shape.
+command-wrapper harness (exploration-quality ADR slices 5 + 6) consume one shape.
 """
 
 from __future__ import annotations

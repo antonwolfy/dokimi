@@ -7,13 +7,39 @@
 # Run single:  python -m agent_benchmarks benchmark run --library <name>
 # Run batch:   python -m agent_benchmarks benchmark batch --libraries onetbb,onemkl
 #              python -m agent_benchmarks benchmark batch --all
+#
+# Per-product keys:
+#   name, description, repo, context7_id, doc_sources  — identity (required:
+#     name, description).
+#   coverage_status: covered | questions-only | planned — the self-reported
+#     state of the coverage contract (see docs/decisions/
+#     2026-06-10-questions-and-tasks-coverage-contract.md). Optional. Declaring
+#     `covered` is a promise a reviewer can check: it fails the coverage check
+#     unless the named roots really do hold a golden question set and a tagged
+#     task for the product. No product declares `covered` here, because the
+#     evidence lives in an external content repository and every checkout of it
+#     can hold a different slice; raise a product to `covered` only in a
+#     registry that ships alongside the content it points at.
+#   tag_aliases: [<tag>, ...] — optional extra task tags that also count as
+#     work for this product (e.g. oneDAL lists `sklearnex`, because sklearnex
+#     tasks exercise the oneDAL library they accelerate).
+#   questions: [<path>, ...] — optional explicit question-set paths; relative
+#     paths resolve against this repository.
+#
+# The two halves of the coverage contract — awareness
+# (`<questions-root>/<key>_golden.json`) and work (task dirs under
+# `<tasks-root>` whose tags name the product) — are resolved against content
+# roots the caller supplies, not against this repository:
+#   python -m agent_benchmarks.coverage --tasks-root <dir> --questions-root <dir>
+#   python -m agent_benchmarks.config_check --tasks-root <dir> --questions-root <dir>
 
 products:
 
   # ── Performance optimization skills ──────────────────────────────────────
 
   intel_performance_skills:
-    coverage_status: covered
+    coverage_status: planned
+    tag_aliases: [intel-performance-skills]
     name: Intel Performance Skills
     description: >
       Intel performance-optimization Agent Skills (intel/intel-performance-skills):
@@ -28,7 +54,7 @@ products:
   # ── Threading & Parallelism ──────────────────────────────────────────────
 
   onetbb:
-    coverage_status: covered
+    coverage_status: planned
     name: oneTBB
     description: >
       oneAPI Threading Building Blocks (oneTBB) is a C++ template library for
@@ -53,7 +79,7 @@ products:
   # ── Math & Numerics ──────────────────────────────────────────────────────
 
   onemkl:
-    coverage_status: covered
+    coverage_status: planned
     name: oneMKL
     description: >
       oneAPI Math Kernel Library (oneMKL) provides highly optimized routines:
@@ -66,7 +92,7 @@ products:
       - url:https://www.intel.com/content/www/us/en/docs/onemkl/developer-reference-c/2024-2/overview.html
 
   mkl_extensions:
-    coverage_status: covered
+    coverage_status: planned
     name: MKL Python Extensions (mkl_fft, mkl_random, mkl_umath)
     description: >
       Intel MKL Python extension packages providing oneMKL-backed acceleration
@@ -106,7 +132,8 @@ products:
       - url:https://docs.openvino.ai/2024/index.html
 
   onedal:
-    coverage_status: covered
+    coverage_status: planned
+    tag_aliases: [sklearnex]
     name: oneDAL
     description: >
       oneAPI Data Analytics Library (oneDAL) provides optimized algorithms for
@@ -158,7 +185,7 @@ products:
       - url:https://intelpython.github.io/dpctl/
 
   dpnp:
-    coverage_status: covered
+    coverage_status: planned
     name: DPNP (Data Parallel NumPy)
     description: >
       DPNP is a NumPy-compatible array library that executes on Intel GPUs and

@@ -1,6 +1,6 @@
 """Tests for the ExploreBench track + exploration report + token-role rollup.
 
-Covers slices 3/5/6/7 of the exploration-quality ADR (BACKLOG #60):
+Covers slices 3/5/6/7 of the exploration-quality ADR:
 
 * ``explore/tasks.py`` — task loading and reference-location construction.
 * ``explore/explorer.py`` — static/oracle explorers and the subagent-op bridge.
@@ -28,7 +28,12 @@ from agent_benchmarks.explore.explorer import (
     op_marker_line,
     subagent_op_from_answer,
 )
-from agent_benchmarks.explore.tasks import ExploreReference, ExploreTask, _task_from_data
+from agent_benchmarks.explore.tasks import (
+    REPO_ROOT,
+    ExploreReference,
+    ExploreTask,
+    _task_from_data,
+)
 from agent_benchmarks.harnesses.operations import load_operations
 from agent_benchmarks.metrics.exploration import parse_final_answer
 from agent_benchmarks.metrics.usage import UsageRecord, roll_up_by_role, to_record
@@ -122,6 +127,68 @@ def test_load_task_id_not_shadowed_by_filename_stem(tmp_path):
     )
     assert load_explore_task("foo", root=tmp_path).references[0].path == "b.py"
     assert load_explore_task("bar", root=tmp_path).references[0].path == "a.py"
+
+
+def test_default_repo_root_replaces_the_agent_benchmark_fallback(tmp_path):
+    """A task without `repo_root:` scores against the caller's tree."""
+    (tmp_path / "t.yaml").write_text(
+        "id: t\nproduct: p\nquery: q\nreferences:\n  - path: a.py\n", encoding="utf-8"
+    )
+    external = tmp_path / "external-repo"
+    external.mkdir()
+
+    task = load_explore_task("t", root=tmp_path, default_repo_root=external)
+    assert task.repo_root == external.resolve()
+    assert discover_explore_tasks(tmp_path, default_repo_root=external)[
+        0
+    ].repo_root == external.resolve()
+
+    # Without it, the historical fallback (this repository) still applies.
+    assert load_explore_task("t", root=tmp_path).repo_root == REPO_ROOT
+
+
+def test_declared_repo_root_wins_over_default(tmp_path):
+    (tmp_path / "t.yaml").write_text(
+        "id: t\nproduct: p\nquery: q\nrepo_root: declared\nreferences:\n  - path: a.py\n",
+        encoding="utf-8",
+    )
+    task = load_explore_task(
+        "t", root=tmp_path, default_repo_root=tmp_path / "external-repo"
+    )
+    assert task.repo_root == (tmp_path / "declared").resolve()
+
+
+def test_explore_list_passes_repo_root_from_cli(tmp_path, capsys):
+    from agent_benchmarks.cli import build_parser
+
+    (tmp_path / "t.yaml").write_text(
+        "id: t\nproduct: p\nquery: q\nreferences:\n  - path: a.py\n", encoding="utf-8"
+    )
+    external = tmp_path / "external-repo"
+    external.mkdir()
+    seen: list[Path] = []
+
+    parser = build_parser()
+    args = parser.parse_args(
+        ["explore", "list", "--tasks-root", str(tmp_path), "--repo-root", str(external)]
+    )
+    assert args.repo_root == str(external)
+
+    import agent_benchmarks.explore as explore_pkg
+
+    real_discover = explore_pkg.discover_explore_tasks
+
+    def spy(root=None, default_repo_root=None):
+        seen.append(default_repo_root)
+        return real_discover(root, default_repo_root=default_repo_root)
+
+    explore_pkg.discover_explore_tasks = spy
+    try:
+        args.func(args)
+    finally:
+        explore_pkg.discover_explore_tasks = real_discover
+    assert seen == [external]
+    assert "t\tp\t1 ref(s)" in capsys.readouterr().out
 
 
 def test_seed_tasks_load_and_reference_real_files():

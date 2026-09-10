@@ -34,9 +34,18 @@ It also reports the resolved fixed retrieval policy: semantic-only, `top_k=3`.
 
 ## 3. Run canonical benchmark
 
+Question sets live in a separate evaluation-content checkout, so name its
+`questions/` directory. The run picks up `<target>_golden.json` from there:
+
 ```bash
-python cli.py benchmark run --target onetbb
+python cli.py benchmark run --target onetbb \
+  --questions-root <content-checkout>/questions
 ```
+
+Without `--questions-root` (or `--custom-questions <file>`) the run **generates**
+questions instead of reading a curated set, and logs a warning saying so. That is
+fine for a first look, but two runs then answer different questions and cannot be
+compared. See [external-content.md](external-content.md).
 
 Defaults:
 
@@ -60,12 +69,15 @@ results/<target>_final/
 ## 4. Reuse same question set for fair comparison
 
 ```bash
-python cli.py benchmark run --target onetbb --output-dir results/onetbb_seed
+python cli.py benchmark run --target onetbb --questions-root <content-checkout>/questions --output-dir results/onetbb_seed
 python cli.py benchmark run --target onetbb --questions-from results/onetbb_seed --model gpt-5.1
 python cli.py benchmark run --target onetbb --questions-from results/onetbb_seed --model claude-sonnet-4-5-20250929 --provider anthropic
 ```
 
-Never compare models on different generated questions.
+Never compare models on different generated questions. `--questions-from` reuses
+the set an earlier run wrote; `--questions-root` reads a curated set that lives in
+the content checkout. Either one pins the questions — a bare `benchmark run` does
+not.
 
 ## 5. Add more evidence layers only when needed
 

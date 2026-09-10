@@ -239,9 +239,9 @@ def test_arm_significance_bh_correction_selectable():
 
 
 def test_detect_factorial_cells_finds_combined_arm():
-    arms = ["baseline", "docs", "skill:dpnp-quickstart", "docs+skill:dpnp-quickstart"]
+    arms = ["baseline", "docs", "skill:demo-skill", "docs+skill:demo-skill"]
     assert stats.detect_factorial_cells(arms) == [
-        ("docs", "skill:dpnp-quickstart", "docs+skill:dpnp-quickstart")
+        ("docs", "skill:demo-skill", "docs+skill:demo-skill")
     ]
 
 

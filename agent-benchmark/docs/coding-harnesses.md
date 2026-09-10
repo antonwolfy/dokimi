@@ -42,8 +42,10 @@ version uses different flags, pass `--command-template` and keep the same output
 contract. When Harbor is not installed, prefer the `docker-*` harnesses — they
 build, solve, and verify against local Docker directly and record telemetry.
 
-Harbor (pinned to 0.22.0 in CI) does not propagate a non-zero process exit
-code for errored/cancelled trials, and this repo's CI runner has hit Harbor
+This contract was written against Harbor 0.22.0; CI no longer installs or runs
+Harbor, so treat that as the version the notes below were observed on rather
+than a validated pin. Harbor does not propagate a non-zero process exit code
+for errored/cancelled trials, and this repo's CI runner has hit Harbor
 environment-start failures: a Docker Compose v2 gap, and a `network_mode`
 rejection. The latter is Harbor behaving correctly — a task declaring
 `allow_internet = false` becomes `network_mode='no-network'`, which the docker
@@ -68,6 +70,7 @@ Run one task through Codex and compare it to Claude Code:
 
 ```bash
 python cli.py tasks run \
+  --tasks-root <content-checkout>/evaluation/harbor/tasks \
   --tasks onetbb-parallel-reduce \
   --harnesses claude-code,codex \
   --baseline-harness claude-code \
@@ -82,6 +85,7 @@ Run all tasks through a custom wrapper:
 
 ```bash
 python cli.py tasks run \
+  --tasks-root <content-checkout>/evaluation/harbor/tasks \
   --all \
   --harnesses command \
   --command-template "my-agent --task {task_path} --model {model} --out {output_dir}" \
@@ -99,9 +103,34 @@ invoke Docker, Harbor, or a billable model-backed solver. If a descriptor
 declares tasks, pass `--work-harnesses` or consciously skip them with
 `--skip-work`:
 
+No descriptor is committed here — a subject names evaluation content, so you write
+one against your own checkout:
+
+```toml
+# my-subject.toml
+baseline = "baseline"
+
+[subject]
+id = "onetbb-quickstart-skill"
+kind = "skill"
+ref = "<content-checkout>/skills/onetbb-quickstart"
+
+[suite]
+products = ["oneTBB"]
+questions = ["<content-checkout>/questions/onetbb_golden.json"]
+tasks = []
+
+[[matrix.cells]]
+id = "arms-runner"
+model = "gpt-4o-mini"
+provider = "openai"
+harness = "arms-runner"
+plugins = []
+```
+
 ```bash
-python cli.py subjects run subjects/onetbb-quickstart.toml \
-  --work-harnesses docker-claude,docker-claude-skill:data/skills/onetbb-quickstart \
+python cli.py subjects run my-subject.toml \
+  --work-harnesses docker-claude,docker-claude-skill:<content-checkout>/skills/onetbb-quickstart \
   --work-baseline-harness docker-claude \
   --work-model us.anthropic.claude-haiku-4-5-20251001-v1:0 \
   --work-repeats 3
@@ -119,8 +148,9 @@ per-task breakdown — lands in one schema-validated artifact:
 
 ```bash
 python cli.py tasks run \
+  --tasks-root <content-checkout>/evaluation/harbor/tasks \
   --tasks intel-perf-serial-accumulator,intel-perf-false-sharing,intel-perf-missing-restrict \
-  --harnesses docker-claude,docker-claude-skill:data/skills/intel-performance-patterns/SKILL.md \
+  --harnesses docker-claude,docker-claude-skill:<content-checkout>/skills/intel-performance-patterns/SKILL.md \
   --baseline-harness docker-claude \
   --model us.anthropic.claude-haiku-4-5-20251001-v1:0 \
   --repeats 3 \
@@ -159,7 +189,7 @@ python cli.py dataset export --kind task_runs \
   --out-dir results/skill-task-arms-dataset --format jsonl   # or parquet / hf
 ```
 
-What the harnesses handle for you (ported from the older `scripts/run_task.sh`):
+What the harnesses handle for you:
 pass the host proxy through to `docker build` (corporate networks), run
 solve/verify as root for images that set a non-root `USER`, expose the whole
 skill tree to the agent (not just `SKILL.md`), and recompile inside the
@@ -167,16 +197,14 @@ container using the `g++`/`gcc` command from `instruction.md` — the agent edit
 source on the host, whose newer glibc would otherwise break the binary in the
 older task image.
 
-### Low-level single-task scripts
-
-`scripts/run_task.sh` and `scripts/run_skill_task_arms.sh` run the same Docker
-flow from bash without the CLI. They only emit `reward.txt` (no cost/token
-telemetry and no saved artifact), so prefer the `docker-*` harnesses above for
-any tracked experiment. The scripts remain useful for a quick one-off oracle
-check:
+For a single throwaway oracle check, run one task through `docker-oracle`
+rather than reaching for a shell script — it is the same Docker flow and it
+still writes the artifact:
 
 ```bash
-scripts/run_task.sh oracle terminal-bench-tasks/intel-perf-serial-accumulator /tmp/out
+python cli.py tasks run --tasks <task-name> \
+  --tasks-root <checkout>/evaluation/harbor/tasks \
+  --harnesses docker-oracle --out-json results/oracle-check.json
 ```
 
 ## Output Artifact
@@ -303,40 +331,17 @@ been shown to make anything run.
 
 ## External Sources
 
-Skills and tasks can come from a checkout of another repo, not just
-`data/skills/` and `terminal-bench-tasks/`. Nothing here clones anything —
-point the existing flags at a checkout you already have.
+Executable tasks always come from a checkout of a content repository (there is
+no bundled task tree), and skills can come from one too. Nothing here clones
+anything — point the existing flags (`--tasks-root`, `skill:<path>`) at a
+checkout you already have.
+[external-content.md](external-content.md) is the canonical page for that: how
+to lay a checkout out, how to scan it before you spend money on it, and what
+every command does when a root is missing. This section covers only the
+harness-specific part.
 
-`uxlfoundation/skills` (https://github.com/uxlfoundation/skills) is the
-worked example: it ships `SKILL.md` packages for the same oneAPI libraries
-this repo benchmarks, plus a Harbor task suite under
-`evaluation/harbor/tasks/`, both in formats our loaders already read.
-
-Clone it, then scan it before pointing anything real at it:
-
-```bash
-git clone https://github.com/uxlfoundation/skills /tmp/uxl-skills
-
-python cli.py catalog scan --root /tmp/uxl-skills --kind skills
-python cli.py catalog scan --root /tmp/uxl-skills --kind tasks
-```
-
-`catalog scan` reads the source's own manifests when present
-(`skills.yaml`, `evaluation/harbor/suites.json`) and reports, per entry,
-whether it loaded, or why it was skipped — some suite entries are declared
-but not yet implemented (`status: "planned"`, no task directory on disk
-yet) or aren't executable Harbor tasks at all (`track: "answer-quality"` /
-`"hardware"`, a different evaluation track this repo's `tasks run` doesn't
-drive). Skips are expected and don't fail the scan; a load *error* on an
-entry that does exist does, and so does a manifest entry whose
-`catalog_path` or task `name` resolves outside the checkout you pointed
-`--root` at. Both print `ERROR:` and exit 1, so the scan is usable as a
-pre-flight gate before `tasks run` — read the exit code, not just the
-output, because "skipped" is by design not a failure. Without a manifest,
-it falls back to a bare directory scan (same as
-`discover_skills`/`discover_tasks`).
-
-Once scanned, use the entries the same way as local ones:
+Scan the checkout first (`python cli.py catalog scan --root <checkout>`), then
+use the entries it reports the same way as local ones:
 
 ```bash
 # with-skill treatment arm using an external skill
@@ -350,8 +355,7 @@ harbor run -p /tmp/uxl-skills/evaluation/harbor/tasks/onetbb-histogram-local-agg
 ```
 
 `docker-claude`/`docker-oracle` read `environment.network_mode` from the
-task's own `task.toml` (defaulting to no network at solve/verify time, as
-every task in this repo already expects) — an external task that legitimately
-needs network at solve/verify time can declare
+task's own `task.toml`, defaulting to no network at solve/verify time — a task
+that legitimately needs network at solve/verify time can declare
 `network_mode = "public"` and both harnesses will honor it, alongside
 `cpus`/`memory_mb` if declared.

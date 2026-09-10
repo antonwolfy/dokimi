@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -134,16 +135,120 @@ def test_questions_from_directory_uses_product_key_when_provided(tmp_path, monke
     )
 
 
-def test_auto_golden_discovery_uses_product_key():
+def test_auto_golden_discovery_uses_product_key(tmp_path):
+    """The golden set is looked up as <product_key>_golden.json under the root."""
+    questions_root = tmp_path / "questions"
+    _write_json(questions_root / "demo_golden.json", {"questions": []})
+    # A set named after the display name must not be picked up instead.
+    _write_json(questions_root / "demoproduct_golden.json", {"questions": []})
+
     pipeline = EvaluationPipeline(
-        product="oneDAL",
-        product_key="onedal",
-        output_dir=Path("/tmp/unused"),
-        description="Data Analytics Library",
+        product="DemoProduct",
+        product_key="demo",
+        output_dir=tmp_path / "out",
+        description="A demo product",
+        questions_root=questions_root,
     )
 
     assert pipeline.custom_questions_path is not None
-    assert pipeline.custom_questions_path.name == "onedal_golden.json"
+    assert pipeline.custom_questions_path.name == "demo_golden.json"
+    assert pipeline.custom_questions_path.parent == questions_root
+
+
+def test_missing_golden_set_under_questions_root_warns(tmp_path, caplog):
+    questions_root = tmp_path / "questions"
+    questions_root.mkdir()
+
+    with caplog.at_level(logging.WARNING):
+        pipeline = EvaluationPipeline(
+            product="DemoProduct",
+            product_key="demo",
+            output_dir=tmp_path / "out",
+            description="A demo product",
+            questions_root=questions_root,
+        )
+
+    assert pipeline.custom_questions_path is None
+    assert "has no golden set for demo" in caplog.text
+
+
+def test_no_questions_root_means_no_golden_set(tmp_path, caplog):
+    """Without a root (and without --custom-questions) nothing is auto-included.
+
+    The run then generates its questions, which silently makes two runs
+    incomparable, so it must say so and name the flag.
+    """
+    with caplog.at_level(logging.WARNING):
+        pipeline = EvaluationPipeline(
+            product="DemoProduct",
+            product_key="demo",
+            output_dir=tmp_path / "out",
+            description="A demo product",
+        )
+
+    assert pipeline.custom_questions_path is None
+    assert pipeline.questions_root is None
+    assert "no questions root given" in caplog.text
+    assert "--questions-root" in caplog.text
+    # The root-exists-but-lacks-the-set message belongs to the other branch.
+    assert "has no golden set" not in caplog.text
+
+
+def test_custom_questions_path_wins_over_questions_root(tmp_path):
+    questions_root = tmp_path / "questions"
+    _write_json(questions_root / "demo_golden.json", {"questions": []})
+    explicit = tmp_path / "explicit.json"
+    _write_json(explicit, {"questions": []})
+
+    pipeline = EvaluationPipeline(
+        product="DemoProduct",
+        product_key="demo",
+        output_dir=tmp_path / "out",
+        description="A demo product",
+        custom_questions_path=explicit,
+        questions_root=questions_root,
+    )
+
+    assert pipeline.custom_questions_path == explicit
+
+
+def test_evaluate_command_forwards_questions_root(tmp_path, monkeypatch):
+    """`evaluate --questions-root` reaches EvaluationPipeline."""
+    from agent_benchmarks.cli import build_parser
+
+    seen: dict[str, object] = {}
+
+    class FakePipeline:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def run(self, concurrency=5):
+            return {
+                "steps": {
+                    "personas": {"path": "p"},
+                    "questions_merged": {"path": "q"},
+                    "answers": {"path": "a"},
+                    "evaluation": {"path": "e"},
+                    "report": {"path": "r"},
+                }
+            }
+
+    monkeypatch.setattr(
+        "agent_benchmarks.orchestrator.EvaluationPipeline", FakePipeline
+    )
+    questions_root = tmp_path / "questions"
+    questions_root.mkdir()
+
+    args = build_parser().parse_args([
+        "evaluate",
+        "--product", "DemoProduct",
+        "--description", "A demo product",
+        "--output-dir", str(tmp_path / "out"),
+        "--questions-root", str(questions_root),
+    ])
+    args.func(args)
+
+    assert seen["questions_root"] == questions_root
 
 
 def test_load_questions_payload_rejects_invalid_wrapped_payload(tmp_path):

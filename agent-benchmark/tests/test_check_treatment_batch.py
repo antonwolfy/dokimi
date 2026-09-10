@@ -19,7 +19,7 @@ assert _spec and _spec.loader
 ctb = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ctb)
 
-ARM = "profile:dpnp-expert"
+ARM = "profile:concise_expert"
 DIGEST = "sha256:" + "a" * 64
 
 
@@ -195,7 +195,7 @@ def test_a_third_arm_breaks_parity_with_the_docs_and_skills_batches(tmp_path):
 
 def test_a_treatment_arm_of_the_wrong_kind_fails(tmp_path):
     problems = _problems(
-        tmp_path, "m_regular.json", _cell(arm="skill:dpnp-quickstart"),
+        tmp_path, "m_regular.json", _cell(arm="skill:demo-skill"),
     )
     assert any("does not match" in p for p in problems)
 

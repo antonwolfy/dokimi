@@ -1,6 +1,6 @@
 ## Summary
 
-<!-- What does this PR change, and why? Link any related issue or BACKLOG item. -->
+<!-- What does this PR change, and why? Link any related issue. -->
 
 ## Changes
 

@@ -15,6 +15,7 @@ from agent_benchmarks.commands.subjects import (
     _matrix_config_for_run,
     _run_subject_work,
     _safe_subject_id,
+    _validate_subject_work_args,
     _validate_unique_awareness_arm_names,
     _validate_unique_product_output_dirs,
 )
@@ -57,11 +58,34 @@ plugins = []
     assert matrix_config(descriptor)["matrix"]["cells"][0]["id"] == "agent-none"
 
 
-def test_subjects_show_parser_accepts_descriptor():
-    args = build_parser().parse_args(["subjects", "show", "subjects/onetbb-quickstart.toml"])
+def test_subjects_show_parser_accepts_descriptor(tmp_path: Path):
+    """No descriptor is committed any more — a subject points at content supplied by path —
+    so the parser is handed one written here rather than a repo-relative literal that would
+    keep this test green while naming a file that does not exist."""
+    descriptor_path = tmp_path / "subject.toml"
+    descriptor_path.write_text(
+        """
+baseline = "baseline"
+
+[subject]
+id = "demo-skill"
+kind = "skill"
+ref = "/path/to/skills-repo/skills/demo-skill"
+
+[suite]
+products = ["demo"]
+questions = ["/path/to/content-repo/questions/demo_golden.json"]
+tasks = []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    args = build_parser().parse_args(["subjects", "show", str(descriptor_path)])
 
     assert args.cmd == "subjects"
     assert args.subjects_cmd == "show"
+    assert Path(args.subject) == descriptor_path
+    assert load_subject(descriptor_path).id == "demo-skill"
 
 
 def test_mcp_subject_normalizes_transport_prefix(tmp_path: Path):
@@ -265,7 +289,7 @@ ref = "data/skills/example"
 [suite]
 products = ["oneTBB"]
 questions = ["questions.json"]
-tasks = ["terminal-bench-tasks/example"]
+tasks = ["tasks-root/example"]
 """.strip(),
         encoding="utf-8",
     )
@@ -276,7 +300,7 @@ tasks = ["terminal-bench-tasks/example"]
         out_dir=tmp_path,
         work_run={
             "status": "run",
-            "tasks": ["terminal-bench-tasks/example"],
+            "tasks": ["tasks-root/example"],
             "arm_specs": ["baseline", "skill-agent:data/skills/example"],
             "harnesses": ["codex"],
             "task_runs": "out/task-runs.json",
@@ -609,7 +633,7 @@ ref = "data/skills/example"
 [suite]
 products = ["oneTBB"]
 questions = ["questions.json"]
-tasks = ["terminal-bench-tasks/example"]
+tasks = ["tasks-root/example"]
 """.strip(),
         encoding="utf-8",
     )
@@ -618,6 +642,50 @@ tasks = ["terminal-bench-tasks/example"]
 
     with pytest.raises(ValueError, match="pass --work-harnesses"):
         _run_subject_work(descriptor, args, out_dir=tmp_path)
+
+
+def test_subject_work_resolves_bare_task_names_against_tasks_root(tmp_path: Path):
+    """`suite.tasks` may name tasks the way `tasks run --tasks` does, so the root that
+    makes a bare name resolvable has to be nameable here too. Without it the loader's
+    error pointed at a `--tasks-root` flag this subcommand did not accept."""
+    tasks_root = tmp_path / "harbor" / "tasks"
+    task_dir = tasks_root / "demo-widget"
+    task_dir.mkdir(parents=True)
+    (task_dir / "instruction.md").write_text("Edit the code.", encoding="utf-8")
+    (task_dir / "task.toml").write_text(
+        '[metadata]\ndifficulty = "smoke"\ntags = ["demo"]\n', encoding="utf-8"
+    )
+    descriptor_path = tmp_path / "subject.toml"
+    descriptor_path.write_text(
+        """
+[subject]
+id = "skill-subject"
+kind = "skill"
+ref = "/tmp/skills/example"
+
+[suite]
+products = ["oneTBB"]
+questions = ["questions.json"]
+tasks = ["demo-widget"]
+""".strip(),
+        encoding="utf-8",
+    )
+    descriptor = load_subject(descriptor_path)
+
+    without_root = build_parser().parse_args(
+        ["subjects", "run", str(descriptor_path), "--work-harnesses", "codex"]
+    )
+    with pytest.raises(ValueError, match="--tasks-root"):
+        _validate_subject_work_args(descriptor, without_root)
+
+    with_root = build_parser().parse_args([
+        "subjects", "run", str(descriptor_path),
+        "--work-harnesses", "codex",
+        "--tasks-root", str(tasks_root),
+    ])
+    tasks = _validate_subject_work_args(descriptor, with_root)
+    assert [task.name for task in tasks] == ["demo-widget"]
+    assert tasks[0].path == task_dir.resolve()
 
 
 def test_subject_work_preflight_loads_tasks_before_awareness(tmp_path: Path, monkeypatch, capsys):
@@ -797,3 +865,51 @@ def test_forwarded_run_config_covers_fields_read_with_a_default():
     read_with_default = set(re.findall(r'getattr\(args,\s*"([a-z_0-9]+)"', source))
     missing = read_with_default - set(arms_mod.FORWARDED_RUN_CONFIG_FIELDS)
     assert not missing, f"read with a getattr default but never forwarded: {sorted(missing)}"
+
+
+def test_subjects_list_without_a_root_names_the_flag():
+    """Descriptors live in a content checkout, so there is no in-repo default root."""
+    parser = build_parser()
+    args = parser.parse_args(["subjects", "list"])
+    with pytest.raises(SystemExit) as excinfo:
+        args.func(args)
+    assert "--subjects-root" in str(excinfo.value)
+
+
+def test_subjects_list_rejects_a_root_that_is_not_a_directory(tmp_path: Path):
+    parser = build_parser()
+    args = parser.parse_args(["subjects", "list", "--subjects-root", str(tmp_path / "typo")])
+    with pytest.raises(SystemExit) as excinfo:
+        args.func(args)
+    assert "--subjects-root is not a directory" in str(excinfo.value)
+
+
+def test_subjects_list_prints_descriptors_from_a_named_root(tmp_path: Path, capsys):
+    root = tmp_path / "subjects"
+    root.mkdir()
+    (root / "demo.toml").write_text(
+        """
+[subject]
+id = "demo-subject"
+kind = "skill"
+ref = "/path/to/content-repo/skills/demo-skill"
+
+[suite]
+products = ["demo"]
+questions = ["questions.json"]
+
+[[matrix.cells]]
+id = "agent-none"
+model = "m"
+provider = "openai"
+harness = "agent"
+plugins = []
+""".strip(),
+        encoding="utf-8",
+    )
+    parser = build_parser()
+    args = parser.parse_args(["subjects", "list", "--subjects-root", str(root)])
+    args.func(args)
+    out = capsys.readouterr().out
+    assert "demo-subject" in out
+    assert "skill" in out

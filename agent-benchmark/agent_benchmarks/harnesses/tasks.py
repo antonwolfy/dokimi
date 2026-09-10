@@ -12,8 +12,12 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
     import tomli as tomllib  # type: ignore[no-redef]
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-TASKS_ROOT = REPO_ROOT / "terminal-bench-tasks"
+# Executable tasks live in a separate evaluation-content checkout, so there is
+# no in-repo default root: the caller always names one.
+NO_TASKS_ROOT_MESSAGE = (
+    "no tasks root given; pass --tasks-root <checkout>/evaluation/harbor/tasks "
+    "(or a full path to a single task directory)"
+)
 
 
 @dataclass(frozen=True)
@@ -45,21 +49,38 @@ class TaskSpec:
 
 
 def discover_tasks(root: Path | None = None) -> list[TaskSpec]:
-    """Load every task directory under ``terminal-bench-tasks``."""
+    """Load every task directory under *root* (each holding a ``task.toml``).
 
-    root = Path(root or TASKS_ROOT)
+    Args:
+        root: tasks root to scan. Required — there is no bundled task tree.
+
+    Raises:
+        ValueError: if *root* is None.
+    """
+
+    if root is None:
+        raise ValueError(NO_TASKS_ROOT_MESSAGE)
+    root = Path(root)
     if not root.is_dir():
         return []
     return [load_task(path) for path in sorted(root.iterdir()) if (path / "task.toml").is_file()]
 
 
 def load_task(path_or_name: str | Path, root: Path | None = None) -> TaskSpec:
-    """Load one task by directory path or task name."""
+    """Load one task by directory path, or by task name relative to *root*.
 
-    root = Path(root or TASKS_ROOT)
+    A full path is loaded without a *root*; a bare task name needs one.
+    """
+
     path = Path(path_or_name)
     if not path.exists():
-        path = root / str(path_or_name)
+        if root is None:
+            # A bare task name cannot be resolved without a root; a path that
+            # was spelled out is simply missing.
+            if not path.is_absolute() and len(path.parts) == 1:
+                raise ValueError(NO_TASKS_ROOT_MESSAGE)
+            raise FileNotFoundError(f"Task directory not found: {path_or_name}")
+        path = Path(root) / str(path_or_name)
     path = path.resolve()
     if not path.is_dir():
         raise FileNotFoundError(f"Task directory not found: {path_or_name}")

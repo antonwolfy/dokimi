@@ -1,4 +1,4 @@
-"""Tests for the exploration-quality layer (BACKLOG #60).
+"""Tests for the exploration-quality layer.
 
 Covers the two slices that land independently of any LLM/Docker integration:
 

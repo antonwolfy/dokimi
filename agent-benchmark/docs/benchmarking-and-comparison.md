@@ -37,11 +37,15 @@ The JSON snapshot contains summary metrics such as coverage, freshness,
 readability, and example pass rate. The Markdown report is a human-readable
 view of the same run.
 
-Compare a candidate snapshot with a saved baseline:
+Compare a candidate snapshot with a saved baseline. The repository ships no
+committed baseline — the base is a snapshot you generated yourself and kept,
+so keep the first `baselines/current.json` you are happy with:
 
 ```bash
+cp baselines/current.json baselines/baseline.json   # once, after a clean run
+
 python cli.py compare \
-  --base data/baselines/baseline.json \
+  --base baselines/baseline.json \
   --candidate baselines/current.json \
   --spec benchmarks/spec.v1.yaml \
   --out-json reports/compare.json \
@@ -49,13 +53,16 @@ python cli.py compare \
 ```
 
 The compare command computes candidate-minus-baseline deltas and, when `--spec`
-is passed, applies configured regression thresholds.
+is passed, applies configured regression thresholds. Both snapshots must come
+from the same docs corpus definition, otherwise the deltas are meaningless.
 
-Equivalent Make targets are available from the repository root:
+Equivalent Make targets are available from the repository root; `BASE` defaults
+to `baselines/baseline.json`:
 
 ```bash
 make benchmark-run
-make benchmark-compare
+make benchmark-compare                       # uses baselines/baseline.json
+make benchmark-compare BASE=path/to/base.json
 ```
 
 ## LLM context benchmark
@@ -170,7 +177,7 @@ Use the lower-level commands when you need explicit control over each artifact:
 ```bash
 python cli.py answers generate \
   --product oneTBB \
-  --questions data/questions/onetbb_golden.json \
+  --questions <content-checkout>/questions/onetbb_golden.json \
   --output results/onetbb_golden/answers/onetbb.json \
   --model gpt-5.5 \
   --provider openai \
@@ -196,7 +203,7 @@ file included in the report generator:
 python cli.py report generate \
   --product oneTBB \
   --eval results/onetbb_golden/eval/onetbb.json \
-  --questions data/questions/onetbb_golden.json \
+  --questions <content-checkout>/questions/onetbb_golden.json \
   --output results/onetbb_golden/reports/oneTBB.md \
   --format markdown
 ```
@@ -208,8 +215,8 @@ Use treatment arms when comparing context artifacts rather than models:
 ```bash
 python cli.py arms run \
   --product oneTBB \
-  --questions data/questions/onetbb_golden.json \
-  --arms "baseline,docs,skill:data/skills/onetbb-quickstart" \
+  --questions <content-checkout>/questions/onetbb_golden.json \
+  --arms "baseline,docs,skill:<content-checkout>/skills/onetbb-quickstart" \
   --judge \
   --out-json results/arms/onetbb_skill.json \
   --out-md results/arms/onetbb_skill.md
@@ -353,7 +360,7 @@ Consistency is validated before the report is written:
 The report names the arm it scored rather than calling everything "Context arm":
 "Models Compared" gains a **Treatment arm** column (per run, or `— (baseline
 only)`), and the summary, ranking, and benefit headers read the arm name — e.g.
-`### By absolute quality (profile:dpnp-expert)`. The generic label survives only
+`### By absolute quality (profile:concise_expert)`. The generic label survives only
 when the runs disagree or no arm was scored. The name is taken from the extracted
 score records, not the artifact header, so the label cannot disagree with the
 numbers beside it.
@@ -467,15 +474,18 @@ model-to-model fairness.
 
 ## What to commit
 
-Commit curated fixtures under `data/` when they define a reproducible benchmark:
+Commit curated *inputs* under `data/` when the framework itself needs them:
 
-- `data/questions/*.json`
-- `data/answers/*.json`
-- `data/eval/*.json`
-- `data/baselines/*.json`
-- `data/skills/*/SKILL.md`
+- `data/skills/fastcontext/SKILL.md`
 - `data/agent_profiles/*.md`
+- `data/explore_tasks/*.yaml`
 
-Keep generated experiment outputs under `results/`, `reports/`, or
-`baselines/current.json`; those are working artifacts and should normally stay
-git-ignored.
+Question sets and product skills are evaluation content: commit them to the
+content repository and pass them in with `--questions` / `--questions-root` and
+`skill:<path>`.
+
+Answer runs, judge scores and static-benchmark snapshots are outputs, not
+fixtures: keep them under `results/`, `reports/`, `answers/`, `eval/` or
+`baselines/`, which are git-ignored. Their schemas are locked by
+`agent_benchmarks/schemas/*.json` and `tests/test_artifacts.py`, so no captured
+run has to be committed to protect the format.

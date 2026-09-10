@@ -1,11 +1,5 @@
 # Architecture overview
 
-> This document covers the `agent-benchmark` measurement engine. For how it fits
-> the larger build→measure→**package→discover** loop, see the umbrella
-> [architecture](../../software-packaging-for-agents/architecture.md): the
-> `Treatment`/`AgentConfig` abstraction described below doubles as the in-memory
-> representation of a shippable agent package.
-
 `agent-benchmark` ships two parallel evaluation tracks plus an optional
 executable-task suite. They share configuration (`config/products.yaml`,
 `products.yaml`, `intents.yaml`) and a single CLI entry point (`cli.py`) but
@@ -34,7 +28,8 @@ otherwise operate independently.
                             (JSON / Markdown artifacts)
 
                        ┌─────────────────────────────────┐
-                       │ terminal-bench-tasks/           │
+                       │ external tasks root             │
+                       │  (--tasks-root <checkout>)      │
                        │  Docker + oracle + pytest       │
                        │  exercised by GitHub Actions    │
                        └─────────────────────────────────┘
@@ -101,11 +96,13 @@ per-arm deltas vs a baseline. Entry point: `python cli.py arms run`. Details in
 
 ## Executable task track
 
-`terminal-bench-tasks/` contains [Terminal-Bench /
-Harbor](https://harborframework.com)-format tasks: Docker environment,
-`instruction.md`, oracle solution, and pytest verifier. CI builds the
-container and runs the oracle to make sure each task is solvable and the
-verifier catches the obvious failure modes.
+Tasks are [Terminal-Bench / Harbor](https://harborframework.com)-format
+directories — Docker environment, `instruction.md`, oracle solution, and pytest
+verifier — supplied from an external content checkout named with `--tasks-root`
+(format spec:
+[contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)). CI
+builds a container from a pinned external catalog and runs its oracle to make
+sure the harness, the task format, and the verifier path all still work.
 
 `agent_benchmarks/harnesses/` turns those task directories into measured
 `task_runs.v1` artifacts. Built-in harness aliases include `codex`,
@@ -123,8 +120,9 @@ reads another checkout's own manifests (`skills.yaml`,
 `evaluation/harbor/suites.json` — the uxlfoundation/skills convention) and
 reports what loads via `python cli.py catalog scan --root <path>`; loaded
 entries then plug into the same `--tasks-root` / `docker-claude-skill:<path>`
-flags as local ones. See the "External Sources" section of
-[coding-harnesses.md](coding-harnesses.md).
+flags as local ones. [external-content.md](external-content.md) is the
+end-to-end walkthrough of that; the "External Sources" section of
+[coding-harnesses.md](coding-harnesses.md) covers the harness-specific part.
 
 ## Shared building blocks
 
@@ -159,11 +157,12 @@ Two GitHub Actions workflows run on PRs (see `.github/workflows/`):
 
 **`agent-quality.yml`** — task and benchmark checks:
 
-6. **terminal-bench-verify** / **terminal-bench-verify-oneapi** — build the task
-   containers listed in `agent-quality.yml` and verify their oracle solutions
-   offline (`--network none`). The workflow uses an explicit task allow-list, so
-   a task directory is only covered once it is added there (e.g.
-   `intel-perf-branch-mispredict` is currently not in the list).
+6. **external-catalog-smoke** — clones a pinned external content catalog, runs
+   `catalog scan` over it, then drives one of its real tasks through the
+   `docker-oracle` harness (build + solve + verify, `--network none` at solve and
+   verify time) and asserts the pass rate. Task definitions are not in this
+   repository, so this job proves the harness and the task format rather than any
+   particular task.
 7. **benchmark** — runs the static agent-quality benchmark and uploads
    `current.json` / `current.md` artifacts.
 

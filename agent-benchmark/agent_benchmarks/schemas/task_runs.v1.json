@@ -171,7 +171,7 @@
               },
               "exploration_metrics": {
                 "type": "object",
-                "description": "Optional exploration-quality block (BACKLOG #60). Emitted only when the operation stream contains read/search/subagent/edit signal. Metrics that cannot be derived from the available telemetry are null.",
+                "description": "Optional exploration-quality block. Emitted only when the operation stream contains read/search/subagent/edit signal. Metrics that cannot be derived from the available telemetry are null.",
                 "additionalProperties": true
               }
             },

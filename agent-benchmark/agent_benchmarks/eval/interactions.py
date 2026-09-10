@@ -31,9 +31,9 @@ def detect_factorial_cells(arms: Sequence[str]) -> List[Tuple[str, str, str]]:
     """Find ``(arm_a, arm_b, combined_arm)`` triples among ``arms``.
 
     ``CombinedTreatment`` names itself by joining its sub-treatment names with
-    ``"+"``, so ``"docs+skill:dpnp-quickstart"`` is recognised as the
-    both-factors cell whenever ``"docs"`` and ``"skill:dpnp-quickstart"`` are
-    also present as standalone arms. Only two-factor combinations are returned.
+    ``"+"``, so ``"docs+skill:my-skill"`` is recognised as the both-factors cell
+    whenever ``"docs"`` and ``"skill:my-skill"`` are also present as standalone
+    arms. Only two-factor combinations are returned.
 
     The split is chosen by membership, not by counting separators: arm names may
     legitimately contain ``"+"`` themselves (``skill:c++-guide``), and a plain

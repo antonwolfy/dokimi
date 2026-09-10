@@ -1,39 +1,21 @@
-# Product configuration for the LLM evaluation track.
+# Runtime configuration for the LLM evaluation track: which models answer,
+# judge and generate, how questions are generated, how answers are scored, and
+# how documentation is retrieved. Every block below is read at run time.
 #
-# Canonical product *identity* (repo, context7 id, doc sources) lives in the
-# top-level `products.yaml` registry. The `products:` block below restates the
-# subset needed by the eval track; `python -m agent_benchmarks.config_check`
-# (run in CI) fails if the GitHub repo here drifts from products.yaml.
-# This file additionally owns LLM/runtime config (llm, context7, retrieval, …).
-
-products:
-  oneTBB:
-    name: "Intel oneAPI Threading Building Blocks"
-    github_repo: "uxlfoundation/oneTBB"
-    context7_library: "oneTBB"  # Will resolve via Context7 API
-    description: "Cross-platform C++ template library for parallel programming"
-    default_personas: 5  # Auto-generate this many personas
-    
-  oneDAL:
-    name: "Intel oneAPI Data Analytics Library"
-    github_repo: "uxlfoundation/oneDAL"
-    context7_library: "oneDAL"
-    description: "High-performance library for data analytics and machine learning"
-    default_personas: 5
-    
-  oneDNN:
-    name: "Intel oneAPI Deep Neural Network Library"
-    github_repo: "uxlfoundation/oneDNN"
-    context7_library: "oneDNN"
-    description: "Performance library for deep learning frameworks"
-    default_personas: 5
-    
-  oneMKL:
-    name: "Intel oneAPI Math Kernel Library"
-    github_repo: "uxlfoundation/oneMKL"
-    context7_library: "oneMKL"
-    description: "High-performance math routines for science, engineering, and financial applications"
-    default_personas: 5
+# Product *identity* (name, description, repo, context7_id, doc sources) lives
+# in the top-level `products.yaml` registry and is not restated here.
+#
+# An optional `products:` block is still honoured, for a caller who keeps
+# eval-track overrides per product:
+#
+#   products:
+#     <product>:
+#       github_repo: "<org>/<repo>"   # checked against products.yaml
+#       default_personas: 5
+#
+# `python -m agent_benchmarks.config_check` (run in CI) reports drift when a
+# product declared in both files disagrees on the GitHub repo; the top-level
+# products.yaml is canonical.
 
 # Context7 MCP configuration
 context7:

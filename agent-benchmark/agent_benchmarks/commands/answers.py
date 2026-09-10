@@ -23,7 +23,10 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
     """Generate context-arm and baseline answers for questions."""
     import yaml
     from agent_benchmarks.eval import Answerer
-    from agent_benchmarks.mcp.factory import create_doc_source_client
+    from agent_benchmarks.mcp.factory import (
+        create_doc_source_client,
+        resolve_library_id_for_product,
+    )
 
     # Load config
     config_path = Path("config/products.yaml")
@@ -58,10 +61,14 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
     mcp_client = create_doc_source_client(doc_source)
     context7_id = getattr(args, "context7_id", None)
     if context7_id:
-        library_id = context7_id
-        print(f"Using explicit Context7 library ID: {library_id}")
-    else:
-        library_id = mcp_client.resolve_library_id(args.product)
+        print(f"Using explicit Context7 library ID: {context7_id}")
+    try:
+        library_id = resolve_library_id_for_product(
+            args.product, mcp_client, explicit_id=context7_id
+        )
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
 
     print(f"Generating answers for {args.product} (library_id={library_id})")
     print(f"Using model: {args.provider}/{args.model}")

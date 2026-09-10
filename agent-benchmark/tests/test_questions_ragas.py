@@ -205,17 +205,17 @@ class TestExtractHeuristic:
 # ---------------------------------------------------------------------------
 
 class TestFallbackTopics:
-    def test_tbb_fallback(self):
-        topics = RagasSeedExtractor._fallback_topics("oneTBB")
-        assert "parallel_for" in topics
-
-    def test_dal_fallback(self):
-        topics = RagasSeedExtractor._fallback_topics("oneDAL")
-        assert any("sklearn" in t.lower() or "train" in t.lower() for t in topics)
-
     def test_generic_fallback(self):
         topics = RagasSeedExtractor._fallback_topics("unknownLib")
         assert len(topics) > 0
+        assert "installation" in topics
+
+    @pytest.mark.parametrize("library_name", ["oneTBB", "oneDAL", "unknownLib", ""])
+    def test_the_fallback_is_the_same_for_every_library(self, library_name):
+        """No product gets a hand-written topic list; supply one with --topics."""
+        assert RagasSeedExtractor._fallback_topics(library_name) == (
+            RagasSeedExtractor._fallback_topics("unknownLib")
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/napetrov/agent-benchmark/schemas/explore_runs.v1.json",
   "title": "Exploration-task run artifact v1",
-  "description": "Results of the standalone ExploreBench track (BACKLOG #60): exploration-only tasks where an agent emits file:line citations that are scored against reference locations, independent of any downstream answer or fix.",
+  "description": "Results of the standalone ExploreBench track: exploration-only tasks where an agent emits file:line citations that are scored against reference locations, independent of any downstream answer or fix.",
   "type": "object",
   "required": [
     "schema_version",

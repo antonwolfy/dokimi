@@ -186,7 +186,7 @@ def register(sub, positive_int) -> None:
         "--arms", required=True,
         help="Comma-separated arm specs. Examples: "
              "'baseline,docs', 'baseline,docs:local:./docs,profile:data/agent_profiles/concise_expert.md', "
-             "'baseline,mcp:http=https://mcp.context7.com/mcp,skill:data/skills/onetbb-quickstart'",
+             "'baseline,mcp:http=https://mcp.context7.com/mcp,skill:/path/to/skills-repo/skills/<name>'",
     )
     arms_run_p.add_argument("--model", default="gpt-4o-mini", help="LLM for answering")
     arms_run_p.add_argument("--provider", default="openai",
@@ -268,18 +268,32 @@ def register(sub, positive_int) -> None:
     plugin_delta_p.set_defaults(func=cmd_arms_plugin_delta)
 
 
-def _resolve_doc_library_id(treatments, product: str, explicit_id=None):
-    """Resolve a library id for the first doc arm, before plugin wrapping."""
+def _resolve_doc_library_id(treatments, product: str, explicit_id=None, registry=None):
+    """Resolve a library id for the first doc arm, before plugin wrapping.
+
+    Same three-step order as the ``answers``/``questions`` commands: explicit
+    flag, then the product's ``context7_id`` in ``products.yaml``, then the
+    client's own resolution. When no id can be named the ``ValueError`` is
+    raised to the caller, which stops the run: substituting the product name
+    would query an id that does not exist and record an empty-retrieval doc
+    arm as a measurement. Other failures (an unreachable MCP server, say) still
+    fall back to the product name and are reported by the arm itself.
+    """
     if explicit_id is not None:
         return explicit_id
 
+    from agent_benchmarks.mcp.factory import resolve_library_id_for_product
     from agent_benchmarks.treatments.arms import DocTreatment
 
     for treatment in treatments:
         unwrapped = getattr(treatment, "inner", treatment)
         if isinstance(unwrapped, DocTreatment):
             try:
-                return unwrapped.mcp_client.resolve_library_id(product)
+                return resolve_library_id_for_product(
+                    product, unwrapped.mcp_client, registry=registry
+                )
+            except ValueError:
+                raise
             except Exception:
                 return product
     return None
@@ -292,7 +306,7 @@ def _add_common_run_args(parser, positive_int, *, matrix_required: bool = False)
         "--arms", required=True,
         help="Comma-separated arm specs. Examples: "
              "'baseline,docs', 'baseline,docs:local:./docs,profile:data/agent_profiles/concise_expert.md', "
-             "'baseline,mcp:http=https://mcp.context7.com/mcp,skill:data/skills/onetbb-quickstart'",
+             "'baseline,mcp:http=https://mcp.context7.com/mcp,skill:/path/to/skills-repo/skills/<name>'",
     )
     parser.add_argument("--model", default="gpt-4o-mini", help="LLM for answering")
     parser.add_argument("--provider", default="openai",
@@ -393,7 +407,11 @@ def _build_arms_output(args: argparse.Namespace, specs: list[str], questions: li
     from agent_benchmarks.treatments import create_treatments
 
     treatments = create_treatments(specs, top_k=args.top_k, rerank_threshold=args.rerank_threshold)
-    library_id = _resolve_doc_library_id(treatments, args.product, args.context7_id)
+    try:
+        library_id = _resolve_doc_library_id(treatments, args.product, args.context7_id)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     plugins = create_plugins([s.strip() for s in args.plugins.split(",") if s.strip()])
     validate_plugins_for_harness(plugins, args.harness)
     treatments = wrap_treatments(treatments, plugins)

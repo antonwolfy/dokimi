@@ -56,13 +56,13 @@ def test_report_renders_cost_and_latency_section():
 def test_report_renders_paired_significance_section():
     data = {
         "library_name": "dpnp", "model": "m", "provider": "bedrock",
-        "arms": ["baseline", "skill:dpnp-quickstart"],
+        "arms": ["baseline", "skill:demo-skill"],
         "baseline_arm": "baseline",
         "total_questions": 6, "answers": [],
         "summary": {
             "per_arm": {
                 "baseline": {"avg_aggregate": 50.0, "n": 6},
-                "skill:dpnp-quickstart": {
+                "skill:demo-skill": {
                     "avg_aggregate": 62.0, "n": 6, "delta_vs_baseline": 12.0,
                     "significance": {
                         "n": 6, "delta_mean": 12.0, "cohens_d": 1.35,
@@ -80,7 +80,7 @@ def test_report_renders_paired_significance_section():
     assert "Holm-Bonferroni" in md
     assert "<0.0001" in md          # tiny p-values are not shown as 0.0000
     assert "[+9.5, +14.5]" in md    # bootstrap CI on the paired delta
-    assert "| `skill:dpnp-quickstart` | +12.0 |" in md
+    assert "| `skill:demo-skill` | +12.0 |" in md
 
 
 def test_report_renders_interaction_section():
@@ -215,12 +215,12 @@ def test_report_renders_agentic_section():
 def test_report_renders_skill_load_rate_from_summary():
     data = {
         "library_name": "oneTBB", "model": "m", "provider": "openai",
-        "arms": ["skill_agent:onetbb-quickstart"],
+        "arms": ["skill_agent:demo-skill"],
         "baseline_arm": "baseline",
         "total_questions": 2,
         "answers": [],
         "agentic_usage_summary": {
-            "skill_agent:onetbb-quickstart": {
+            "skill_agent:demo-skill": {
                 "n": 2,
                 "avg_tool_calls": 0.5,
                 "tool_use_rate": 0.5,
@@ -231,4 +231,4 @@ def test_report_renders_skill_load_rate_from_summary():
     }
     md = render_arms_report(data)
     assert "Skill-load rate" in md
-    assert "| `skill_agent:onetbb-quickstart` | 50% | 0.5 | 50% | 1.5 | 2 |" in md
+    assert "| `skill_agent:demo-skill` | 50% | 0.5 | 50% | 1.5 | 2 |" in md

@@ -86,7 +86,6 @@ pytest-mock==3.15.1
 pytest==9.0.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
-python-pptx==1.0.2
 PyYAML==6.0.3
 ragas==0.2.15
 referencing==0.37.0

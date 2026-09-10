@@ -6,8 +6,10 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from agent_benchmarks.artifacts import validate_artifact
-from agent_benchmarks.harnesses import TaskSuiteRunner, load_task
+from agent_benchmarks.harnesses import TaskSuiteRunner, discover_tasks, load_task
 from agent_benchmarks.harnesses.command import CommandHarness
 from agent_benchmarks.harnesses.operations import load_operations
 from agent_benchmarks.harnesses.registry import create_harness, known_harnesses
@@ -47,6 +49,33 @@ def test_task_loader_reads_terminal_bench_metadata(tmp_path):
     assert task.timeout_sec == 12
     assert task.metadata["tags"] == ["toy", "python"]
     assert "Write solution.py" in task.instruction
+
+
+def test_discover_tasks_reads_the_given_root(tmp_path):
+    _fixture_task(tmp_path)
+    tasks = discover_tasks(tmp_path)
+    assert [t.name for t in tasks] == ["toy-task"]
+
+
+def test_discover_tasks_without_a_root_names_the_flag(tmp_path):
+    """There is no bundled tasks tree, so an omitted root is an error."""
+    with pytest.raises(ValueError, match="--tasks-root"):
+        discover_tasks(None)
+
+
+def test_load_task_by_name_without_a_root_names_the_flag():
+    with pytest.raises(ValueError, match="--tasks-root"):
+        load_task("toy-task")
+
+
+def test_load_task_by_name_resolves_against_the_root(tmp_path):
+    _fixture_task(tmp_path)
+    assert load_task("toy-task", root=tmp_path).name == "toy-task"
+
+
+def test_load_task_with_a_missing_path_still_reports_the_path(tmp_path):
+    with pytest.raises(FileNotFoundError, match="Task directory not found"):
+        load_task(tmp_path / "no-such-task")
 
 
 def test_known_harness_aliases_render_harbor_commands(tmp_path):

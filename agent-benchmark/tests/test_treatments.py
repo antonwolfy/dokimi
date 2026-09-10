@@ -1,6 +1,7 @@
 """Tests for the treatment-arm abstraction and factory."""
 
 import pytest
+from conftest import DEMO_SKILL_MARKER
 
 from agent_benchmarks.utils import parse_frontmatter
 from agent_benchmarks.treatments import (
@@ -89,21 +90,21 @@ def test_agent_profile_blank_id_rejected(tmp_path):
 
 
 # ── skill arm ───────────────────────────────────────────────────────────
-def test_skill_loads_and_prepares():
-    skill = load_skill("data/skills/onetbb-quickstart")
+def test_skill_loads_and_prepares(demo_skill):
+    skill = load_skill(demo_skill)
     assert isinstance(skill, Skill)
-    assert skill.name == "onetbb-quickstart"
+    assert skill.name == "demo-skill"
     assert skill.description
 
     t = SkillTreatment(skill)
-    assert t.name == "skill:onetbb-quickstart"
-    cfg = t.prepare("How do I parallelize a loop?", "oneTBB")
+    assert t.name == "skill:demo-skill"
+    cfg = t.prepare("How do I parallelize a loop?", "demo")
     assert cfg.has_context
     assert len(cfg.injected_context) == 1
     chunk = cfg.injected_context[0]
-    assert "parallel_for" in chunk["content"]
-    assert chunk["source"] == "skill:onetbb-quickstart"
-    assert cfg.metadata["skill_name"] == "onetbb-quickstart"
+    assert DEMO_SKILL_MARKER in chunk["content"]
+    assert chunk["source"] == "skill:demo-skill"
+    assert cfg.metadata["skill_name"] == "demo-skill"
 
 
 def test_skill_missing_description_rejected(tmp_path):
@@ -168,13 +169,37 @@ def test_doc_treatment_retrieval_error_is_swallowed():
     assert cfg.metadata["error"] == "retrieval_failed"
 
 
-def test_doc_library_id_resolves_before_or_after_plugin_wrapping():
+def test_doc_library_id_resolves_before_or_after_plugin_wrapping(tmp_path):
+    from agent_benchmarks.registry import ProductRegistry
+
+    registry_path = tmp_path / "products.yaml"
+    registry_path.write_text(
+        "products:\n"
+        "  demo:\n"
+        "    name: demo\n"
+        "    description: x\n"
+        "    context7_id: declared/id\n",
+        encoding="utf-8",
+    )
+    registry = ProductRegistry(path=registry_path)
+
     t = DocTreatment(_FakeClient(), rerank_threshold=0.0)
     wrapped = wrap_treatments([t], [create_plugin("plugin:caveman")])
 
-    assert _resolve_doc_library_id([t], "oneTBB") == "fake/oneTBB"
-    assert _resolve_doc_library_id(wrapped, "oneTBB") == "fake/oneTBB"
-    assert _resolve_doc_library_id(wrapped, "oneTBB", explicit_id="manual/id") == "manual/id"
+    # Unregistered product: the doc client resolves it, wrapped or not.
+    assert _resolve_doc_library_id([t], "notaproduct", registry=registry) == "fake/notaproduct"
+    assert _resolve_doc_library_id(wrapped, "notaproduct", registry=registry) == "fake/notaproduct"
+    # Explicit flag wins over everything.
+    assert (
+        _resolve_doc_library_id(
+            wrapped, "notaproduct", explicit_id="manual/id", registry=registry
+        )
+        == "manual/id"
+    )
+    # A registered product's declared context7_id wins over client resolution.
+    assert _resolve_doc_library_id(wrapped, "demo", registry=registry) == "declared/id"
+    # Default registry (the committed products.yaml) is used when none is given.
+    assert _resolve_doc_library_id([t], "notaproduct") == "fake/notaproduct"
 
 
 # ── factory ─────────────────────────────────────────────────────────────
@@ -182,12 +207,12 @@ def test_create_treatment_baseline():
     assert isinstance(create_treatment("baseline"), BaselineTreatment)
 
 
-def test_create_treatment_profile_and_skill():
+def test_create_treatment_profile_and_skill(demo_skill):
     assert isinstance(
         create_treatment("profile:data/agent_profiles/concise_expert.md"), AgentProfileTreatment
     )
     assert isinstance(
-        create_treatment("skill:data/skills/onetbb-quickstart"), SkillTreatment
+        create_treatment(f"skill:{demo_skill.as_posix()}"), SkillTreatment
     )
 
 

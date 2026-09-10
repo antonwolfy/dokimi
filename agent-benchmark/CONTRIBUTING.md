@@ -71,4 +71,7 @@ The repo spans three loosely-coupled subsystems; see
 
 - **static benchmark** — `agent_benchmarks/runner`, `metrics`, `ingest`, `gate`
 - **LLM eval** — `agent_benchmarks/eval`, `questions`, `personas`, `treatments`
-- **terminal-bench tasks** — `terminal-bench-tasks/`
+- **executable tasks** — `agent_benchmarks/harnesses`. The task definitions
+  themselves are evaluation content and are contributed to the external content
+  repository; the format they must follow is specified in
+  [docs/contributing-terminal-bench-task.md](docs/contributing-terminal-bench-task.md).

@@ -21,7 +21,7 @@ from agent_benchmarks.defaults import (
 from agent_benchmarks.commands.library import _load_registry
 
 
-def _run_single_library(entry, output_dir: str, model: str, provider: str, judge_model: str, judge_provider: str = DEFAULT_JUDGE_PROVIDER, doc_source_override=None, max_tokens_per_question: int = DEFAULT_MAX_TOKENS_PER_QUESTION, force_regen: bool = False, concurrency: int = DEFAULT_CONCURRENCY, questions_from=None) -> dict:
+def _run_single_library(entry, output_dir: str, model: str, provider: str, judge_model: str, judge_provider: str = DEFAULT_JUDGE_PROVIDER, doc_source_override=None, max_tokens_per_question: int = DEFAULT_MAX_TOKENS_PER_QUESTION, force_regen: bool = False, concurrency: int = DEFAULT_CONCURRENCY, questions_from=None, questions_root=None) -> dict:
     """Run full evaluation pipeline for one ProductEntry. Returns result dict."""
     from agent_benchmarks.orchestrator import EvaluationPipeline
     from pathlib import Path as _Path
@@ -58,6 +58,7 @@ def _run_single_library(entry, output_dir: str, model: str, provider: str, judge
         force_regen=force_regen,
         questions_from=questions_from,
         product_key=entry.key,
+        questions_root=_Path(questions_root) if questions_root else None,
     )
     result = pipeline.run(concurrency=concurrency)
     return {"library": entry.key, "name": entry.name, "status": "ok", "result": result}
@@ -87,6 +88,7 @@ def _resolved_benchmark_plan(entry, args: argparse.Namespace) -> dict:
         "answer": f"{args.provider}/{args.model}",
         "judge": f"{args.judge_provider}/{args.judge_model}",
         "questions_from": getattr(args, "questions_from", None),
+        "questions_root": getattr(args, "questions_root", None),
         "retrieval": f"semantic-only, top_k={DEFAULT_RETRIEVAL_TOP_K}",
         "arms": "without_docs vs with_docs",
         "max_tokens_per_question": getattr(args, "max_tokens", DEFAULT_MAX_TOKENS_PER_QUESTION),
@@ -186,6 +188,7 @@ def cmd_benchmark_run(args: argparse.Namespace) -> None:
     n_runs = getattr(args, "multi_run", 1)
     concurrency = getattr(args, "concurrency", DEFAULT_CONCURRENCY)
     questions_from = getattr(args, "questions_from", None)
+    questions_root = getattr(args, "questions_root", None)
 
     if n_runs == 1:
         _run_single_library(
@@ -200,6 +203,7 @@ def cmd_benchmark_run(args: argparse.Namespace) -> None:
             force_regen=getattr(args, "force_regen", False),
             concurrency=concurrency,
             questions_from=questions_from,
+            questions_root=questions_root,
         )
     else:
         print(f"\n🔁 Multi-run mode: {n_runs} evaluation passes")
@@ -221,6 +225,7 @@ def cmd_benchmark_run(args: argparse.Namespace) -> None:
                 force_regen=(getattr(args, "force_regen", False) and i == 1),
                 concurrency=concurrency,
                 questions_from=qfrom,
+                questions_root=questions_root,
             )
             try:
                 eval_summary = r["result"]["steps"]["evaluation"]["summary"]
@@ -274,6 +279,7 @@ def cmd_benchmark_batch(args: argparse.Namespace) -> None:
                 max_tokens_per_question=getattr(args, "max_tokens", DEFAULT_MAX_TOKENS_PER_QUESTION),
                 force_regen=getattr(args, "force_regen", False),
                 concurrency=getattr(args, "concurrency", DEFAULT_CONCURRENCY),
+                questions_root=getattr(args, "questions_root", None),
             )
             results.append(r)
         except Exception as exc:
@@ -325,6 +331,12 @@ def register(sub, positive_int) -> None:
                                   "Skips question generation entirely — essential for fair multi-model "
                                   "comparisons (all models evaluated on the same question set). "
                                   "Example: --questions-from results/onedal_gpt51")
+    bench_run_p.add_argument("--questions-root", default=None, dest="questions_root",
+                             help="Directory where the golden question set "
+                                  "<target>_golden.json is looked up, for example a "
+                                  "checkout of the evaluation-content repository: "
+                                  "--questions-root /path/to/content-repo/questions. "
+                                  "Without it the run has no golden question set.")
     bench_run_p.add_argument("--multi-run", type=positive_int, default=1, dest="multi_run",
                              metavar="N",
                              help="Run answer generation + evaluation N times (default: 1). "
@@ -345,6 +357,9 @@ def register(sub, positive_int) -> None:
     bench_pre_p.add_argument("--max-tokens", type=positive_int, default=DEFAULT_MAX_TOKENS_PER_QUESTION, dest="max_tokens")
     bench_pre_p.add_argument("--concurrency", type=positive_int, default=DEFAULT_CONCURRENCY, dest="concurrency")
     bench_pre_p.add_argument("--questions-from", default=None, dest="questions_from", help="Question-set source for fair comparison")
+    bench_pre_p.add_argument("--questions-root", default=None, dest="questions_root",
+                             help="Directory where <target>_golden.json is looked up "
+                                  "(e.g. /path/to/content-repo/questions)")
     bench_pre_p.set_defaults(func=cmd_benchmark_preflight)
 
     # benchmark batch — multiple libraries
@@ -365,6 +380,9 @@ def register(sub, positive_int) -> None:
     bench_batch_p.add_argument("--force-regen", action="store_true", dest="force_regen",
                                help="Regenerate personas/questions even if cached files exist")
     bench_batch_p.add_argument("--registry", default=None, help="Path to custom products.yaml")
+    bench_batch_p.add_argument("--questions-root", default=None, dest="questions_root",
+                               help="Directory where each <target>_golden.json is looked "
+                                    "up (e.g. /path/to/content-repo/questions)")
     bench_batch_p.add_argument("--fail-fast", action="store_true", dest="fail_fast",
                                help="Stop on first failure (default: continue all)")
     bench_batch_p.set_defaults(func=cmd_benchmark_batch)

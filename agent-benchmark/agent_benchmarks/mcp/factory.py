@@ -106,6 +106,60 @@ def create_doc_source_client(
     )
 
 
+def resolve_library_id_for_product(
+    product: str,
+    client: MCPClient,
+    explicit_id: Optional[str] = None,
+    registry=None,
+) -> str:
+    """Resolve the doc-source library id to use for *product*.
+
+    Three steps, in order:
+
+    1. ``explicit_id`` — whatever the caller passed as ``--context7-id``.
+    2. ``context7_id`` declared for the product in ``products.yaml``, when the
+       product is registered (registry lookup is case-insensitive, so
+       ``oneTBB`` finds the ``onetbb`` entry). A registered product that
+       declares none is an error for any client with
+       ``requires_declared_library_id``: a registry key is not an id, and a key
+       such as ``mkl_extensions`` would otherwise pass Context7's website-form
+       check verbatim and retrieve nothing.
+    3. the client's own ``resolve_library_id``, for a name that is not a
+       registry key at all. Local sources return their own path;
+       :class:`~agent_benchmarks.mcp.context7.Context7Client` raises
+       ``ValueError`` for an unqualified name, naming both options above.
+
+    Args:
+        product: Product name or registry key.
+        client: Doc-source client to fall back to.
+        explicit_id: Library id given on the command line, if any.
+        registry: Registry to consult; defaults to the bundled
+            ``products.yaml`` via :class:`ProductRegistry`.
+    """
+    if explicit_id:
+        return explicit_id
+
+    if registry is None:
+        from agent_benchmarks.registry import ProductRegistry
+        registry = ProductRegistry()
+
+    if product in registry:
+        declared = registry.get(product).context7_id
+        if declared:
+            return declared
+        if getattr(client, "requires_declared_library_id", False):
+            raise ValueError(
+                f"product '{product}' is registered but declares no "
+                "'context7_id', and a registry key is not a Context7 library "
+                "id (Context7 ids look like 'uxlfoundation/oneTBB' or "
+                "'intelpython_github_io_dpnp'). Either add 'context7_id:' to "
+                f"the '{product}' entry in products.yaml, or pass "
+                "--context7-id on the command line."
+            )
+
+    return client.resolve_library_id(product)
+
+
 def _build_mcp_protocol_client(ref: str):
     """Parse an ``mcp:`` reference into an MCPProtocolClient.
 

@@ -1,23 +1,24 @@
 #!/usr/bin/env python
-"""Regenerate a channel-control agent profile from the skill it mirrors.
+"""Mirror a skill's body into an agent profile, so a channel comparison holds content constant.
 
-`data/agent_profiles/dpnp-skilltext.md` exists to hold *content* constant while changing
-the *channel*: the same bytes the `skill:` arm injects as context, sent instead as the
-answering agent's system prompt. That only isolates the channel while the two are
-byte-identical, and nothing about editing a skill makes anyone remember the profile —
-`tests/test_agent_profiles.py::test_channel_control_is_the_skill_text_verbatim` is what
-notices, and this script is what it points at.
+A channel-control profile exists to change the *channel* while keeping the *content* fixed:
+the same bytes the `skill:` arm injects as context, sent instead as the answering agent's
+system prompt. The comparison only isolates the channel while the two are byte-identical, and
+nothing about editing a skill makes anyone remember the profile — so re-run this script (or
+its `--check` mode, in CI) whenever the skill changes.
 
-    python scripts/sync_skilltext_profile.py --check   # exit 1 if out of sync
-    python scripts/sync_skilltext_profile.py           # rewrite the profile body
+    python scripts/sync_skilltext_profile.py --skill <skill-dir> --profile <profile.md> --check
+    python scripts/sync_skilltext_profile.py --skill <skill-dir> --profile <profile.md>
 
-The profile's YAML frontmatter is preserved verbatim; only the body is replaced.
+Both flags are required: the skill and the profile are evaluation content, supplied by path
+from wherever they live. The profile must already exist — its YAML frontmatter is preserved
+verbatim and only the body is replaced, because the frontmatter `id` is the arm name.
 
-Re-syncing changes the prompt text, so it changes `profile_prompt_sha256`. Every cell
-already measured with the old text becomes a different treatment under the same arm name
-(`profile:dpnp-skilltext`) — `scripts/check_treatment_batch.py --profile` reports those as
-STALE ARTIFACT, and `report model-compare` refuses to pool them. Re-run the affected cells
-or keep the batches apart; do not average them.
+Re-syncing changes the prompt text, so it changes `profile_prompt_sha256`. Every cell already
+measured with the old text becomes a different treatment under the same arm name —
+`scripts/check_treatment_batch.py --profile` reports those as STALE ARTIFACT, and
+`report model-compare` refuses to pool them. Re-run the affected cells or keep the batches
+apart; do not average them.
 """
 
 from __future__ import annotations
@@ -33,8 +34,6 @@ if str(REPO_ROOT) not in sys.path:
 from agent_benchmarks.skills import load_skill  # noqa: E402
 from agent_benchmarks.utils import parse_frontmatter  # noqa: E402
 
-DEFAULT_SKILL = REPO_ROOT / "data" / "skills" / "dpnp-quickstart"
-DEFAULT_PROFILE = REPO_ROOT / "data" / "agent_profiles" / "dpnp-skilltext.md"
 # Must match the cap the skill arm renders with, in `treatments/arms.py`. A different cap
 # here would make the control differ from the skill arm by content as well as channel.
 MAX_CHARS = 12_000
@@ -94,8 +93,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--skill", type=Path, default=DEFAULT_SKILL, help="skill directory to mirror")
-    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE, help="profile .md to rewrite")
+    parser.add_argument(
+        "--skill", type=Path, required=True, help="skill directory to mirror (contains SKILL.md)"
+    )
+    parser.add_argument(
+        "--profile", type=Path, required=True, help="existing profile .md whose body to rewrite"
+    )
     parser.add_argument(
         "--check",
         action="store_true",
@@ -112,19 +115,12 @@ def main() -> int:
         print(f"in sync: {args.profile.name} matches {args.skill.name}")
         return 0
     if args.check:
-        # Echo only the flags that were actually needed: printing the two absolute default
-        # paths turns a one-word fix into a line nobody copies.
-        flags = "".join(
-            f" {flag} {value}"
-            for flag, value, default in (
-                ("--skill", args.skill, DEFAULT_SKILL),
-                ("--profile", args.profile, DEFAULT_PROFILE),
-            )
-            if value != default
-        )
+        # Echo the exact command that fixes it: both paths are caller-supplied, so a generic
+        # "re-run the script" line would not be copyable.
         print(
             f"OUT OF SYNC: {args.profile.name} does not match {args.skill.name}.\n"
-            f"Run: python scripts/sync_skilltext_profile.py{flags}",
+            f"Run: python scripts/sync_skilltext_profile.py --skill {args.skill} "
+            f"--profile {args.profile}",
             file=sys.stderr,
         )
         return 1

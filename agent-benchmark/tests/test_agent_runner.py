@@ -2,6 +2,8 @@
 
 import json
 
+from conftest import DEMO_SKILL_MARKER
+
 import agent_benchmarks.eval.agent_runner as ar_mod
 from agent_benchmarks.eval.agent_runner import run_agent_loop
 from agent_benchmarks.treatments import (
@@ -74,12 +76,12 @@ def test_doc_query_tool_schema_and_call():
     assert tool.calls == ["parallel_for"]
 
 
-def test_view_skill_tool():
-    skill = load_skill("data/skills/onetbb-quickstart")
+def test_view_skill_tool(demo_skill):
+    skill = load_skill(demo_skill)
     tool = ViewSkillTool(skill)
     assert tool.name.startswith("view_skill_")
     body = tool.call()
-    assert "parallel_for" in body
+    assert DEMO_SKILL_MARKER in body
     assert tool.viewed is True
 
 
@@ -175,8 +177,8 @@ def test_agent_loop_answers_without_tools(monkeypatch):
     assert result["tool_usage"]["called_tools"] == []
 
 
-def test_agent_loop_reports_skill_discoverability(monkeypatch):
-    skill = load_skill("data/skills/onetbb-quickstart")
+def test_agent_loop_reports_skill_discoverability(monkeypatch, demo_skill):
+    skill = load_skill(demo_skill)
     tool = ViewSkillTool(skill)
     steps = [
         _FakeMessage(tool_calls=[_FakeToolCall("c1", tool.name, "{}")]),
@@ -192,7 +194,7 @@ def test_agent_loop_reports_skill_discoverability(monkeypatch):
     assert skill_usage["called"] is True
     assert skill_usage["call_count"] == 1
     assert skill_usage["first_call_iteration"] == 1
-    assert skill_usage["offered_tools"][0]["skill_name"] == "onetbb-quickstart"
+    assert skill_usage["offered_tools"][0]["skill_name"] == "demo-skill"
 
 
 def test_agent_loop_hits_max_iterations(monkeypatch):
@@ -232,16 +234,16 @@ def test_mcp_agent_treatment_is_agentic():
     assert cfg.metadata["arm_kind"] == "mcp_agent"
 
 
-def test_skill_agent_treatment_is_agentic():
-    skill = load_skill("data/skills/onetbb-quickstart")
+def test_skill_agent_treatment_is_agentic(demo_skill):
+    skill = load_skill(demo_skill)
     t = SkillAgentTreatment(skill)
-    cfg = t.prepare("q", "oneTBB")
+    cfg = t.prepare("q", "demo")
     assert cfg.is_agentic
     assert cfg.tools[0].name.startswith("view_skill_")
 
 
-def test_factory_builds_agentic_specs():
-    assert isinstance(create_treatment("skill-agent:data/skills/onetbb-quickstart"),
+def test_factory_builds_agentic_specs(demo_skill):
+    assert isinstance(create_treatment(f"skill-agent:{demo_skill.as_posix()}"),
                       SkillAgentTreatment)
     # 'agent:<source>' with a nested colon must not be mis-parsed
     t = create_treatment("agent:context7")

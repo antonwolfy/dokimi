@@ -25,20 +25,20 @@ QUESTIONS = [
 ]
 
 
-def test_arm_runner_generates_per_arm(monkeypatch):
+def test_arm_runner_generates_per_arm(monkeypatch, demo_skill):
     captured = []
     _patch_llm(monkeypatch, captured)
 
-    skill = load_skill("data/skills/onetbb-quickstart")
+    skill = load_skill(demo_skill)
     runner = ArmRunner([BaselineTreatment(), SkillTreatment(skill)])
     records = runner.run("oneTBB", QUESTIONS, concurrency=1)
 
     assert len(records) == 2
     rec = records[0]
-    assert set(rec["arms"].keys()) == {"baseline", "skill:onetbb-quickstart"}
+    assert set(rec["arms"].keys()) == {"baseline", "skill:demo-skill"}
     # baseline has no context, skill arm does
     assert rec["arms"]["baseline"]["context_chunks"] == []
-    assert rec["arms"]["skill:onetbb-quickstart"]["context_chunks"]
+    assert rec["arms"]["skill:demo-skill"]["context_chunks"]
     # 2 questions x 2 arms = 4 LLM calls
     assert len(captured) == 4
 
@@ -60,11 +60,11 @@ class _FakeJudge:
         return {"aggregate": agg, "correctness": agg}
 
 
-def test_arm_runner_judge_computes_deltas(monkeypatch):
+def test_arm_runner_judge_computes_deltas(monkeypatch, demo_skill):
     captured = []
     _patch_llm(monkeypatch, captured)
 
-    skill = load_skill("data/skills/onetbb-quickstart")
+    skill = load_skill(demo_skill)
     runner = ArmRunner([BaselineTreatment(), SkillTreatment(skill)])
     records = runner.run("oneTBB", QUESTIONS, concurrency=1)
 
@@ -72,15 +72,15 @@ def test_arm_runner_judge_computes_deltas(monkeypatch):
     assert len(evaluations) == 2
     ev = evaluations[0]
     assert ev["scores"]["baseline"]["aggregate"] == 60
-    assert ev["scores"]["skill:onetbb-quickstart"]["aggregate"] == 80
-    assert ev["deltas_vs_baseline"]["skill:onetbb-quickstart"] == 20.0
+    assert ev["scores"]["skill:demo-skill"]["aggregate"] == 80
+    assert ev["deltas_vs_baseline"]["skill:demo-skill"] == 20.0
 
     output = runner.build_output(
         "oneTBB", records, evaluations, baseline_arm="baseline", judge=_FakeJudge()
     )
     summary = output["summary"]["per_arm"]
     assert summary["baseline"]["avg_aggregate"] == 60.0
-    assert summary["skill:onetbb-quickstart"]["delta_vs_baseline"] == 20.0
+    assert summary["skill:demo-skill"]["delta_vs_baseline"] == 20.0
     assert output["judge_model"] == "fake-judge"
     assert output["judge_provider"] == "fake-provider"
 
@@ -95,25 +95,25 @@ def test_build_output_without_evaluations(monkeypatch):
     assert output["arms"] == ["baseline"]
 
 
-def test_build_output_summarizes_skill_agent_discoverability(monkeypatch):
+def test_build_output_summarizes_skill_agent_discoverability(monkeypatch, demo_skill):
     import agent_benchmarks.eval.agent_runner as agent_runner_mod
 
     def fake_agent_loop(**kwargs):
         return {
             "answer": "used skill",
-            "transcript": [{"iteration": 1, "tool": "view_skill_onetbb_quickstart"}],
+            "transcript": [{"iteration": 1, "tool": "view_skill_demo_skill"}],
             "tool_call_count": 1,
             "tool_usage": {
                 "used_any_tool": True,
-                "called_tools": ["view_skill_onetbb_quickstart"],
-                "tool_call_count_by_name": {"view_skill_onetbb_quickstart": 1},
-                "first_call_iteration_by_name": {"view_skill_onetbb_quickstart": 1},
+                "called_tools": ["view_skill_demo_skill"],
+                "tool_call_count_by_name": {"view_skill_demo_skill": 1},
+                "first_call_iteration_by_name": {"view_skill_demo_skill": 1},
                 "skill": {
                     "offered": True,
                     "called": True,
                     "call_count": 1,
                     "first_call_iteration": 1,
-                    "offered_tools": [{"name": "view_skill_onetbb_quickstart"}],
+                    "offered_tools": [{"name": "view_skill_demo_skill"}],
                 },
             },
             "iterations": 2,
@@ -125,14 +125,14 @@ def test_build_output_summarizes_skill_agent_discoverability(monkeypatch):
 
     monkeypatch.setattr(agent_runner_mod, "run_agent_loop", fake_agent_loop)
 
-    skill = load_skill("data/skills/onetbb-quickstart")
+    skill = load_skill(demo_skill)
     runner = ArmRunner([SkillAgentTreatment(skill)])
     records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
-    arm = records[0]["arms"]["skill_agent:onetbb-quickstart"]
+    arm = records[0]["arms"]["skill_agent:demo-skill"]
     assert arm["discoverability"]["called"] is True
 
     output = runner.build_output("oneTBB", records)
-    usage = output["agentic_usage_summary"]["skill_agent:onetbb-quickstart"]
+    usage = output["agentic_usage_summary"]["skill_agent:demo-skill"]
     assert usage["tool_use_rate"] == 1.0
     assert usage["skill_load_rate"] == 1.0
     assert usage["avg_skill_calls"] == 1.0
@@ -275,7 +275,7 @@ def _parse_arms_run(argv):
 
     return build_parser().parse_args(
         ["arms", "run", "--product", "oneTBB",
-         "--questions", "data/questions/onetbb.json", "--arms", "baseline"] + argv
+         "--questions", "questions.json", "--arms", "baseline"] + argv
     )
 
 
@@ -302,7 +302,7 @@ def test_matrix_run_also_exposes_stats_correction():
 
     args = build_parser().parse_args(
         ["arms", "matrix-run", "--product", "oneTBB",
-         "--questions", "data/questions/onetbb.json", "--arms", "baseline",
+         "--questions", "questions.json", "--arms", "baseline",
          "--matrix-cells", "cells.json", "--stats-correction", "bh"]
     )
     assert args.stats_correction == "bh"
@@ -326,12 +326,12 @@ def test_context_precedes_the_question_in_the_prompt():
                     + CONTEXT_PROMPT_SUFFIX.format(question="Q?"))
 
 
-def test_static_context_is_passed_as_a_cache_prefix(monkeypatch):
+def test_static_context_is_passed_as_a_cache_prefix(monkeypatch, demo_skill):
     """A skill body is identical for every question — a real cacheable prefix."""
     captured = []
     _patch_llm(monkeypatch, captured)
 
-    skill = load_skill("data/skills/onetbb-quickstart")
+    skill = load_skill(demo_skill)
     runner = ArmRunner([SkillTreatment(skill)])
     runner.run("oneTBB", QUESTIONS, concurrency=1)
 

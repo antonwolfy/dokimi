@@ -19,7 +19,11 @@ class Context7Client(MCPClient):
     Context7 provides curated documentation for popular libraries
     via a simple HTTP API optimized for LLM consumption.
     """
-    
+
+    # Context7 ids are minted by Context7, not derived from a product name.
+    requires_declared_library_id = True
+
+
     def __init__(
         self, 
         endpoint: str = "https://context7.com",
@@ -46,41 +50,46 @@ class Context7Client(MCPClient):
     
     def resolve_library_id(self, library_name: str) -> str:
         """
-        Resolve library name to library ID.
-        
-        For Context7, the library ID is typically the GitHub repo path.
-        Common mappings:
-        - oneTBB -> uxlfoundation/oneTBB
-        - oneDAL -> uxlfoundation/oneDAL
-        - oneDNN -> uxlfoundation/oneDNN
-        
+        Pass an already-qualified Context7 library ID through, or fail loudly.
+
+        A Context7 ID is either ``<org>/<repo>`` for a GitHub-backed library
+        or ``<host>_<path>`` for a documentation website (for example
+        ``intelpython_github_io_dpnp``). Neither can be derived from a bare
+        product name, so an unqualified name is an error rather than a guess:
+        a guessed ID is well-formed but usually does not exist, and the run
+        then completes with empty retrieval attributed to the doc source.
+
+        The website form is indistinguishable from a registry key that happens
+        to contain an underscore (``mkl_extensions``), so a *registered*
+        product is never routed here: ``requires_declared_library_id`` makes
+        :func:`agent_benchmarks.mcp.factory.resolve_library_id_for_product`
+        raise for a registered product with no ``context7_id``. What reaches
+        this method is a name the caller typed, and an underscored one is
+        taken at its word as a website ID.
+
         Args:
-            library_name: Library name (e.g., "oneTBB")
-            
+            library_name: Qualified Context7 library ID.
+
         Returns:
-            Library ID (e.g., "uxlfoundation/oneTBB")
+            The same ID, unchanged.
+
+        Raises:
+            ValueError: If *library_name* is not a qualified Context7 ID.
         """
-        # Simple heuristic mapping for Intel oneAPI libraries
-        common_mappings = {
-            "onetbb": "uxlfoundation/oneTBB",
-            "onedal": "uxlfoundation/oneDAL",
-            "onednn": "uxlfoundation/oneDNN",
-            "onemkl": "uxlfoundation/oneMKL",
-            "oneccl": "uxlfoundation/oneCCL",
-        }
-        
-        normalized = library_name.lower().replace("-", "").replace("_", "")
-        
-        if normalized in common_mappings:
-            return common_mappings[normalized]
-        
-        # If already in org/repo format, return as-is
-        if "/" in library_name:
-            return library_name
-        
-        # Default: assume uxlfoundation
-        return f"uxlfoundation/{library_name}"
-    
+        name = library_name.strip()
+
+        # GitHub repo form (org/repo) or website form (no slash, underscores).
+        if "/" in name or "_" in name:
+            return name
+
+        raise ValueError(
+            f"'{library_name}' is not a Context7 library ID. Context7 IDs look "
+            "like 'uxlfoundation/oneTBB' (GitHub repo) or "
+            "'intelpython_github_io_dpnp' (docs website), and cannot be derived "
+            "from a product name. Either declare 'context7_id:' for the product "
+            "in products.yaml, or pass --context7-id on the command line."
+        )
+
     def get_library_docs(
         self, 
         library_id: str, 
@@ -187,20 +196,25 @@ class Context7Client(MCPClient):
         except Exception as e:
             raise MCPConnectionError(f"Context7 request failed: {e}") from e
     
-    def check_connection(self) -> bool:
+    def check_connection(self, library_id: str, query: str = "overview") -> bool:
         """
-        Verify that Context7 is accessible.
-        
-        Tries to fetch docs for a known library (oneTBB).
-        
+        Verify that Context7 is accessible, by probing a caller-named library.
+
+        Unlike the other doc-source clients this one has nothing local to
+        check, so the probe target is a parameter: the caller names a library
+        ID it expects to exist (for example the product's ``context7_id``).
+
+        Args:
+            library_id: Qualified Context7 library ID to probe.
+            query: Topic to ask for; any term the library documents will do.
+
         Returns:
             True if connection is successful
         """
         try:
-            # Test with a simple query for a known library
             docs = self.get_library_docs(
-                "uxlfoundation/oneTBB", 
-                "parallel_for",
+                library_id,
+                query,
                 max_tokens=500
             )
             return len(docs) > 0 and len(docs[0]["content"]) > 0

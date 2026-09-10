@@ -17,6 +17,3 @@
 /agent-benchmark/agent_benchmarks/questions/   @napetrov
 /agent-benchmark/agent_benchmarks/personas/    @napetrov
 /agent-benchmark/agent_benchmarks/treatments/  @napetrov
-
-# terminal-bench tasks subsystem
-/agent-benchmark/terminal-bench-tasks/         @napetrov

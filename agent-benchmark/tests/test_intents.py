@@ -114,3 +114,64 @@ def test_default_intents_load():
 
 def test_default_intents_reference_only_registered_products():
     assert IntentRegistry().validate() == []
+
+
+# ---------------------------------------------------------------------------
+# `library intents --intents <path>`
+# ---------------------------------------------------------------------------
+
+def test_library_intents_reads_a_custom_registry(tmp_path, capsys):
+    from agent_benchmarks.cli import build_parser
+
+    path = _write_intents(tmp_path, {
+        "domains": {
+            "synthetic-domain": {
+                "name": "Synthetic Domain",
+                "description": "d",
+                "products": ["demo"],
+                "example_intents": ["Do the thing"],
+            }
+        }
+    })
+
+    args = build_parser().parse_args(["library", "intents", "--intents", str(path)])
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "synthetic-domain — Synthetic Domain" in out
+    assert "products: demo" in out
+    assert "1 intent domains registered." in out
+
+
+def test_library_list_filters_by_domain_from_a_custom_intents_file(tmp_path, capsys):
+    from agent_benchmarks.cli import build_parser
+
+    products_path = tmp_path / "products.yaml"
+    products_path.write_text(
+        "products:\n"
+        "  demo:\n    name: Demo\n    description: d\n"
+        "  other:\n    name: Other\n    description: o\n",
+        encoding="utf-8",
+    )
+    intents_path = _write_intents(tmp_path, {
+        "domains": {
+            "synthetic-domain": {
+                "name": "Synthetic Domain",
+                "description": "d",
+                "products": ["demo"],
+            }
+        }
+    })
+
+    args = build_parser().parse_args([
+        "library", "list",
+        "--registry", str(products_path),
+        "--intents", str(intents_path),
+        "--domain", "synthetic-domain",
+    ])
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "demo" in out
+    assert "other" not in out
+    assert "1 products in domain 'synthetic-domain'." in out

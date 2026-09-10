@@ -5,12 +5,22 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+_TASKS_ROOT_HELP = (
+    "Directory of exploration task YAML files (default: data/explore_tasks)"
+)
+_REPO_ROOT_HELP = (
+    "Tree a task is scored against when its YAML omits repo_root: "
+    "(default: the agent-benchmark repository, which is only right for the "
+    "self-dogfooding tasks bundled here)"
+)
+
 
 def cmd_explore_list(args: argparse.Namespace) -> None:
     from agent_benchmarks.explore import discover_explore_tasks
 
     root = Path(args.tasks_root) if args.tasks_root else None
-    for task in discover_explore_tasks(root):
+    default_repo_root = Path(args.repo_root) if getattr(args, "repo_root", None) else None
+    for task in discover_explore_tasks(root, default_repo_root=default_repo_root):
         n_refs = len(task.references)
         print(f"{task.id}\t{task.product}\t{n_refs} ref(s)\t{task.query[:60]}")
 
@@ -63,11 +73,14 @@ def cmd_explore_run(args: argparse.Namespace) -> None:
     )
 
     root = Path(args.tasks_root) if args.tasks_root else None
+    default_repo_root = Path(args.repo_root) if getattr(args, "repo_root", None) else None
     if args.all:
-        tasks = discover_explore_tasks(root)
+        tasks = discover_explore_tasks(root, default_repo_root=default_repo_root)
     else:
         ids = [t.strip() for t in (args.tasks or "").split(",") if t.strip()]
-        tasks = [load_explore_task(t, root=root) for t in ids]
+        tasks = [
+            load_explore_task(t, root=root, default_repo_root=default_repo_root) for t in ids
+        ]
     if not tasks:
         raise SystemExit("No tasks selected. Pass --tasks <id[,id]> or --all.")
 
@@ -131,13 +144,15 @@ def register(sub, positive_int) -> None:
     explore_sub = explore_p.add_subparsers(dest="explore_cmd", required=True)
 
     list_p = explore_sub.add_parser("list", help="List exploration tasks")
-    list_p.add_argument("--tasks-root", default=None)
+    list_p.add_argument("--tasks-root", default=None, help=_TASKS_ROOT_HELP)
+    list_p.add_argument("--repo-root", default=None, dest="repo_root", help=_REPO_ROOT_HELP)
     list_p.set_defaults(func=cmd_explore_list)
 
     run_p = explore_sub.add_parser("run", help="Run exploration tasks through arms")
     run_p.add_argument("--tasks", default=None, help="Comma-separated task ids")
     run_p.add_argument("--all", action="store_true", help="Run every discovered task")
-    run_p.add_argument("--tasks-root", default=None)
+    run_p.add_argument("--tasks-root", default=None, help=_TASKS_ROOT_HELP)
+    run_p.add_argument("--repo-root", default=None, dest="repo_root", help=_REPO_ROOT_HELP)
     run_p.add_argument(
         "--arms",
         default="oracle,empty",

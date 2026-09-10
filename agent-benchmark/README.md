@@ -1,11 +1,9 @@
 # agent-benchmark
 
-> **Part of a larger project.** This is the *measurement engine* half of the
-> [Software Packaging for Agents](../README.md) umbrella repo. It evaluates
-> whether a given skill / MCP doc source / agent profile actually improves agent
-> answers — the evidence (scorecard) that gates whether an artifact is worth
-> packaging and shipping. The packaging & discovery half lives in
-> [`../software-packaging-for-agents/`](../software-packaging-for-agents/).
+> **This is the whole project.** It evaluates whether a given skill / MCP doc
+> source / agent profile actually improves agent answers, and produces the
+> evidence (a scorecard) that decides whether the artifact is worth shipping.
+> See the [repository overview](../README.md) for the short version.
 
 `agent-benchmark` is a toolkit for measuring whether documentation and other agent-facing context improve model performance. It started as a technical documentation benchmark and now supports a broader evaluation pattern: compare a model or coding agent with and without a controlled context layer.
 
@@ -95,9 +93,8 @@ Two top-level YAML registries describe what the benchmark can evaluate:
 - **`intents.yaml`** — *what user problems exist*: broad scenario domains
   (data science, machine learning, performance optimization, debugging, …),
   each mapped to the products that serve it, with example user intents. A
-  domain may span several products — the seed of the discovery layer's
-  capability/intent graph (see
-  [`../software-packaging-for-agents/discovery.md`](../software-packaging-for-agents/discovery.md)).
+  domain may span several products, so a domain is the unit you pick when you
+  want to know which product an agent should reach for.
 
 The domain→product mapping lives only in `intents.yaml`;
 `python -m agent_benchmarks.config_check` (run in CI) fails if it references an
@@ -144,15 +141,22 @@ python cli.py benchmark run --target onedal --questions-from results/onedal_seed
 python cli.py benchmark run --target onedal --questions-from results/onedal_seed --model claude-sonnet-4-5-20250929 --provider anthropic
 ```
 
-Generated artifacts go under `results/`, `reports/`, or `baselines/current.json` for temporary runs; those paths are git-ignored. Curated, version-controlled fixtures live under `data/` (`data/questions/`, `data/answers/`, `data/eval/`, `data/baselines/`, `data/skills/`, `data/agent_profiles/`) — see [`data/README.md`](data/README.md).
+Generated artifacts — answer runs, judge scores and benchmark snapshots — go under `results/`, `reports/`, `answers/`, `eval/` or `baselines/`; those paths are git-ignored and no captured run is committed. Curated, version-controlled *inputs* live under `data/` (`data/skills/fastcontext/`, `data/agent_profiles/`, `data/explore_tasks/`) — see [`data/README.md`](data/README.md). Product skills, question sets and personas are evaluation content: they come from a separate content repository and are passed in by path (`skill:<path>`, `--questions <path>`, `--questions-root <dir>`).
 
 See [docs/decisions/benchmark-methodology.md](docs/decisions/benchmark-methodology.md) for the detailed model roles, question types, difficulty levels, task workflow, and trust checks.
 
-## Executable oneTBB tasks
+## Executable tasks
 
-The repository includes terminal-bench-style tasks under `terminal-bench-tasks/`. These tasks validate not just text answers but working code and measurable behavior. Current CI builds the task containers and verifies oracle solutions with network disabled.
+Terminal-bench-style tasks are the executable side of the benchmark: they validate not just text answers but working code and measurable behavior, so they can test whether docs, skills, or an agent profile actually improve an agent's ability to produce correct and performant code.
 
-Included tasks cover oneTBB, oneMKL, oneDPL, IPP, and sklearnex examples. They are the executable side of the benchmark: they can test whether docs, skills, or an agent profile actually improve an agent's ability to produce correct and performant code.
+The task definitions are evaluation content and live in a separate content repository. Run them from any checkout by naming its task root:
+
+```bash
+python cli.py tasks run --tasks-root <checkout>/evaluation/harbor/tasks \
+  --tasks <task-name> --harnesses docker-oracle --out-json results/runs.json
+```
+
+The directory layout and `task.toml` fields a task must provide are specified in [docs/contributing-terminal-bench-task.md](docs/contributing-terminal-bench-task.md). CI runs a real external catalog through the same harness (see [CI](#ci) below) with network disabled at solve and verify time.
 
 ## Repository layout
 
@@ -177,13 +181,10 @@ agent_benchmarks/        Main Python package
   runner/                Benchmark orchestration
   skills/                SKILL.md loader
   treatments/            Treatment-arm abstraction (docs/MCP/skills/profiles)
-data/                    Curated, version-controlled benchmark fixtures (see data/README.md)
-  questions/             Golden + sample question sets
-  answers/               Sample reference answer pairs
-  eval/                  Sample reference judge scores
-  baselines/             Static docs-benchmark baseline snapshot
-  skills/                Agent skill (SKILL.md) fixtures
+data/                    Curated, version-controlled benchmark inputs (see data/README.md)
+  skills/fastcontext/    The SKILL.md fixture the loader tests and examples use
   agent_profiles/        Agent persona (system) prompt fixtures
+  explore_tasks/         Localization tasks with known-good references
 docs/                    Documentation
   README.md              Documentation index
   quickstart.md          End-to-end LLM evaluation pipeline
@@ -191,12 +192,8 @@ docs/                    Documentation
   adding-doc-source.md   Local/URL/custom doc sources
   contributing-metric.md How to add a static documentation metric
   contributing-terminal-bench-task.md
-                         How to add an executable task
+                         Executable task format (tasks live in the content repo)
   decisions/             Historical design reviews and investigations
-terminal-bench-tasks/    Executable task definitions and verifiers
-  README.md              Task format reference and task table
-  COVERAGE.md            API/concept coverage matrix
-  PROVENANCE.md          Upstream sources and licensing notes
 tests/                   Pytest suite
 ```
 
@@ -206,7 +203,7 @@ GitHub Actions runs three checks on pull requests:
 
 1. `test` — installs `requirements-test.txt` and runs pytest with coverage.
 2. `benchmark` — runs the static agent-quality benchmark and uploads artifacts.
-3. `Verify terminal-bench-tasks` — builds task containers and verifies oracle solutions.
+3. `External catalog smoke test` — clones a pinned public content catalog, scans it, and drives one of its real tasks through the `docker-oracle` harness, asserting the pass rate.
 
 Manual workflow dispatch supports strict mode for blocking quality gates.
 
@@ -214,7 +211,7 @@ Manual workflow dispatch supports strict mode for blocking quality gates.
 
 Do not commit generated logs, coverage databases, tarballs, local caches, or one-off experiment outputs. Keep generated benchmark artifacts either ignored locally or explicitly curated as fixtures. Use pull requests for all changes to `main`.
 
-Status reports, phase plans, and other development-history notes do not belong in the repository — work-in-progress should live in PR descriptions, issues, and `BACKLOG.md`.
+Status reports, phase plans, and other development-history notes do not belong in the repository — work-in-progress should live in PR descriptions and issues.
 
 ## Contributing
 

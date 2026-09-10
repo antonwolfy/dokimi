@@ -4,7 +4,8 @@ This rubric makes difficulty a **measured, reproducible axis** rather than an
 intuition tag, and separates it from two further orthogonal axes — **level**
 (how deep into the performance workflow the question reaches) and **trigger**
 (what kind of input starts the work). All three apply to awareness questions
-(`data/questions/*_golden.json`) and to executable tasks (`terminal-bench-tasks/*`).
+(`<questions-root>/*_golden.json`) and to executable tasks (the task directories
+under `--tasks-root`, via `[metadata] difficulty` / `level` in `task.toml`).
 
 Why multiple axes: a question can be *deep in the workflow but easy* ("produce a
 report" when the evidence is unambiguous) or *shallow but hard* (a single
@@ -16,19 +17,24 @@ full `level × difficulty × trigger` space is the goal.
 
 ## What the skill is actually for (two use cases)
 
-The intel-performance-skills text mandates two modes of use, and the eval must
-test both — not just incident-response triage:
+The rubric was written against a performance-patterns skill — evaluation content,
+kept in a content repository and passed in as `skill:<path>` — whose own text
+mandates two modes of use. Read the skill you are measuring the same way, and
+cover both modes, not just incident-response triage:
 
 1. **Fast-from-the-start (proactive).** When an agent writes new performance-
    sensitive code, the skill applies optimized patterns *without being asked*.
-   `rules/optimize.md` states its suggestions "apply even when optimization is
-   not explicitly requested," and `rules/vector-sequential.md` says "When
-   generating new code … always use one of the optimized patterns."
+   The skill that motivated this rubric states its suggestions "apply even when
+   optimization is not explicitly requested," and that when "generating new code
+   … always use one of the optimized patterns."
 2. **Code-first (code drives the change).** For a code-based performance issue,
    the code is the primary evidence; high-level perf data serves the code, not
-   the reverse. `rules/vector-sequential.md`: "When reviewing code, flag the
-   simple pattern as a high-priority optimization note" — a source pattern is a
+   the reverse. The same skill says: "When reviewing code, flag the simple
+   pattern as a high-priority optimization note" — a source pattern is a
    first-class trigger, no profile required to act.
+
+A skill that mandates neither mode needs neither set of items; the axes below are
+general, the two use cases are a property of the artifact under test.
 
 ## Axis 1 — `level` (workflow depth)
 
@@ -75,21 +81,29 @@ item in the grid.
 
 ## Coverage grid (target ≥4–6 items per cell)
 
-The minimum-useful set in the evaluation plan (60–80 questions) should fill this
-grid rather than pile onto the diagonal. The earlier near-diagonal gaps
-(triage⇒easy, end_to_end⇒hard) are now filled. Current
-`intel_performance_skills_golden.json` distribution:
+A minimum-useful set (60–80 questions) should fill all nine `level × difficulty`
+cells rather than pile onto the `easy⇒triage … hard⇒end_to_end` diagonal. The two
+cells that go missing first are the off-diagonal corners — `triage × hard` (a
+shallow question that is a trap) and `end_to_end × easy` (a full deliverable from
+unambiguous evidence).
 
-| level \\ difficulty | easy | medium | hard |
-| --- | --- | --- | --- |
-| `triage` | 6 | 4 | 5 |
-| `diagnosis` | 6 | 23 | 6 |
-| `end_to_end` | 4 | 5 | 8 |
+Question sets are evaluation content and are not committed here, so count the grid
+of the set you are about to run:
 
-The `level × difficulty` grid is balanced. The remaining gap is on the
-**trigger** axis: most items are `counter`-triggered (a profile is already in
-hand), under-representing the two use cases the skill is built for. Subsequent
-question growth targets `source` and `new_code` triggers:
+```bash
+python - <<'PY'
+import collections, json
+qs = json.load(open("<questions-root>/onetbb_golden.json"))["questions"]
+grid = collections.Counter((q.get("level"), q.get("difficulty")) for q in qs)
+for cell, n in sorted(grid.items(), key=lambda kv: str(kv[0])):
+    print(cell, n)
+PY
+```
+
+A balanced `level × difficulty` grid still leaves the **trigger** axis skewed: sets
+grown from profiling transcripts are mostly `counter`-triggered (a profile is
+already in hand), under-representing the two use cases above. Target `source` and
+`new_code` triggers as the set grows:
 
 - `source × triage`: the agent is reading code with no profile; route to a
   pattern the skill flags high-priority (e.g. serial accumulator) vs. state what

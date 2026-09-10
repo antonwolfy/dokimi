@@ -18,9 +18,11 @@ def _load_registry(args):
     return ProductRegistry(path=reg_path)
 
 
-def _load_intents():
+def _load_intents(args=None):
     from agent_benchmarks.intents import IntentRegistry
-    return IntentRegistry()
+    from pathlib import Path as _Path
+    intents_path = _Path(args.intents) if getattr(args, "intents", None) else None
+    return IntentRegistry(path=intents_path)
 
 
 def cmd_library_list(args: argparse.Namespace) -> None:
@@ -29,7 +31,7 @@ def cmd_library_list(args: argparse.Namespace) -> None:
     entries = registry.list()
     domain = getattr(args, "domain", None)
     if domain:
-        intents = _load_intents()
+        intents = _load_intents(args)
         try:
             keys = set(intents.products_for(domain))
         except KeyError as exc:
@@ -57,7 +59,7 @@ def cmd_library_show(args: argparse.Namespace) -> None:
     except KeyError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
-    domains = _load_intents().domains_for(entry.key)
+    domains = _load_intents(args).domains_for(entry.key)
     print(f"Key          : {entry.key}")
     print(f"Name         : {entry.name}")
     print(f"Repo         : {entry.repo or '—'}")
@@ -69,7 +71,7 @@ def cmd_library_show(args: argparse.Namespace) -> None:
 
 def cmd_library_intents(args: argparse.Namespace) -> None:
     """List intent domains and the products that serve them."""
-    intents = _load_intents()
+    intents = _load_intents(args)
     domains = intents.list()
     if not domains:
         print("Intent registry is empty.")
@@ -90,17 +92,22 @@ def register(sub, positive_int) -> None:
     )
     library_sub = library_p.add_subparsers(dest="library_cmd", required=True)
 
+    intents_help = "Path to custom intents.yaml"
+
     lib_list_p = library_sub.add_parser("list", help="List products in the registry")
     lib_list_p.add_argument("--registry", default=None, help="Path to custom products.yaml")
+    lib_list_p.add_argument("--intents", default=None, help=intents_help)
     lib_list_p.add_argument("--domain", default=None, help="Filter by intent domain (see `library intents`)")
     lib_list_p.set_defaults(func=cmd_library_list)
 
     lib_show_p = library_sub.add_parser("show", help="Show details for a product")
     lib_show_p.add_argument("name", help="Product key (e.g., onetbb)")
     lib_show_p.add_argument("--registry", default=None, help="Path to custom products.yaml")
+    lib_show_p.add_argument("--intents", default=None, help=intents_help)
     lib_show_p.set_defaults(func=cmd_library_show)
 
     lib_intents_p = library_sub.add_parser(
         "intents", help="List intent domains (problem space) and their products"
     )
+    lib_intents_p.add_argument("--intents", default=None, help=intents_help)
     lib_intents_p.set_defaults(func=cmd_library_intents)

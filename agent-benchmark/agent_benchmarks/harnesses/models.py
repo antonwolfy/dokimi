@@ -98,7 +98,7 @@ def operations_by_type(operations: list[dict[str, Any]]) -> dict[str, int]:
 def _exploration_metrics(
     operations: list[OperationRecord], metrics: dict[str, Any]
 ) -> dict[str, Any] | None:
-    """Derive the optional ``exploration_metrics`` block (BACKLOG #60).
+    """Derive the optional ``exploration_metrics`` block.
 
     Imported lazily to keep this lightweight model module free of a hard
     dependency on the exploration summarizer.

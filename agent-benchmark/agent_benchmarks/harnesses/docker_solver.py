@@ -1,8 +1,7 @@
 """Standalone Docker harness — solve a terminal-bench task and verify it.
 
-This is the Python port of ``scripts/run_task.sh``: it runs an executable task
-end to end against local Docker with **no Harbor dependency**, and — unlike the
-bash script — captures full LLM telemetry (cost, tokens, cache, latency,
+It runs an executable task end to end against local Docker with **no Harbor
+dependency**, and captures full LLM telemetry (cost, tokens, cache, latency,
 turns) into the ``task_runs.v1`` artifact so task experiments are tracked the
 same way the Q&A ``arms run`` path already is.
 

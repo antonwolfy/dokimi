@@ -42,6 +42,7 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         description=getattr(args, "description", None),
         output_dir=Path(args.output_dir),
         custom_questions_path=Path(args.custom_questions) if args.custom_questions else None,
+        questions_root=Path(args.questions_root) if getattr(args, "questions_root", None) else None,
         model=args.model,
         provider=args.provider,
         judge_model=args.judge_model,
@@ -94,6 +95,10 @@ def register(sub, positive_int) -> None:
     eval_p.add_argument("--description", default=None, help="Plain-text product description (used when --repo is not available).")
     eval_p.add_argument("--output-dir", default=".", help="Base output directory")
     eval_p.add_argument("--custom-questions", default=None, help="Optional: path to manual questions JSON")
+    eval_p.add_argument("--questions-root", default=None, dest="questions_root",
+                        help="Directory where the golden question set <product>_golden.json "
+                             "is looked up, for example a checkout of the evaluation-content "
+                             "repository: --questions-root /path/to/content-repo/questions")
     eval_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation/answering")
     eval_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     eval_p.add_argument("--judge-model", default="gpt-4o-mini", help="LLM model for evaluation")

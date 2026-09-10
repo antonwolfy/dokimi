@@ -1,5 +1,7 @@
 """Tests for Context7 MCP client."""
 
+import os
+
 import pytest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -34,35 +36,29 @@ class TestContext7Client:
         assert client.max_retries == 5
         assert cache_dir.exists()
     
-    def test_resolve_library_id_common_libraries(self):
-        """Test library ID resolution for common oneAPI libraries."""
+    @pytest.mark.parametrize(
+        "qualified_id",
+        [
+            "someorg/somerepo",           # GitHub repo form
+            "example_com_docs_widget",    # docs-website form
+        ],
+    )
+    def test_resolve_library_id_already_qualified(self, qualified_id):
+        """A qualified ID of either form is returned as-is."""
         client = Context7Client()
-        
-        test_cases = {
-            "oneTBB": "uxlfoundation/oneTBB",
-            "onetbb": "uxlfoundation/oneTBB",
-            "one-tbb": "uxlfoundation/oneTBB",
-            "oneDAL": "uxlfoundation/oneDAL",
-            "onedal": "uxlfoundation/oneDAL",
-            "oneDNN": "uxlfoundation/oneDNN",
-            "oneMKL": "uxlfoundation/oneMKL",
-            "oneCCL": "uxlfoundation/oneCCL",
-        }
-        
-        for input_name, expected_id in test_cases.items():
-            assert client.resolve_library_id(input_name) == expected_id
-    
-    def test_resolve_library_id_already_qualified(self):
-        """Test that already qualified IDs are returned as-is."""
-        client = Context7Client()
-        qualified_id = "someorg/somerepo"
         assert client.resolve_library_id(qualified_id) == qualified_id
-    
-    def test_resolve_library_id_fallback(self):
-        """Test fallback behavior for unknown libraries."""
+
+    def test_resolve_library_id_rejects_an_unqualified_name(self):
+        """An unqualified name is an error, not a guessed org/name ID."""
         client = Context7Client()
-        assert client.resolve_library_id("unknown") == "uxlfoundation/unknown"
-    
+        with pytest.raises(ValueError) as exc_info:
+            client.resolve_library_id("somelibrary")
+        message = str(exc_info.value)
+        # The message must name both ways of supplying the real ID.
+        assert "context7_id" in message
+        assert "--context7-id" in message
+        assert "products.yaml" in message
+
     @patch('httpx.get')
     def test_get_library_docs_success(self, mock_get):
         """Test successful context retrieval."""
@@ -162,23 +158,26 @@ class TestContext7Client:
             client.get_library_docs("uxlfoundation/oneTBB", "query")
     
     @patch.object(Context7Client, 'get_library_docs')
-    def test_check_connection_success(self, mock_get_docs):
-        """Test successful connection check."""
+    def test_check_connection_probes_the_library_it_was_given(self, mock_get_docs):
+        """The probe target is the caller's, not a hardcoded library."""
         mock_get_docs.return_value = [{"content": "Test content"}]
-        
+
         client = Context7Client()
-        assert client.check_connection() is True
-        
+        assert client.check_connection("someorg/somerepo", "widgets") is True
+
         mock_get_docs.assert_called_once()
-    
+        args, kwargs = mock_get_docs.call_args
+        assert args[0] == "someorg/somerepo"
+        assert args[1] == "widgets"
+
     @patch.object(Context7Client, 'get_library_docs')
     def test_check_connection_failure(self, mock_get_docs):
         """Test failed connection check."""
         mock_get_docs.side_effect = MCPConnectionError("Connection failed")
-        
+
         client = Context7Client()
-        assert client.check_connection() is False
-    
+        assert client.check_connection("someorg/somerepo") is False
+
     def test_create_context7_client_default(self):
         """Test factory function with default cache dir."""
         client = create_context7_client()
@@ -199,14 +198,19 @@ class TestContext7Integration:
         reason="Integration test - requires network and valid Context7 library"
     )
     def test_real_context7_call(self):
-        """Test real Context7 API call (manual test only)."""
+        """Test real Context7 API call (manual test only).
+
+        Set the library id and topic to something the Context7 instance you
+        are pointing at really serves; there is no default library, because a
+        guessed id is exactly what this client refuses to produce.
+        """
+        library_id = os.environ.get("CONTEXT7_PROBE_ID", "")
+        query = os.environ.get("CONTEXT7_PROBE_QUERY", "getting started")
+        assert library_id, "set CONTEXT7_PROBE_ID to a qualified Context7 library id"
+
         client = create_context7_client()
-        docs = client.get_library_docs(
-            "uxlfoundation/oneTBB",
-            "How to use parallel_for?",
-            max_tokens=500
-        )
-        
+        docs = client.get_library_docs(library_id, query, max_tokens=500)
+
         assert len(docs) == 1
         assert len(docs[0]["content"]) > 0
-        assert "parallel" in docs[0]["content"].lower()
+        assert client.check_connection(library_id, query) is True

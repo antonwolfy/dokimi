@@ -10,10 +10,16 @@ from pathlib import Path
 
 def cmd_subjects_list(args: argparse.Namespace) -> None:
     """List subject descriptors below a root directory."""
+    # Subject descriptors live in an evaluation-content checkout, so there is no
+    # in-repo default root. Name the flag instead of printing an empty list that
+    # reads like "no subjects exist".
+    if not args.subjects_root:
+        raise SystemExit(
+            "no subjects root given; pass --subjects-root <checkout>/evaluation/subjects"
+        )
     root = Path(args.subjects_root)
-    if not root.exists():
-        print(f"No subjects root: {root}")
-        return
+    if not root.is_dir():
+        raise SystemExit(f"--subjects-root is not a directory: {root}")
     paths = sorted([*root.glob("*.toml"), *root.glob("*.json")])
     for path in paths:
         try:
@@ -136,7 +142,16 @@ def register(sub, positive_int) -> None:
     subjects_sub = subjects_p.add_subparsers(dest="subjects_cmd", required=True)
 
     list_p = subjects_sub.add_parser("list", help="List subject descriptors")
-    list_p.add_argument("--subjects-root", default="subjects", dest="subjects_root")
+    list_p.add_argument(
+        "--subjects-root",
+        default=None,
+        dest="subjects_root",
+        help=(
+            "Directory holding subject descriptors (*.toml/*.json). Required; the "
+            "descriptors live in a separate evaluation-content checkout, e.g. "
+            "--subjects-root /path/to/content-repo/evaluation/subjects"
+        ),
+    )
     list_p.set_defaults(func=cmd_subjects_list)
 
     show_p = subjects_sub.add_parser("show", help="Show normalized subject descriptor")
@@ -175,7 +190,17 @@ def register(sub, positive_int) -> None:
         dest="work_harnesses",
         help=(
             "Comma-separated executable-task harnesses for suite.tasks "
-            "(for example: codex,docker-claude-skill:data/skills/x)."
+            "(for example: codex,docker-claude-skill:/path/to/skills-repo/skills/<name>)."
+        ),
+    )
+    run_p.add_argument(
+        "--tasks-root",
+        default=None,
+        dest="tasks_root",
+        help=(
+            "Directory holding the task directories named in suite.tasks, e.g. "
+            "<checkout>/evaluation/harbor/tasks. Without it, a suite.tasks entry has "
+            "to be a full path to a task directory."
         ),
     )
     run_p.add_argument("--work-baseline-harness", default=None, dest="work_baseline_harness")
@@ -351,4 +376,5 @@ def _validate_subject_work_args(descriptor, args: argparse.Namespace) -> list:
         )
     from agent_benchmarks.harnesses import load_task
 
-    return [load_task(task) for task in descriptor.suite.tasks]
+    root = getattr(args, "tasks_root", None)
+    return [load_task(task, root=Path(root) if root else None) for task in descriptor.suite.tasks]

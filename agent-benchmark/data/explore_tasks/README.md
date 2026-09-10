@@ -1,7 +1,7 @@
 # Exploration tasks (ExploreBench)
 
 Each YAML file here is one **exploration-only** task for the ExploreBench track
-(BACKLOG #60, see `docs/decisions/2026-06-23-exploration-quality-fastcontext.md`).
+(see `docs/decisions/2026-06-23-exploration-quality-fastcontext.md`).
 A task poses a localization question and declares the reference locations a good
 explorer should cite. It scores *whether the agent can find the right evidence*
 — separately from whether it can answer or solve.
@@ -10,19 +10,22 @@ explorer should cite. It scores *whether the agent can find the right evidence*
 
 ```yaml
 id: short-stable-id
-product: oneTBB                 # product / repo the task is about
+product: my-library              # product / repo the task is about
 query: "Where is X implemented?"  # the localization question
-repo_root: .                    # optional; defaults to the agent-benchmark repo
+repo_root: .                     # optional; see below
 references:
-  - path: docs/flow_graph.md
-    lines: [120, 180]           # optional inclusive [start, end] (or [n])
-  - path: examples/pipeline.cpp # no `lines` → a whole-file reference
+  - path: docs/architecture.md
+    lines: [120, 180]            # optional inclusive [start, end] (or [n])
+  - path: src/pipeline.cpp       # no `lines` → a whole-file reference
 ```
 
 - `lines` is inclusive `[start, end]` (or `[n]` for a single line). Omit it for a
   whole-file reference, which scores at **file** granularity only.
 - `repo_root` is the tree the explorer searches and the base for reference
-  paths; it defaults to the `agent-benchmark/` repo root.
+  paths. Precedence: the value declared here, else `explore run --repo-root
+  <dir>`, else this checkout. Declare it, or pass `--repo-root`, whenever the
+  task is about a tree other than `agent-benchmark/` — a task that omits both
+  scores against this repository.
 
 ## Running
 
@@ -43,14 +46,22 @@ python cli.py explore run --all \
 
 ## About this seed set
 
-These seed tasks **dogfood the agent-benchmark repo itself**: their references
-point at real files in this tree, so they are runnable and verifiable offline
-and exercise an explorer on a real codebase. They use file-level references
-because line numbers in an evolving repo drift; line-level scoring is covered by
-unit tests and by curated/oracle tasks.
+Every task committed here **dogfoods the agent-benchmark repo itself**: its
+references point at real files in this tree, so the set is runnable and
+verifiable offline with no external checkout, and `tests/test_explore_track.py`
+asserts that each reference still exists. They use file-level references because
+line numbers in an evolving repo drift; line-level scoring is covered by unit
+tests and by oracle arms.
 
-Intel/oneAPI tasks plug in with the **same schema** — set `repo_root` to the
-product checkout and derive `references` from the oracle solution's edited
-files/ranges (or curate doc/example locations). Per the ADR caveat, pair
-citation F1 with task pass-rate and judge score; patch-derived locations
-under-credit supporting evidence (tests, callers, neighbors).
+Tasks about *another* codebase use the **same schema** but are evaluation
+content, so they live in the content repository and are run from there:
+
+```bash
+python cli.py explore run --all --tasks-root <checkout>/explore_tasks \
+  --repo-root <product-checkout> --arms oracle,empty --baseline-arm empty
+```
+
+Derive their `references` from the oracle solution's edited files/ranges, or
+curate doc/example locations. Per the ADR caveat, pair citation F1 with task
+pass-rate and judge score; patch-derived locations under-credit supporting
+evidence (tests, callers, neighbors).

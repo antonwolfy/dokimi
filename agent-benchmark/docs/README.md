@@ -85,12 +85,14 @@ Two more tracks back this up:
 
 - **Static track** — LLM-free checks on the docs themselves: structure,
   freshness, readability, do the code examples run.
-- **Executable task track** — [`terminal-bench-tasks/`](../terminal-bench-tasks/):
-  the agent must edit code, compile, and pass tests in Docker. A judge can be
-  fooled by prose; a pytest verifier cannot. The
+- **Executable task track** — Docker tasks supplied from an external content
+  checkout ([external-content.md](external-content.md) covers how to point the
+  framework at one): the agent must edit code, compile, and pass tests
+  in Docker. A judge can be fooled by prose; a pytest verifier cannot. The
   [coding harnesses guide](coding-harnesses.md) explains how to run Codex,
   Claude Code, or any Harbor agent against these tasks and compare pass rate
-  against a baseline harness.
+  against a baseline harness; the task format itself is specified in
+  [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md).
 
 ## Why this matters
 
@@ -98,11 +100,13 @@ Marketplaces rank agent artifacts by popularity, which buries niche expert
 tooling (focus here: Intel performance libraries — oneTBB, oneDAL, oneMKL).
 Here, every shipped skill, doc source, or profile carries the **scorecard
 that earned it**, kept alive as models and docs change. See the
-[umbrella README](../../README.md) for the bigger
-author → build → **measure** → package → discover → serve cycle.
+[repository overview](../../README.md) for what this framework is and where the
+content it measures comes from.
 
 ## Explore
 
+- Get content to measure: [external-content.md](external-content.md) — point
+  the framework at a checkout of a content repository.
 - Run a comparison: [evaluating-treatments.md](evaluating-treatments.md) —
   `cli.py arms run` with any mix of arms.
 - Full pipeline in one command: [quickstart.md](quickstart.md) — personas →
@@ -119,6 +123,11 @@ CLI surface. The files in this directory go deeper:
 
 ## Using agent-benchmark
 
+- [external-content.md](external-content.md) — **start here if you have no
+  evaluation content yet**: the content this framework measures lives in a
+  separate repository, and every location is an explicit flag
+  (`--questions-root`, `--tasks-root`, `--repo-root`, `--registry`). Includes a
+  pre-flight `catalog scan` and what each command does when a root is missing.
 - [quickstart.md](quickstart.md) — end-to-end LLM evaluation pipeline:
   personas → questions → answers → judge → report. Includes troubleshooting
   and a cost estimate.
@@ -142,11 +151,13 @@ CLI surface. The files in this directory go deeper:
 - [contributing-metric.md](contributing-metric.md) — add a new static
   documentation metric (module + spec + tests + docs).
 - [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)
-  — add an executable oneTBB / oneAPI task with Docker, oracle, and pytest
-  verifier.
+  — the executable task format (directory layout, `task.toml` fields, verifier
+  and oracle contract) that tasks in the external content repository follow.
 
 ## Reference
 
+- [user-flow.md](user-flow.md) — the canonical end-to-end path: pick a target,
+  preflight, run, then pin the question set so runs stay comparable.
 - [example-execution.md](example-execution.md) — how the `example_pass_rate`
   metric extracts and runs fenced code examples in isolation.
 - [ingestion-docling.md](ingestion-docling.md) — ingesting non-Markdown
@@ -167,6 +178,10 @@ current status.
 - [decisions/2026-05-29-evaluating-mcp-skills-personas.md](decisions/2026-05-29-evaluating-mcp-skills-personas.md)
   — assessment + proposal for evaluating MCP docs, skills, and agent persona
   prompts as first-class treatment arms.
+- [decisions/2026-05-29-external-feedback-assessment.md](decisions/2026-05-29-external-feedback-assessment.md)
+  — claim-by-claim verification of an external code review of the repo, with the
+  prioritized response that followed (licensing, schema validation, packaging,
+  reproducibility).
 - [decisions/2026-06-10-evaluation-beyond-mcp-docs.md](decisions/2026-06-10-evaluation-beyond-mcp-docs.md)
   — **umbrella / index** for extending evaluation beyond MCP docs; states the
   shared motivation and sequences the ADRs below.

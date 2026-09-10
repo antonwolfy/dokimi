@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent_benchmarks.questions.refiner import QuestionRefiner, _count_difficulty
 
 
@@ -173,19 +171,25 @@ def test_refiner_normalizes_legacy_format():
     assert report.questions[1]["difficulty"] == "advanced"
 
 
-def test_refiner_on_actual_onetbb_questions():
-    """Smoke test against real onetbb.json schema (no LLM needed)."""
-    import json, pathlib
-    p = pathlib.Path(__file__).parent.parent / "questions" / "onetbb.json"
-    if not p.exists():
-        pytest.skip("onetbb.json not found")
-    data = json.loads(p.read_text())
-    raw = data.get("questions", data)
-    refiner = QuestionRefiner("oneTBB")
-    report = refiner.refine(raw)
+def test_every_refined_question_carries_a_canonical_difficulty_label():
+    """Whatever a question set puts in ``difficulty``, refine() must emit one of the three
+    canonical labels — downstream reports group by that string.
+
+    This used to load a committed product question set through a path that never existed, so
+    it skipped on every run. The input is inline instead, and covers the shapes the
+    normalizer has to handle: numeric, canonical, aliased, and missing.
+    """
+    raw = [
+        {"id": "q1", "text": "How do I install it?", "difficulty": 1},
+        {"id": "q2", "question": "How do I tune it?", "difficulty": "intermediate"},
+        {"id": "q3", "text": "How do I debug a deadlock?", "difficulty": "hard"},
+        {"id": "q4", "text": "What does the default do?"},
+    ]
+    report = QuestionRefiner("demo").refine(raw)
+
     assert report.original_count == len(raw)
     assert len(report.questions) <= report.original_count
-    # All remaining questions must have canonical difficulty labels
+    assert report.questions, "refine() dropped every question, so the labels are unchecked"
     for q in report.questions:
         assert q["difficulty"] in ("beginner", "intermediate", "advanced")
 
