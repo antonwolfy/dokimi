@@ -466,7 +466,7 @@ class Answerer:
     @staticmethod
     def load_answers(input_path: Path) -> Dict[str, Any]:
         """Load answers from JSON file."""
-        with open(input_path, 'r') as f:
+        with open(input_path, 'r', encoding="utf-8") as f:
             return json.load(f)
     
     @staticmethod

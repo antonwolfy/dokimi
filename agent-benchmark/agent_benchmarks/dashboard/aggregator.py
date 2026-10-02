@@ -112,7 +112,7 @@ class ResultsAggregator:
 
     def _load_snapshot(self, path: Path) -> Optional[ProductSnapshot]:
         try:
-            data = json.loads(path.read_text())
+            data = json.loads(path.read_text(encoding="utf-8"))
         except Exception as e:
             logger.warning(f"Cannot read {path}: {e}")
             return None

@@ -76,7 +76,7 @@ def _read_key(value: str) -> str:
     if value.startswith("file:"):
         path = os.path.expanduser(value[5:])
         try:
-            return open(path).read().strip()
+            return open(path, encoding="utf-8").read().strip()
         except Exception:
             return value
     return value

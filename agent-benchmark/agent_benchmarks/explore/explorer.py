@@ -111,8 +111,9 @@ class CommandExplorer:
         context = {
             "query": query,
             "query_quoted": shlex.quote(query),
-            "repo_root": str(repo_root),
-            "output_dir": str(output_dir or ""),
+            # Forward slashes: shlex.split below would eat a Windows path's backslashes.
+            "repo_root": repo_root.as_posix(),
+            "output_dir": output_dir.as_posix() if output_dir else "",
         }
         try:
             command = shlex.split(_render(self.command_template, context))

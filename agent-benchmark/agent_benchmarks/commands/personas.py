@@ -79,7 +79,7 @@ def cmd_personas_approve(args: argparse.Namespace) -> None:
 
     # Validate JSON structure
     try:
-        personas = json.loads(persona_file.read_text())
+        personas = json.loads(persona_file.read_text(encoding="utf-8"))
         required_keys = {"product", "personas"}
         if not required_keys.issubset(personas.keys()):
             print(f"✗ Invalid persona file. Missing keys: {required_keys - personas.keys()}", file=sys.stderr)

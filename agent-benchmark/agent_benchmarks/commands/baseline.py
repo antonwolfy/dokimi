@@ -18,13 +18,13 @@ def _baseline_manifest() -> Dict[str, Any]:
     """Load or create the baseline manifest."""
     manifest_path = BASELINES_DIR / "manifest.json"
     if manifest_path.exists():
-        return json.loads(manifest_path.read_text())
+        return json.loads(manifest_path.read_text(encoding="utf-8"))
     return {"baselines": []}
 
 
 def _save_manifest(manifest: Dict[str, Any]) -> None:
     BASELINES_DIR.mkdir(parents=True, exist_ok=True)
-    (BASELINES_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    (BASELINES_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
 def _compute_summary(eval_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -53,7 +53,7 @@ def cmd_baseline_save(args: argparse.Namespace) -> None:
         print(f"❌ Eval file not found: {eval_path}")
         raise SystemExit(1)
 
-    eval_data = json.loads(eval_path.read_text())
+    eval_data = json.loads(eval_path.read_text(encoding="utf-8"))
     product = args.product or eval_data.get("product", "unknown")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
     name = args.name or f"{product}-{timestamp}"
@@ -63,7 +63,7 @@ def cmd_baseline_save(args: argparse.Namespace) -> None:
     if dest.exists():
         print(f"❌ Baseline already exists: {dest} (choose a different --name)", file=sys.stderr)
         raise SystemExit(1)
-    dest.write_text(json.dumps(eval_data, indent=2))
+    dest.write_text(json.dumps(eval_data, indent=2), encoding="utf-8")
 
     manifest = _baseline_manifest()
     manifest["baselines"].append({
@@ -113,7 +113,7 @@ def cmd_baseline_compare(args: argparse.Namespace) -> None:
         print(f"❌ Eval file not found: {eval_path}")
         raise SystemExit(1)
 
-    eval_data = json.loads(eval_path.read_text())
+    eval_data = json.loads(eval_path.read_text(encoding="utf-8"))
     manifest = _baseline_manifest()
     baselines = manifest.get("baselines", [])
 
@@ -135,7 +135,7 @@ def cmd_baseline_compare(args: argparse.Namespace) -> None:
             candidates = baselines
         entry = candidates[-1]   # most recent
 
-    baseline_data = json.loads(Path(entry["path"]).read_text())
+    baseline_data = json.loads(Path(entry["path"]).read_text(encoding="utf-8"))
     baseline_evals = {e["question_id"]: e for e in baseline_data.get("evaluations", [])}
     current_evals = eval_data.get("evaluations", [])
 

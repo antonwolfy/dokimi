@@ -58,7 +58,7 @@ def _run_ragas_eval(answers, output_path, args) -> None:
         import json
         ragas_path = output_path.with_name(output_path.stem + "_ragas.json")
         ragas_path.parent.mkdir(parents=True, exist_ok=True)
-        ragas_path.write_text(json.dumps(result.to_dict(), indent=2))
+        ragas_path.write_text(json.dumps(result.to_dict(), indent=2), encoding="utf-8")
 
         print(result.format_summary())
         print(f"✅ Saved RAGAS results to {ragas_path}")
@@ -100,7 +100,7 @@ def cmd_eval_panel_score(args: argparse.Namespace) -> None:
     panel = JudgePanel(judges=judges, concurrency=args.concurrency)
 
     try:
-        answers_data = json.loads(Path(args.answers).read_text())
+        answers_data = json.loads(Path(args.answers).read_text(encoding="utf-8"))
     except FileNotFoundError:
         print(f"Error: answers file not found: {args.answers}", file=sys.stderr)
         sys.exit(1)
@@ -150,7 +150,7 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
 
     # Load answers
     try:
-        answers_data = json.loads(Path(args.answers).read_text())
+        answers_data = json.loads(Path(args.answers).read_text(encoding="utf-8"))
     except FileNotFoundError:
         print(f"Error: answers file not found: {args.answers}", file=sys.stderr)
         sys.exit(1)
@@ -208,7 +208,7 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
 
 def cmd_eval_ragas(args: argparse.Namespace) -> None:
     """Run standalone RAGAS meta-evaluation on an answers JSON."""
-    answers_data = json.loads(Path(args.answers).read_text())
+    answers_data = json.loads(Path(args.answers).read_text(encoding="utf-8"))
     answers = answers_data.get("answers", answers_data)
     print(f"Loaded {len(answers)} answers from {args.answers}")
 
@@ -227,7 +227,7 @@ def cmd_eval_grounding(args: argparse.Namespace) -> None:
 
     from agent_benchmarks.eval.grounding import evaluate_grounding
 
-    data = json.loads(Path(args.answers).read_text())
+    data = json.loads(Path(args.answers).read_text(encoding="utf-8"))
     answers = data.get("answers", data) if isinstance(data, dict) else data
     result = evaluate_grounding(answers, threshold=args.threshold)
 
@@ -241,7 +241,7 @@ def cmd_eval_grounding(args: argparse.Namespace) -> None:
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(result, indent=2))
+        out.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(f"\n✅ Grounding report saved to {out}")
 
 
@@ -251,7 +251,7 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
     from agent_benchmarks.eval.judge import Judge
     from agent_benchmarks.eval.judge_validity import judge_scorer, run_validity
 
-    data = json.loads(Path(args.answers).read_text())
+    data = json.loads(Path(args.answers).read_text(encoding="utf-8"))
     answers = data.get("answers", data) if isinstance(data, dict) else data
     library = args.product or (data.get("library_name") if isinstance(data, dict) else None) or "the library"
 
@@ -285,7 +285,7 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report.to_dict(), indent=2))
+        out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
 
     print()
     print(report.format_summary())

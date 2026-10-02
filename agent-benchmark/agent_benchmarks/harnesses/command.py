@@ -141,10 +141,11 @@ class CommandHarness:
         context: dict[str, Any] = {
             "harness": self.harness_id,
             "task": task.name,
-            "task_path": str(task.path),
+            # Forward slashes: shlex.split below would eat a Windows path's backslashes.
+            "task_path": task.path.as_posix(),
             "instruction": task.instruction,
             "model": model or "",
-            "output_dir": str(output_dir or ""),
+            "output_dir": output_dir.as_posix() if output_dir else "",
         }
         prompt = _task_prompt(task)
         context["prompt"] = prompt

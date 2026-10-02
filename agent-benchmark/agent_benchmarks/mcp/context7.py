@@ -122,7 +122,7 @@ class Context7Client(MCPClient):
             
             if cache_file.exists():
                 logger.info(f"Cache hit for {library_id} query: {query[:50]}...")
-                content = cache_file.read_text()
+                content = cache_file.read_text(encoding="utf-8")
                 return [{
                     "content": content,
                     "source": "context7_cache",
@@ -171,7 +171,7 @@ class Context7Client(MCPClient):
             
             # Cache successful response
             if self.cache_dir:
-                cache_file.write_text(content)
+                cache_file.write_text(content, encoding="utf-8")
                 logger.info(f"Cached response to {cache_file}")
             
             return [{

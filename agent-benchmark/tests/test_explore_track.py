@@ -273,7 +273,7 @@ def test_command_explorer_timeout_preserves_partial_telemetry(tmp_path):
         encoding="utf-8",
     )
     result = CommandExplorer(
-        f"python {writer}", timeout_sec=0.5, output_root=tmp_path / "o"
+        f"python {writer.as_posix()}", timeout_sec=0.5, output_root=tmp_path / "o"
     ).explore("q", repo_root=tmp_path)
     assert result.returncode == 124
     # Telemetry written before the hang is preserved, not discarded.
@@ -336,7 +336,7 @@ def test_command_explorer_resolves_relative_output_dir(tmp_path, monkeypatch):
         "write('{\"type\": \"subagent\", \"name\": \"child-op\"}\\n')\n",
         encoding="utf-8",
     )
-    explorer = CommandExplorer(f"python {writer}", output_root=Path("out"))
+    explorer = CommandExplorer(f"python {writer.as_posix()}", output_root=Path("out"))
     result = explorer.explore("q", repo_root=repo)
     assert any(op.name == "child-op" for op in result.operations)
 
@@ -513,3 +513,16 @@ def test_roll_up_cost_none_when_all_unpriced():
     assert roll["full_system_cost"] is None
     assert roll["full_system_cost_complete"] is False
     assert roll["full_system_tokens"] == 10
+
+
+def test_command_explorer_passes_real_paths_to_the_command(tmp_path):
+    from agent_benchmarks.explore import CommandExplorer
+
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "import os, sys\nprint(all(os.path.isdir(p) for p in sys.argv[1:]))\n", encoding="utf-8"
+    )
+    explorer = CommandExplorer(
+        f"python {probe.as_posix()} {{repo_root}} {{output_dir}}", output_root=tmp_path / "out"
+    )
+    assert explorer.explore("q", repo_root=tmp_path).final_answer.strip() == "True"

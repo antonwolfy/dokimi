@@ -179,7 +179,7 @@ def test_save_dashboard_markdown(tmp_path):
     path = tmp_path / "DASHBOARD.md"
     save_dashboard_markdown(data, path)
     assert path.exists()
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     assert "oneTBB" in content
 
 
@@ -187,6 +187,6 @@ def test_save_dashboard_json(tmp_path):
     data = _make_dashboard()
     path = tmp_path / "dashboard.json"
     save_dashboard_json(data, path)
-    parsed = json.loads(path.read_text())
+    parsed = json.loads(path.read_text(encoding="utf-8"))
     assert parsed["products"][0]["product"] == "oneTBB"
     assert parsed["products"][0]["avg_with_docs"] == 78.0

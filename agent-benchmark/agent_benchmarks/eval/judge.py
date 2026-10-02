@@ -558,7 +558,7 @@ class Judge:
     @staticmethod
     def load_evaluations(input_path: Path) -> Dict[str, Any]:
         """Load evaluations from JSON file."""
-        with open(input_path, 'r') as f:
+        with open(input_path, 'r', encoding="utf-8") as f:
             return json.load(f)
     
     @staticmethod

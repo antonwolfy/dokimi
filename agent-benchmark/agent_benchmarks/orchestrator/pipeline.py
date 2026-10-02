@@ -35,7 +35,7 @@ def compute_question_set_hash(questions: List[Dict[str, Any]]) -> str:
 
 def load_questions_payload(path: Path) -> List[Dict[str, Any]]:
     """Load questions from either a wrapped artifact or a raw list."""
-    raw = json.loads(path.read_text())
+    raw = json.loads(path.read_text(encoding="utf-8"))
     questions = raw.get("questions", raw) if isinstance(raw, dict) else raw
     if not isinstance(questions, list):
         raise ValueError(f"Expected a list of questions in {path}")
@@ -217,7 +217,7 @@ class EvaluationPipeline:
         # Step 1: Discover personas (cached if already exists)
         logger.info("Step 1/6: Discovering personas...")
         if (not self.force_regen) and self.personas_path.exists():
-            personas = json.loads(self.personas_path.read_text())
+            personas = json.loads(self.personas_path.read_text(encoding="utf-8"))
             print(f"✓ Loaded {len(personas.get('personas', []))} personas (cached)")
         else:
             personas = self._discover_personas()
@@ -417,7 +417,7 @@ class EvaluationPipeline:
         
         # Load custom questions if provided
         if self.custom_questions_path and self.custom_questions_path.exists():
-            custom_data = json.loads(self.custom_questions_path.read_text())
+            custom_data = json.loads(self.custom_questions_path.read_text(encoding="utf-8"))
             
             # Handle both dict format {"questions": [...]} and direct list format
             if isinstance(custom_data, dict):
@@ -478,7 +478,7 @@ class EvaluationPipeline:
             output["question_set_hash"] = question_set_hash
             output["question_set_id"] = question_set_hash
         
-        self.questions_path.write_text(json.dumps(output, indent=2))
+        self.questions_path.write_text(json.dumps(output, indent=2), encoding="utf-8")
     
     def _generate_answers(self, questions: List[Dict[str, Any]], concurrency: int = 5,
                           question_set_hash: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -524,7 +524,7 @@ class EvaluationPipeline:
             answers_list = answers
         else:
             # Fallback: read from disk if not provided
-            answers_data = json.loads(self.answers_path.read_text())
+            answers_data = json.loads(self.answers_path.read_text(encoding="utf-8"))
             answers_list = answers_data.get("answers", answers_data)
         
         # Evaluate
@@ -562,7 +562,7 @@ class EvaluationPipeline:
         from agent_benchmarks.report import ReportGenerator
         
         # Load data
-        eval_data = json.loads(self.eval_path.read_text())
+        eval_data = json.loads(self.eval_path.read_text(encoding="utf-8"))
         questions_data = {
             "product": self.product,
             "questions": questions
@@ -577,6 +577,6 @@ class EvaluationPipeline:
         )
         
         # Save report
-        self.report_path.write_text(report)
+        self.report_path.write_text(report, encoding="utf-8")
         
         return report

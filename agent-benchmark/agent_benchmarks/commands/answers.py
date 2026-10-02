@@ -51,7 +51,7 @@ def cmd_answers_generate(args: argparse.Namespace) -> None:
         args.top_k = _retrieval_cfg.get("top_k", DEFAULT_RETRIEVAL_TOP_K)
 
     # Load questions
-    questions_data = json.loads(Path(args.questions).read_text())
+    questions_data = json.loads(Path(args.questions).read_text(encoding="utf-8"))
     questions = questions_data.get("questions", questions_data) if isinstance(questions_data, dict) else questions_data
     if not isinstance(questions, list) or not all(isinstance(q, dict) for q in questions):
         print(f"Error: expected a list of question objects in {args.questions}", file=sys.stderr)

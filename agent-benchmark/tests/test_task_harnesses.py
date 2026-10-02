@@ -438,3 +438,13 @@ def test_a_real_mcnemar_block_validates_and_then_renders():
     assert "## Paired significance vs baseline (McNemar)" in md
     # 12 pairs from 6 tasks: the caveat has to reach the reader, not just the JSON.
     assert "only 6 independent task(s)" in md
+
+
+def test_path_placeholders_keep_windows_separators(tmp_path):
+    from dataclasses import replace
+    from pathlib import PureWindowsPath
+
+    task = replace(load_task(_fixture_task(tmp_path)), path=PureWindowsPath(r"C:\tasks\toy-task"))
+    harness = CommandHarness("fake", "agent --task {task_path} --out {output_dir}")
+    cmd = harness.build_command(task, model=None, output_dir=PureWindowsPath(r"C:\runs\out"))
+    assert cmd == ["agent", "--task", "C:/tasks/toy-task", "--out", "C:/runs/out"]

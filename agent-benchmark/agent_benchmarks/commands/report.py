@@ -100,8 +100,8 @@ def cmd_report_generate(args: argparse.Namespace) -> None:
     from agent_benchmarks.report import ReportGenerator
 
     # Load eval and questions
-    eval_data = json.loads(Path(args.eval).read_text())
-    questions_data = json.loads(Path(args.questions).read_text())
+    eval_data = json.loads(Path(args.eval).read_text(encoding="utf-8"))
+    questions_data = json.loads(Path(args.questions).read_text(encoding="utf-8"))
 
     print(f"Loaded {len(eval_data.get('evaluations', []))} evaluations from {args.eval}")
     print(f"Loaded {len(questions_data.get('questions', []))} questions from {args.questions}")
@@ -117,7 +117,7 @@ def cmd_report_generate(args: argparse.Namespace) -> None:
     # Save output
     output_path = Path(args.output) if args.output else Path(f"reports/{args.product}.{args.format}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(report)
+    output_path.write_text(report, encoding="utf-8")
 
     print(f"\n✅ Generated report: {output_path}")
 

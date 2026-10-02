@@ -46,7 +46,7 @@ class IntentRegistry:
         if not self._path.exists():
             logger.warning(f"Intent registry not found: {self._path}")
             return
-        data = yaml.safe_load(self._path.read_text()) or {}
+        data = yaml.safe_load(self._path.read_text(encoding="utf-8")) or {}
         if not isinstance(data, dict) or "domains" not in data:
             logger.warning(f"Intent registry {self._path} has no 'domains' key — skipping.")
             return

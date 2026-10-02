@@ -44,7 +44,7 @@ class ProductRegistry:
         if not self._path.exists():
             logger.warning(f"Registry not found: {self._path}")
             return
-        data = yaml.safe_load(self._path.read_text()) or {}
+        data = yaml.safe_load(self._path.read_text(encoding="utf-8")) or {}
         if not isinstance(data, dict) or not ("products" in data or "libraries" in data):
             logger.warning(f"Registry {self._path} has no 'products' key — skipping.")
             return

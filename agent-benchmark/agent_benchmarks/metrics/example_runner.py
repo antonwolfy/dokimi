@@ -109,7 +109,7 @@ def extract_examples(markdown: str) -> list[tuple[str, str]]:
 
 def _limit_resources(policy: ExecutionPolicy):
     """Return a preexec_fn that applies CPU/memory/process limits (POSIX)."""
-    if resource is None:  # pragma: no cover - Windows
+    if sys.platform == "win32" or resource is None:  # pragma: no cover - Windows
         return None
 
     def _apply() -> None:

@@ -122,11 +122,11 @@ def _render_product_section(p: ProductSnapshot, top_n: int) -> list[str]:
 
 def save_dashboard_markdown(data: DashboardData, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_dashboard(data))
+    path.write_text(render_dashboard(data), encoding="utf-8")
 
 
 def save_dashboard_json(data: DashboardData, path: Path) -> None:
     import json
     from dataclasses import asdict
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(data), indent=2))
+    path.write_text(json.dumps(asdict(data), indent=2), encoding="utf-8")

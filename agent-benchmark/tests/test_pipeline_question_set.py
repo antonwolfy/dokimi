@@ -107,7 +107,7 @@ def test_questions_from_directory_is_reused_and_normalized(tmp_path, monkeypatch
     assert saved["question_set_hash"] == expected_hash
     assert saved["question_set_id"] == expected_hash
     assert saved["questions"] == questions
-    assert result["steps"]["questions_generated"]["external_source"].endswith(
+    assert Path(result["steps"]["questions_generated"]["external_source"]).as_posix().endswith(
         "source/questions/oneTBB.json"
     )
 
@@ -133,7 +133,7 @@ def test_questions_from_directory_uses_product_key_when_provided(tmp_path, monke
 
     saved = json.loads((output_dir / "questions" / "onetbb.json").read_text())
     assert saved["questions"] == questions
-    assert result["steps"]["questions_generated"]["external_source"].endswith(
+    assert Path(result["steps"]["questions_generated"]["external_source"]).as_posix().endswith(
         "source/questions/onetbb.json"
     )
 

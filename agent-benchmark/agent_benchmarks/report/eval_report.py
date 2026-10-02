@@ -138,7 +138,7 @@ DIFFICULTY_ORDER = ["easy", "beginner", "intermediate", "medium", "advanced", "h
 
 
 def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = None):
-    with open(eval_path) as f:
+    with open(eval_path, encoding="utf-8") as f:
         data = json.load(f)
 
     evals = data["evaluations"]
@@ -416,7 +416,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     dir_path = os.path.dirname(out_path)
     if dir_path:
         os.makedirs(dir_path, exist_ok=True)
-    with open(out_path, "w") as f:
+    with open(out_path, "w", encoding="utf-8") as f:
         f.write(report)
 
     # Sidecar JSON: questions + answers + scores
@@ -426,7 +426,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
     answers_by_id = {}
     try:
         answers_path = eval_path.replace("/eval/", "/answers/")
-        with open(answers_path) as af:
+        with open(answers_path, encoding="utf-8") as af:
             answers_data = json.load(af)
         for a in answers_data.get("answers", []):
             answers_by_id[a.get("question_id")] = a
@@ -448,7 +448,7 @@ def generate_report(eval_path: str, out_path: str, qa_json_out: str | None = Non
             "without_docs_answer": ((a.get("without_docs") or {}).get("answer") if isinstance(a.get("without_docs"), dict) else None),
         })
 
-    with open(qa_json_out, "w") as jf:
+    with open(qa_json_out, "w", encoding="utf-8") as jf:
         json.dump({
             "eval_path": eval_path,
             "report_path": out_path,

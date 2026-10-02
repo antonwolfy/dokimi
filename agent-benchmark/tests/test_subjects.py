@@ -424,7 +424,7 @@ def test_subject_scorecard_hashes_local_baseline_content(tmp_path: Path):
     descriptor_path = tmp_path / "subject.toml"
     descriptor_path.write_text(
         f"""
-baseline = "docs:local:{docs}"
+baseline = "docs:local:{docs.as_posix()}"
 
 [subject]
 id = "docs-subject"
@@ -452,7 +452,7 @@ def test_subject_scorecard_hashes_local_baseline_path_with_plus(tmp_path: Path):
     descriptor_path = tmp_path / "subject.toml"
     descriptor_path.write_text(
         f"""
-baseline = "docs:local:{docs}"
+baseline = "docs:local:{docs.as_posix()}"
 
 [subject]
 id = "docs-subject"
@@ -523,7 +523,7 @@ ref = "local:docs"
 
 [suite]
 products = ["oneTBB"]
-questions = ["{questions}"]
+questions = ["{questions.as_posix()}"]
 """.strip(),
         encoding="utf-8",
     )
@@ -592,11 +592,11 @@ def test_subjects_run_writes_scorecard(tmp_path: Path, monkeypatch):
 [subject]
 id = "docs-subject"
 kind = "doc-source"
-ref = "local:{docs}"
+ref = "local:{docs.as_posix()}"
 
 [suite]
 products = ["oneTBB"]
-questions = ["{questions}"]
+questions = ["{questions.as_posix()}"]
 
 [[matrix.cells]]
 id = "arms-runner"
@@ -765,12 +765,12 @@ tags = ["onetbb"]
 [subject]
 id = "docs-subject"
 kind = "doc-source"
-ref = "local:{docs}"
+ref = "local:{docs.as_posix()}"
 
 [suite]
 products = ["oneTBB"]
-questions = ["{questions}"]
-tasks = ["{task_dir}"]
+questions = ["{questions.as_posix()}"]
+tasks = ["{task_dir.as_posix()}"]
 """.strip(),
         encoding="utf-8",
     )

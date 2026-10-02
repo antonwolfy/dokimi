@@ -37,7 +37,7 @@ def cmd_questions_panel_review(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     try:
-        questions_data = json.loads(Path(args.questions).read_text())
+        questions_data = json.loads(Path(args.questions).read_text(encoding="utf-8"))
     except FileNotFoundError:
         print(f"Error: file not found: {args.questions}", file=sys.stderr)
         sys.exit(1)
@@ -91,7 +91,7 @@ def cmd_questions_refine(args: argparse.Namespace) -> None:
     """Refine a question set: normalise schema, deduplicate, filter trivial, report gaps."""
     from agent_benchmarks.questions.refiner import QuestionRefiner, GapFiller
 
-    questions_data = json.loads(Path(args.questions).read_text())
+    questions_data = json.loads(Path(args.questions).read_text(encoding="utf-8"))
     raw = _extract_questions(questions_data, args.questions)
 
     target = {
@@ -127,7 +127,7 @@ def cmd_questions_refine(args: argparse.Namespace) -> None:
             "difficulty_distribution": report.difficulty_after,
             "questions": report.questions,
         }
-        out.write_text(_json.dumps(payload, indent=2, ensure_ascii=False))
+        out.write_text(_json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"\n✅ Refined questions saved to {out}")
     else:
         print("\n(dry-run: no file written)")
@@ -138,7 +138,7 @@ def cmd_questions_analyze(args: argparse.Namespace) -> None:
     from agent_benchmarks.questions.quality_analyzer import QuestionQualityAnalyzer
     from agent_benchmarks.questions.normalizer import normalize_questions
 
-    questions_data = json.loads(Path(args.questions).read_text())
+    questions_data = json.loads(Path(args.questions).read_text(encoding="utf-8"))
     raw = _extract_questions(questions_data, args.questions)
     if raw and isinstance(raw[0], dict):
         normalized = normalize_questions(raw)
@@ -188,7 +188,7 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
     # Load config
     config_path = Path("config/products.yaml")
     if config_path.exists():
-        config = yaml.safe_load(config_path.read_text())
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     else:
         config = {}
 
@@ -198,13 +198,13 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
         args.top_k = _retrieval_cfg.get("top_k", 3)
 
     # Load personas
-    personas_data = json.loads(Path(args.personas).read_text())
+    personas_data = json.loads(Path(args.personas).read_text(encoding="utf-8"))
     personas = personas_data["personas"]
     print(f"Loaded {len(personas)} personas from {args.personas}")
 
     # Get or extract topics
     if args.topics:
-        topics = json.loads(Path(args.topics).read_text())
+        topics = json.loads(Path(args.topics).read_text(encoding="utf-8"))
     else:
         print(f"Extracting seed topics for {args.product}...")
 

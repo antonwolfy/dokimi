@@ -85,7 +85,7 @@ def _resolve_api_key(provider: str, api_key: Optional[str]) -> str:
     if api_key and api_key.startswith("file:"):
         key_path = os.path.expanduser(api_key[len("file:"):])
         try:
-            with open(key_path) as _f:
+            with open(key_path, encoding="utf-8") as _f:
                 api_key = _f.read().strip()
         except OSError as exc:
             raise ValueError(f"Cannot read API key from file '{key_path}': {exc}") from exc

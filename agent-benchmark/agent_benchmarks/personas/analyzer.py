@@ -354,6 +354,6 @@ class PersonaAnalyzer:
     def save_analysis(self, analysis: Dict[str, Any], output_path: Path):
         """Save analysis to JSON file."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding="utf-8") as f:
             json.dump(analysis, f, indent=2)
         logger.info(f"Saved analysis to {output_path}")

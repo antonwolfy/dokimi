@@ -172,5 +172,5 @@ class QuestionQualityAnalyzer:
 
     def save_report(self, report: QualityReport, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(report), indent=2))
+        path.write_text(json.dumps(asdict(report), indent=2), encoding="utf-8")
         logger.info(f"Quality report saved to {path}")

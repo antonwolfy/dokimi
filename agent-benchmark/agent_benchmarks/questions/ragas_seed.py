@@ -74,7 +74,7 @@ class RagasSeedExtractor:
             cache_file = self.cache_dir / f"topics_{cache_key}.json"
             if cache_file.exists():
                 logger.info("Topics cache hit for %s", library_id)
-                return json.loads(cache_file.read_text())
+                return json.loads(cache_file.read_text(encoding="utf-8"))
 
         # 1. Fetch raw docs
         docs = self._fetch_docs(library_id, library_name, max_tokens)
@@ -87,7 +87,7 @@ class RagasSeedExtractor:
 
         # 3. Cache
         if self.cache_dir:
-            cache_file.write_text(json.dumps(topics))
+            cache_file.write_text(json.dumps(topics), encoding="utf-8")
             logger.info("Cached %d topics to %s", len(topics), cache_file)
 
         return topics

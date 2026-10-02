@@ -226,11 +226,11 @@ class PersonaGenerator:
     def save_personas(self, personas: Dict[str, Any], output_path: Path):
         """Save generated personas to JSON file."""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding="utf-8") as f:
             json.dump(personas, f, indent=2)
         logger.info(f"✓ Saved {len(personas['personas'])} personas to {output_path}")
     
     def load_personas(self, input_path: Path) -> Dict[str, Any]:
         """Load personas from JSON file."""
-        with open(input_path, 'r') as f:
+        with open(input_path, 'r', encoding="utf-8") as f:
             return json.load(f)

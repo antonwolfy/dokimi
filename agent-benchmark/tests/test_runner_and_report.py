@@ -163,7 +163,7 @@ def test_write_run_report_creates_file(tmp_path):
 def test_write_run_report_contains_summary(tmp_path):
     out = tmp_path / "report.md"
     write_run_report(_run_data(score=0.75), out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "0.7500" in text
     assert "## Summary" in text
 
@@ -171,7 +171,7 @@ def test_write_run_report_contains_summary(tmp_path):
 def test_write_run_report_contains_docs(tmp_path):
     out = tmp_path / "report.md"
     write_run_report(_run_data(), out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "doc1.md" in text
     assert "## Docs" in text
 
@@ -179,7 +179,7 @@ def test_write_run_report_contains_docs(tmp_path):
 def test_write_run_report_gate_pass(tmp_path):
     out = tmp_path / "report.md"
     write_run_report(_run_data(with_gate=True, gate_passed=True), out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "PASS" in text
     assert "✅" in text
 
@@ -187,7 +187,7 @@ def test_write_run_report_gate_pass(tmp_path):
 def test_write_run_report_gate_fail(tmp_path):
     out = tmp_path / "report.md"
     write_run_report(_run_data(with_gate=True, gate_passed=False), out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "FAIL" in text
     assert "❌" in text
 
@@ -195,7 +195,7 @@ def test_write_run_report_gate_fail(tmp_path):
 def test_write_run_report_no_gate_section_when_absent(tmp_path):
     out = tmp_path / "report.md"
     write_run_report(_run_data(with_gate=False), out)
-    assert "Soft Gate" not in out.read_text()
+    assert "Soft Gate" not in out.read_text(encoding="utf-8")
 
 
 def test_write_run_report_creates_parent_dirs(tmp_path):
@@ -232,7 +232,7 @@ def test_write_compare_report_creates_file(tmp_path):
 def test_write_compare_report_contains_diff(tmp_path):
     out = tmp_path / "compare.md"
     write_compare_report(_compare_data(), out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "## Diff" in text
     assert "+0.0500" in text or "+1" in text
 
@@ -240,14 +240,14 @@ def test_write_compare_report_contains_diff(tmp_path):
 def test_write_compare_report_no_regressions(tmp_path):
     out = tmp_path / "compare.md"
     write_compare_report(_compare_data(with_regressions=True), out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "No regressions" in text
 
 
 def test_write_compare_report_critical_regressions(tmp_path):
     out = tmp_path / "compare.md"
     write_compare_report(_compare_data(with_regressions=True, has_critical=True), out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "CRITICAL" in text
     assert "🔴" in text
 
@@ -255,7 +255,7 @@ def test_write_compare_report_critical_regressions(tmp_path):
 def test_write_compare_report_warnings(tmp_path):
     out = tmp_path / "compare.md"
     write_compare_report(_compare_data(with_regressions=True, has_warnings=True), out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "Warnings" in text or "🟡" in text
 
 
@@ -277,7 +277,7 @@ def test_write_json_roundtrip(tmp_path):
     out = tmp_path / "data.json"
     data = {"score": 0.85, "items": [1, 2, 3]}
     write_json(data, out)
-    assert json.loads(out.read_text()) == data
+    assert json.loads(out.read_text(encoding="utf-8")) == data
 
 
 def test_write_json_creates_parent_dirs(tmp_path):
@@ -289,5 +289,5 @@ def test_write_json_creates_parent_dirs(tmp_path):
 def test_write_json_pretty_printed(tmp_path):
     out = tmp_path / "out.json"
     write_json({"a": 1}, out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
     assert "\n" in text  # indented

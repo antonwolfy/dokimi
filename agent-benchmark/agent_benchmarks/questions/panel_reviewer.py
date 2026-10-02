@@ -279,7 +279,7 @@ class QuestionPanelReviewer:
 
         report = _build_report(library_name, results)
         if output_path:
-            output_path.write_text(json.dumps(_report_to_dict(report), indent=2))
+            output_path.write_text(json.dumps(_report_to_dict(report), indent=2), encoding="utf-8")
 
         return report
 
@@ -339,6 +339,6 @@ def _save_incremental_report(results, library_name, path, reviewer):
     tmp = path.with_suffix(path.suffix + ".tmp")
     out = {"library_name": library_name, "total": len(results),
            "questions": results}
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
     os.replace(tmp, path)

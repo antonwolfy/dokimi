@@ -334,7 +334,7 @@ class QuestionGenerator:
             "questions": questions
         }
         
-        with open(output_path, 'w') as f:
+        with open(output_path, 'w', encoding="utf-8") as f:
             json.dump(output, f, indent=2)
         
         logger.info(f"✓ Saved {len(questions)} questions to {output_path}")

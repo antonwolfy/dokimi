@@ -340,7 +340,7 @@ def _save_incremental(results: List[Dict], path: Path, library_name: str,
         "total_evaluations": len(results),
         "evaluations": results,
     }
-    with open(tmp, "w") as f:
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(output, f, indent=2)
     os.replace(tmp, path)
 

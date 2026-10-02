@@ -30,7 +30,7 @@ def cmd_dashboard_generate(args: argparse.Namespace) -> None:
 
     md_path = output_dir / "DASHBOARD.md"
     md_path.parent.mkdir(parents=True, exist_ok=True)
-    md_path.write_text(render_dashboard(data, top_n_bad_questions=args.top_n))
+    md_path.write_text(render_dashboard(data, top_n_bad_questions=args.top_n), encoding="utf-8")
     print(f"✅ Markdown dashboard: {md_path}")
 
     if not args.no_json:
