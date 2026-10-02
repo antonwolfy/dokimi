@@ -5,8 +5,9 @@
 
 The benchmark produces long-lived JSON artifact kinds: ``questions``,
 ``answers``, ``eval`` (LLM-judge scores), ``arms`` (treatment-arm comparisons),
-``task_runs`` (executable task results), and ``explore_runs`` (ExploreBench
-localization results). This module stamps each with a ``schema_version`` and
+``task_runs`` (executable task results), ``explore_runs`` (ExploreBench
+localization results), and ``novelty`` (what an artifact's content adds to one
+model). This module stamps each with a ``schema_version`` and
 validates it against the JSON Schema in ``agent_benchmarks/schemas/`` on save
 and load, so fixtures and baselines stay forward-compatible and self-describing.
 """
@@ -27,6 +28,7 @@ SCHEMA_VERSIONS: dict[str, str] = {
     "matrix_rollup": "matrix_rollup.v1",
     "plugin_delta": "plugin_delta.v1",
     "subject_scorecard": "subject_scorecard.v1",
+    "novelty": "novelty.v1",
     "task_runs": "task_runs.v1",
     "explore_runs": "explore_runs.v1",
 }

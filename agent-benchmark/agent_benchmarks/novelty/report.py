@@ -1,0 +1,386 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Assemble the ``novelty.v1`` artifact and render the human-facing views.
+
+Three outputs, one source of truth:
+
+* the JSON artifact — schema-validated, the thing a scorecard embeds and a gate reads;
+* a Markdown summary — read top-down in the order an author should act: routing, then
+  conflicts, then dead weight, then ``added``;
+* an annotated view of the artifact's own text, coloured span by span, which is the one
+  output that answers "*where* in my file?".
+
+Every rate appears under both scorings, and the caveats travel with the numbers rather
+than living in a doc nobody opens next to the report.
+"""
+
+from __future__ import annotations
+
+import html
+from datetime import datetime, timezone
+
+from .attribute import COLOURS, LEGEND, SpanAttribution
+
+_CAVEATS = (
+    "Rates are paired per probe; trust signs and rankings, not second decimals. "
+    "Two independent judges agreed 0.664 on the 6-way verdict scale and 0.852 on the "
+    "correct-ish binary collapse, so every rate is reported under both scorings.",
+    "`frac_carrying_nothing` is an upper bound on dead weight, and is only a property of "
+    "the artifact when `spans.capped_atom_set` is false. Three extractors agreed on which "
+    "spans carry knowledge (Jaccard 0.87-0.99), so it is not mostly unformalizable "
+    "knowledge; a capped atom set, however, inflated it tenfold in the study.",
+    "Novelty is a property of the (artifact, model) pair. Do not compare across models.",
+    "Per-atom-kind and per-tag rates are labels, not measurements. With extraction held "
+    "fixed, two independent relabellings reproduced the tag rates to within 0.08 (six of "
+    "nine tags at kappa 0.52-0.73), so tag slices are quotable; `rare-critical` (0.39-0.45) "
+    "and `temporal` are not, and the 5-way atom `type` vocabulary agrees at only 0.32-0.38. "
+    "Gate on the protection tags (`routing`, `negative-constraint`, `version-bound`) or on "
+    "nothing; report shape slices without gating on them.",
+    "Per-artifact `added` is a profile, not a ranking: the cross-artifact ranking "
+    "destabilizes below a 0.75 probe budget, so keep any `added` gate soft.",
+)
+
+
+def build_novelty_artifact(
+    *,
+    artifact_kind: str,
+    artifact_ref: str,
+    artifact_tokens: int,
+    ref_digest: str | None,
+    model: str,
+    provider: str,
+    judge_model: str,
+    atoms: list,
+    sampling: str,
+    measure_result,
+    span_summary: dict,
+    attribution_summary: dict,
+    by_knowledge_kind: dict | None = None,
+    categories: dict[str, int] | None = None,
+    faithfulness: dict[str, int] | None = None,
+    graph_summary: dict | None = None,
+    relevance: dict | None = None,
+    retention_stats: dict | None = None,
+    candidates: list | None = None,
+    dead_weight: list | None = None,
+    sole_carriers: list | None = None,
+    topics: list | None = None,
+    conflicts: list | None = None,
+    cost: dict | None = None,
+    warnings: list[str] | None = None,
+) -> dict:
+    """Build the ``novelty.v1`` payload (stamped and validated by ``save_artifact``)."""
+    paired = {scoring: measure_result.paired(scoring) for scoring in ("lenient", "strict")}
+    return {
+        "generated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
+        "artifact": {
+            "kind": artifact_kind,
+            "ref": artifact_ref,
+            "ref_digest": ref_digest,
+            "tokens": artifact_tokens,
+        },
+        "model": model,
+        "provider": provider,
+        "judge_model": judge_model,
+        "atoms": {
+            "n": len(atoms),
+            "n_probed": len({row.atom_id for row in measure_result.runs}),
+            "sampling": sampling,
+            "faithfulness": faithfulness or {},
+        },
+        "paired": {
+            scoring: {
+                "added": row["added"],
+                "redundant": row["redundant"],
+                "degraded": row["degraded"],
+                "still_missing": row["still_missing"],
+                "n_paired": row["n_paired"],
+                "n_unpaired_dropped": row["n_unpaired_dropped"],
+                "ci95_added": row["ci95_added"],
+            }
+            for scoring, row in paired.items()
+        },
+        "k0": {scoring: row["k0"] for scoring, row in paired.items()},
+        "by_knowledge_kind": by_knowledge_kind or {},
+        "arms": {
+            scoring: measure_result.arm_means(scoring) for scoring in ("lenient", "strict")
+        },
+        "controls": {
+            "reversal_resisted": measure_result.reversal_resisted(),
+            "abstentions": measure_result.abstentions(),
+            "confidence_correlation": measure_result.confidence_correlation(),
+            "order_independent": _order_independent(measure_result),
+        },
+        "categories": categories or {},
+        "conflicts": conflicts or [],
+        "spans": span_summary,
+        "attribution": attribution_summary,
+        "needs": graph_summary or {},
+        "relevance": relevance or {},
+        "retention": retention_stats or {},
+        "shortening": [c.as_dict() for c in (candidates or [])],
+        "views": {
+            "dead_weight": dead_weight or [],
+            "sole_carriers": sole_carriers or [],
+            "topics": topics or [],
+        },
+        "cost": cost or {},
+        "caveats": list(_CAVEATS),
+        "warnings": sorted(set(warnings or [])),
+    }
+
+
+def _order_independent(measure_result) -> bool | None:
+    """True when the shuffled control scored at least as high as the artifact as written.
+
+    Measured on four of five models in the study, which is why prose order is not where
+    authoring effort pays off. ``None`` when the control was not run.
+    """
+    means = measure_result.arm_means("lenient")
+    if "shuffled" not in means or measure_result.with_arm not in means:
+        return None
+    return means["shuffled"] >= means[measure_result.with_arm]
+
+
+def _render_knowledge_kinds(artifact: dict) -> list[str]:
+    """Which *kind* of knowledge the model lacked — the actionable cut of `added`.
+
+    Strict scoring, because the authoring decision this drives (write the exact contract,
+    cut the conceptual prose) is about exact values and qualifiers surviving.
+    """
+    block = (artifact.get("by_knowledge_kind") or {}).get("strict") or {}
+    rows: list[tuple[str, str, dict]] = [
+        (axis, name, entry)
+        for axis, label in (("by_kind", "kind"), ("by_tag", "tag"))
+        for name, entry in (block.get(axis) or {}).items()
+        if not entry.get("underpowered")
+    ]
+    if not rows:
+        return []
+    lines = ["## Which kind of knowledge was missing (strict)", ""]
+    lines.append("| slice | atom kind/tag | already knew | added | degraded | n |")
+    lines.append("|---|---|---|---|---|---|")
+    for axis, name, entry in rows:
+        lines.append(
+            f"| {'kind' if axis == 'by_kind' else 'tag'} | `{name}` | {entry['k0']} | "
+            f"{entry['added']} | {entry['degraded']} | {entry['n_paired']} |"
+        )
+    lines.append("")
+    lines.append(
+        "Tag slices overlap and must not be summed. In the study public material was "
+        "known about twice as often as this-stack contracts and the artifact's "
+        "contribution ran the other way, so conceptual prose is the first thing to cut "
+        "and the exact flag, threshold or ordering is the last. Two caveats: the judge is "
+        "least reliable on `motif` and `edge` atoms (κ 0.558 / 0.605 against 0.714 on "
+        "`proposition`), which shrinks differences rather than inventing them; and the "
+        "`motif`-vs-`contract` boundary is the least reproducible part of the vocabulary "
+        "(kappa 0.32-0.38 across labellers, against 0.52-0.73 on the tags), so read the "
+        "shape rows as ordered/required content versus standalone claim."
+    )
+    lines.append("")
+    return lines
+
+
+def render_novelty_markdown(artifact: dict) -> str:
+    """Render the summary report, in the order an author should act on it."""
+    lines: list[str] = []
+    ref = artifact["artifact"]["ref"]
+    lines.append(f"# Content novelty: {ref}")
+    lines.append("")
+    lines.append(
+        f"Model **{artifact['model']}** ({artifact['provider']}), judged by "
+        f"**{artifact['judge_model']}**. Artifact: {artifact['artifact']['tokens']} tokens, "
+        f"{artifact['atoms']['n']} atoms ({artifact['atoms']['sampling']}), "
+        f"{artifact['atoms']['n_probed']} probed."
+    )
+    lines.append("")
+
+    conflicts = artifact.get("conflicts") or []
+    harmful = (artifact.get("categories") or {}).get("harmful_conflicting", 0)
+    if conflicts or harmful:
+        lines.append(
+            f"> **Conflicts first: {harmful} conflicting atoms, {len(conflicts)} pairs.** "
+            "This is the only category that can make the artifact worse than nothing. Fix "
+            "content before shortening it."
+        )
+        lines.append("")
+
+    spans = artifact.get("spans", {})
+    lines.append("## Triage")
+    lines.append("")
+    lines.append("| check | value | read |")
+    lines.append("|---|---|---|")
+    lines.append(
+        f"| dead tokens | {spans.get('frac_carrying_nothing', 0.0)} | "
+        "share of tokens no atom came from — upper bound on waste |"
+    )
+    lines.append(
+        f"| protected spans | {spans.get('protected', 0)} | negations / gates / orderings; "
+        "a shortening that drops one is not smaller, it is different |"
+    )
+    lines.append(
+        f"| sole carriers | {spans.get('sole_carrier', 0)} | spans an edit must not lose |"
+    )
+    order = artifact.get("controls", {}).get("order_independent")
+    if order is not None:
+        note = (
+            "shuffled scored ≥ as written: prose order is not load-bearing" if order
+            else "order carries something measurable"
+        )
+        lines.append(f"| order independent | {order} | {note} |")
+    lines.append("")
+
+    lines.append("## What the artifact adds")
+    lines.append("")
+    lines.append("| scoring | added | already knew | degraded | still missing | n | K0 |")
+    lines.append("|---|---|---|---|---|---|---|")
+    for scoring, row in artifact["paired"].items():
+        lines.append(
+            f"| {scoring} | {row['added']} | {row['redundant']} | {row['degraded']} | "
+            f"{row['still_missing']} | {row['n_paired']} | {artifact['k0'][scoring]} |"
+        )
+    lines.append("")
+
+    lines.extend(_render_knowledge_kinds(artifact))
+
+    arms = artifact.get("arms", {}).get("lenient", {})
+    if len(arms) > 1:
+        lines.append("Arms (lenient): " + ", ".join(f"`{k}` {v}" for k, v in arms.items()))
+        lines.append("")
+
+    categories = artifact.get("categories") or {}
+    if categories:
+        lines.append("## Content categories")
+        lines.append("")
+        lines.append("| category | atoms |")
+        lines.append("|---|---|")
+        for name, count in categories.items():
+            lines.append(f"| {name} | {count} |")
+        lines.append("")
+
+    attribution = artifact.get("attribution", {})
+    if attribution.get("tokens_by_label"):
+        lines.append("## Where the tokens go")
+        lines.append("")
+        lines.append("| label | spans | tokens | share |")
+        lines.append("|---|---|---|---|")
+        for label, tokens in attribution["tokens_by_label"].items():
+            lines.append(
+                f"| {label} | {attribution['spans_by_label'].get(label, 0)} | {tokens} | "
+                f"{attribution['token_share_by_label'].get(label, 0.0)} |"
+            )
+        lines.append("")
+
+    dead = artifact.get("views", {}).get("dead_weight") or []
+    if dead:
+        lines.append("## Dead weight (most expensive first)")
+        lines.append("")
+        for row in dead[:10]:
+            where = " / ".join(row.get("heading_path") or []) or "—"
+            lines.append(f"- `{row['span_id']}` {row['tokens']} tok — {where}: {row['text'][:120]}")
+        lines.append("")
+
+    candidates = artifact.get("shortening") or []
+    if candidates:
+        lines.append("## Shortening candidates")
+        lines.append("")
+        lines.append("| strategy | budget | tok frac | knowledge | value | protection | safe |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for row in candidates:
+            lines.append(
+                f"| {row['strategy']} | {row['budget_frac']} | {row['token_frac']} | "
+                f"{row['knowledge']} | {row['value']} | {row['protection']} | {row['safe']} |"
+            )
+        lines.append("")
+        lines.append(
+            "A candidate with `safe: false` dropped a protected span. Knowledge can read "
+            "high while protection collapses — that pair is the reason the axes stay apart."
+        )
+        lines.append("")
+
+    cost = artifact.get("cost") or {}
+    if cost:
+        lines.append(
+            f"Cost: {cost.get('llm_calls', 0)} LLM calls, "
+            f"{cost.get('input_tokens', 0)} in / {cost.get('output_tokens', 0)} out, "
+            f"usd {cost.get('usd')}."
+        )
+        lines.append("")
+
+    for warning in artifact.get("warnings", []):
+        lines.append(f"> WARNING: {warning}")
+    if artifact.get("warnings"):
+        lines.append("")
+
+    lines.append("## Read this with")
+    lines.append("")
+    for caveat in artifact.get("caveats", []):
+        lines.append(f"- {caveat}")
+    lines.append("")
+    return "\n".join(lines)
+
+
+_HTML_STYLE = """\
+body { font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 62rem;
+       margin: 2rem auto; padding: 0 1rem; }
+.legend span { padding: 0.1rem 0.4rem; margin-right: 0.4rem; border-radius: 3px; }
+.span { padding: 0.05rem 0.15rem; border-radius: 3px; white-space: pre-wrap; }
+.green { background: #d7f5dc; } .grey  { background: #ececec; color: #555; }
+.red   { background: #fbd5d5; } .amber { background: #fdecc8; }
+.dim   { background: transparent; color: #999; }
+.meta  { color: #888; font-size: 11px; }
+"""
+
+
+def render_annotated_html(attributions: list[SpanAttribution], *, title: str) -> str:
+    """Render the artifact's own text with every span coloured by its label."""
+    legend = " ".join(
+        f'<span class="{colour}">{colour}: {html.escape(text)}</span>'
+        for colour, text in LEGEND.items()
+    )
+    body = []
+    for row in attributions:
+        tip = (
+            f"{row.span.id} · {row.label} · {row.span.tokens} tok · "
+            f"atoms {len(row.atom_ids)}"
+            + (f" · protected: {', '.join(row.span.protection)}" if row.span.protection else "")
+        )
+        body.append(
+            f'<div class="span {row.colour}" title="{html.escape(tip)}">'
+            f"{html.escape(row.span.text)}"
+            f'<span class="meta"> [{row.span.id} {row.label} {row.span.tokens}t]</span></div>'
+        )
+    return (
+        "<!doctype html><meta charset='utf-8'>"
+        f"<title>novelty: {html.escape(title)}</title><style>{_HTML_STYLE}</style>"
+        f"<h1>novelty: {html.escape(title)}</h1>"
+        f'<p class="legend">{legend}</p>'
+        + "\n".join(body)
+    )
+
+
+def render_annotated_markdown(attributions: list[SpanAttribution], *, title: str) -> str:
+    """Terminal-friendly annotated view: one span per line, label first.
+
+    Markdown has no colour, so the label leads and the colour name follows — the same
+    information, legible in a diff or a PR comment.
+    """
+    lines = [f"# novelty: {title}", ""]
+    for colour, text in LEGEND.items():
+        lines.append(f"- **{colour}** — {text}")
+    lines.append("")
+    for row in attributions:
+        marker = f"[{row.label}/{row.colour}]"
+        protection = f" prot={','.join(row.span.protection)}" if row.span.protection else ""
+        lines.append(
+            f"`{row.span.id}` {marker} {row.span.tokens}t{protection} — "
+            + row.span.text.replace("\n", " ⏎ ")
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def colour_of(label: str) -> str:
+    """Colour name for an attribution label (kept next to the renderers)."""
+    return COLOURS.get(label, "dim")

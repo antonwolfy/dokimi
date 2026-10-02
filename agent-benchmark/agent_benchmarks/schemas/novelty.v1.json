@@ -1,0 +1,352 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/agent-benchmark/schemas/novelty.v1.json",
+  "title": "Content novelty artifact v1",
+  "description": "What one context artifact adds to one model: knowledge atoms extracted from its text, the paired added/redundant/degraded/still_missing outcome per atom under two grading strictnesses, span-level attribution, content categories, and shortening candidates scored on five separate axes. Not comparable across models: novelty is a property of the (artifact, model) pair.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "artifact",
+    "model",
+    "judge_model",
+    "atoms",
+    "paired",
+    "k0",
+    "spans"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "novelty.v1"
+    },
+    "run_config": {
+      "type": "object",
+      "description": "Seed, probe arms and budgets, stage switches, and a digest of the stage prompts. Two cells compare only when this block matches."
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "skill | text | profile | docs"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "ref_digest": {
+          "type": ["string", "null"],
+          "description": "Content digest of the measured bytes, so a stored result cannot drift from the artifact it describes."
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "model": {
+      "type": "string",
+      "description": "The model under measurement — the 'who did not already know this' half of the pair."
+    },
+    "provider": {
+      "type": "string"
+    },
+    "judge_model": {
+      "type": "string",
+      "description": "Grading model. Equal to `model` only when the run passed --allow-self-judge, which is recorded as a warning."
+    },
+    "atoms": {
+      "type": "object",
+      "required": ["n", "sampling"],
+      "properties": {
+        "n": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "n_probed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sampling": {
+          "type": "string",
+          "description": "How the probed subset was chosen (e.g. cap-per-artifact:120). Present so a sampled run is never read as a full sweep."
+        },
+        "faithfulness": {
+          "type": ["object", "null"],
+          "description": "Tally of supported/distorted/unsupported atoms against their own spans. Bounds distortion only; extractor recall is unmeasured.",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "paired": {
+      "type": "object",
+      "description": "The 2x2 under each grading strictness. Both are required: the 6-way judge scale had only 0.664 inter-rater agreement, so no single collapse is authoritative.",
+      "required": ["lenient", "strict"],
+      "additionalProperties": {
+        "type": "object",
+        "required": ["added", "redundant", "degraded", "still_missing", "n_paired"],
+        "properties": {
+          "added": {"type": "number", "minimum": 0, "maximum": 1},
+          "redundant": {"type": "number", "minimum": 0, "maximum": 1},
+          "degraded": {"type": "number", "minimum": 0, "maximum": 1},
+          "still_missing": {"type": "number", "minimum": 0, "maximum": 1},
+          "n_paired": {"type": "integer", "minimum": 0},
+          "n_unpaired_dropped": {"type": "integer", "minimum": 0},
+          "ci95_added": {
+            "type": ["array", "null"],
+            "items": {"type": "number"},
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+    "k0": {
+      "type": "object",
+      "description": "The model's prior recall over the artifact's own knowledge, with no artifact in context.",
+      "additionalProperties": {"type": "number"}
+    },
+    "by_knowledge_kind": {
+      "type": "object",
+      "description": "The same paired 2x2, cut by what each atom IS: its kind, and each of its tags. Keyed by scoring. Tag slices overlap (an atom carries several tags) and must never be summed. Slices below min_probes carry n_paired and underpowered:true and no rates. Both labels are one extractor's opinion: three extractors agreed on which spans carry knowledge (Jaccard 0.87-0.99) and disagreed by up to 2.5x on the labels, `local` and `public` worst, so a per-tag rate must name its extractor and a per-tag gate needs a reproducible tag vocabulary first.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "scoring": {"type": "string"},
+          "with_arm": {"type": "string"},
+          "min_probes": {"type": "integer", "minimum": 1},
+          "note": {"type": "string"},
+          "by_kind": {"$ref": "#/$defs/knowledge_slices"},
+          "by_tag": {"$ref": "#/$defs/knowledge_slices"}
+        }
+      }
+    },
+    "arms": {
+      "type": "object",
+      "description": "Mean correctness per arm per scoring. `placebo` (domain-mismatched text of similar length) and `shuffled` (same spans, order destroyed) are controls, not treatments.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {"type": "number"}
+      }
+    },
+    "controls": {
+      "type": "object",
+      "properties": {
+        "reversal_resisted": {
+          "type": ["number", "null"],
+          "description": "Fraction of planted-inversion probes refused. Lower is worse, and it got worse with model strength in the study."
+        },
+        "abstentions": {
+          "type": "object",
+          "additionalProperties": {"type": "integer"},
+          "description": "Per-arm abstention counts; a deferral-phrasing defect shows up here before it shows up in a score."
+        },
+        "confidence_correlation": {
+          "type": ["number", "null"],
+          "description": "Correlation between stated confidence and graded correctness. Recorded as a warning signal; never used as a score."
+        },
+        "order_independent": {
+          "type": ["boolean", "null"],
+          "description": "True when the shuffled control scored at least as high as the artifact as written."
+        }
+      }
+    },
+    "categories": {
+      "type": "object",
+      "description": "Atom counts per content category. The known/new axis is measured; the useful/inert axis is judged and had 71.6% reviewer agreement.",
+      "additionalProperties": {"type": "integer"}
+    },
+    "conflicts": {
+      "type": "array",
+      "description": "Atom pairs that cannot both be true. Says 'these disagree', not 'this one is wrong' — deciding that needs a primary source.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "a": {"type": "string"},
+          "b": {"type": "string"},
+          "why": {"type": "string"}
+        }
+      }
+    },
+    "spans": {
+      "type": "object",
+      "required": ["n", "tokens"],
+      "properties": {
+        "n": {"type": "integer", "minimum": 0},
+        "tokens": {"type": "integer", "minimum": 0},
+        "tokens_carrying_nothing": {"type": "integer", "minimum": 0},
+        "frac_carrying_nothing": {
+          "type": "number",
+          "description": "Upper bound on dead weight, not a measurement of it. Read it only together with capped_atom_set: derived from a capped atom set it does not approximate the full-set figure but inverts it (0.064 became 0.743 on the study's largest artifact). Extractor recall is not the limit here: three extractors cited the same spans, Jaccard 0.87-0.99."
+        },
+        "n_atoms_indexed": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "How many atoms were indexed onto the spans to compute the dead-token share. Its ratio to the artifact's full atom count is what makes the figure readable."
+        },
+        "capped_atom_set": {
+          "type": "boolean",
+          "description": "True when the indexed atom set hit the extraction cap. The dead-token share is then a property of the sample, not of the artifact, and must not be quoted as the latter."
+        },
+        "sole_carrier": {"type": "integer", "minimum": 0},
+        "protected": {"type": "integer", "minimum": 0},
+        "by_kind": {
+          "type": "object",
+          "additionalProperties": {"type": "integer"}
+        }
+      }
+    },
+    "attribution": {
+      "type": "object",
+      "properties": {
+        "spans_by_label": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "tokens_by_label": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "token_share_by_label": {"type": "object", "additionalProperties": {"type": "number"}},
+        "legend": {"type": "object", "additionalProperties": {"type": "string"}},
+        "carrier_confirmation": {
+          "type": "object",
+          "description": "Result of checking each atom against the span the extractor cited for it. Absent when the run skipped the check (--no-confirm-carriers), in which case the labels report the citation as given and must not be presented as confirmed. Measured on 257 atoms: 0.833 of atoms recovered from the bare cited span, 0.907 with the span's heading path prepended (~16 tokens), and 0.19 not recoverable from the cited file at all.",
+          "properties": {
+            "n_atoms": {"type": "integer", "minimum": 0},
+            "n_pairs_checked": {"type": "integer", "minimum": 0},
+            "n_located": {"type": "integer", "minimum": 0},
+            "frac_located": {"type": "number", "minimum": 0, "maximum": 1},
+            "n_unlocated": {"type": "integer", "minimum": 0},
+            "unlocated_atoms": {
+              "type": "array",
+              "description": "Atom ids the oracle could not recover from any cited span, truncated. Not defects by default: the faithfulness check called 46 of 49 such atoms supported, so they read as syntheses of the whole document and render as unlocated rather than colouring a span.",
+              "items": {"type": "string"}
+            },
+            "checked_with_heading_path": {"type": "boolean"},
+            "note": {"type": "string"}
+          }
+        }
+      }
+    },
+    "needs": {
+      "type": "object",
+      "description": "Need-graph statistics. The graph is built from the artifact's name and description only, so the artifact cannot define its own relevance.",
+      "properties": {
+        "nodes": {"type": "integer", "minimum": 0},
+        "edges": {"type": "integer", "minimum": 0},
+        "by_type": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "by_path_class": {"type": "object", "additionalProperties": {"type": "integer"}}
+      }
+    },
+    "relevance": {
+      "type": "object",
+      "properties": {
+        "n_atoms_matched": {"type": "integer", "minimum": 0},
+        "n_atoms_unmatched": {"type": "integer", "minimum": 0},
+        "out_of_scope_atoms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Atoms whose best need match is an out-of-scope node: text answering a question this artifact's task does not pose."
+        },
+        "frac_out_of_scope": {"type": "number"},
+        "mean_relevance": {"type": "number"}
+      }
+    },
+    "retention": {
+      "type": "object",
+      "description": "What the retention oracle did. escalation_rate is the cost knob; adjudicator null means the run was lexical-only and cannot see contradictions.",
+      "properties": {
+        "decisions": {"type": "integer", "minimum": 0},
+        "llm_escalations": {"type": "integer", "minimum": 0},
+        "escalation_rate": {"type": "number"},
+        "band": {"type": "array", "items": {"type": "number"}},
+        "adjudicator": {"type": ["string", "null"]}
+      }
+    },
+    "shortening": {
+      "type": "array",
+      "description": "Candidate packages, each scored on five axes that are never collapsed into one retention number.",
+      "items": {
+        "type": "object",
+        "required": ["strategy", "token_frac", "knowledge", "protection"],
+        "properties": {
+          "strategy": {"type": "string"},
+          "budget_frac": {"type": "number"},
+          "token_frac": {"type": "number"},
+          "tokens": {"type": "integer"},
+          "tokens_full": {"type": "integer"},
+          "knowledge": {"type": "number"},
+          "value": {"type": "number"},
+          "value_coverage": {
+            "type": "number",
+            "description": "Share of atoms whose `value` weight came from a measured relevance and outcome rather than the 0.5 fallback. Low coverage means `value` is atom coverage per token under a value label; in the study per-model value was defined for 148 of 2422 atoms, because it needs a measured per-model K0."
+          },
+          "value_is_coverage_proxy": {
+            "type": "boolean",
+            "description": "True when value_coverage < 0.5. Do not rank candidates by `value` when this is set."
+          },
+          "protection": {
+            "type": "number",
+            "description": "Share of protected spans kept. A candidate below 1.0 is a different artifact, not a smaller one."
+          },
+          "routing": {"type": "number"},
+          "safe": {"type": "boolean"},
+          "kept_spans": {"type": "integer"},
+          "dropped_protected_spans": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "views": {
+      "type": "object",
+      "properties": {
+        "dead_weight": {"type": "array", "items": {"type": "object"}},
+        "sole_carriers": {"type": "array", "items": {"type": "object"}},
+        "topics": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "llm_calls": {"type": "integer", "minimum": 0},
+        "input_tokens": {"type": "integer", "minimum": 0},
+        "output_tokens": {"type": "integer", "minimum": 0},
+        "usd": {
+          "type": ["number", "null"],
+          "description": "null when any call had unknown pricing — distinct from a genuinely free run."
+        },
+        "by_role": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "caveats": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Travels with the numbers on purpose, so a quoted rate carries its limits."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    }
+  },
+  "$defs": {
+    "knowledge_slices": {
+      "type": "object",
+      "description": "Slice name -> paired outcome rates for the atoms in that slice.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["n_paired"],
+        "properties": {
+          "n_paired": {"type": "integer", "minimum": 0},
+          "underpowered": {
+            "type": "boolean",
+            "description": "Set instead of rates when the slice has fewer than min_probes paired probes. A rate on a 2-probe slice is noise with a decimal point."
+          },
+          "added": {"type": "number"},
+          "redundant": {"type": "number"},
+          "degraded": {"type": "number"},
+          "still_missing": {"type": "number"},
+          "k0": {"type": "number"},
+          "counts": {"type": "object", "additionalProperties": {"type": "integer"}}
+        }
+      }
+    }
+  }
+}

@@ -121,6 +121,8 @@ Read it in this order:
 
 1. **`routing` first.** If the description does not win the artifact's own queries, content work is
    unrecoverable spend. In the study six of thirteen skills routed below 0.50, one at 0.146.
+   Routing is measured by the existing skill-selection track, not by `novelty analyze`, which
+   holds the frontmatter fixed so the two are not confounded.
 2. **`harmful_conflicting` next.** Conflicts are the only category that can make the artifact worse
    than nothing.
 3. **`frac_carrying_nothing`.** Tokens that carry no extractable knowledge. Eleven of thirteen
@@ -150,7 +152,7 @@ Two derived views an author acts on directly:
 ### 3. Shortening, with five separate scores
 
 ```bash
-python cli.py novelty shorten --artifact skill:path/to/skill --budget 0.6
+python cli.py novelty shorten --artifact skill:path/to/skill --atoms atoms.json --budgets 0.75 0.5
 ```
 
 Never one "retention" number, because a single score hides the one failure that matters. A measured

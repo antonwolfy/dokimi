@@ -20,6 +20,7 @@ from agent_benchmarks.commands import (
     explore,
     ingest,
     library,
+    novelty,
     orchestrate,
     personas,
     questions,
@@ -67,6 +68,7 @@ def build_parser() -> argparse.ArgumentParser:
     explore.register(sub, positive_int)         # explore (ExploreBench)
     dataset.register(sub, positive_int)         # dataset
     ingest.register(sub, positive_int)          # ingest
+    novelty.register(sub, positive_int)         # novelty (content novelty, Phase E)
 
     return p
 

@@ -1,0 +1,284 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""End-to-end `analyze` with every model call stubbed, plus the artifact's schema."""
+
+from __future__ import annotations
+
+import json
+
+from agent_benchmarks.artifacts import load_artifact, save_artifact, validate_artifact
+from agent_benchmarks.novelty.analyze import AnalyzeConfig, analyze, load_artifact_text
+from agent_benchmarks.novelty.client import LLMClient
+from agent_benchmarks.novelty.report import render_novelty_markdown
+
+SKILL = """\
+---
+name: accel-tuning
+description: Configure the accelerator for training runs
+---
+
+# Accelerator tuning
+
+Enable the accelerator with `--accel`. Do not enable it on driver 1.0.
+
+## Background
+
+The project began as a research prototype with many contributors.
+"""
+
+_ATOMS = [
+    {
+        "statement": "The --accel flag enables the accelerator.",
+        "question": "Which flag enables the accelerator?",
+        "answer": "--accel",
+        "kind": "proposition",
+        "tags": ["procedural"],
+        "span_ids": ["s0002"],
+    },
+    {
+        "statement": "The accelerator must not be enabled on driver 1.0.",
+        "question": "May the accelerator be enabled on driver 1.0?",
+        "answer": "No.",
+        "kind": "contract",
+        "tags": ["negative_constraint", "version_bound"],
+        "span_ids": ["s0003"],
+    },
+]
+
+_GRAPH = {
+    "nodes": [
+        {"id": "n1", "text": "turn the accelerator on", "type": "action", "path_class": "core"},
+        {"id": "n2", "text": "driver version gate", "type": "constraint",
+         "path_class": "rare_critical"},
+        {"id": "n3", "text": "project history", "type": "evidence",
+         "path_class": "out_of_scope"},
+    ],
+    "edges": [{"from": "n1", "to": "n2", "kind": "requires"}],
+}
+
+
+def _scripted(kind: str):
+    """A transport that answers by prompt shape, so no network is touched.
+
+    ``kind="informed"`` answers correctly only when the artifact is in the prompt, which
+    is what makes both atoms come out `added`.
+    """
+
+    def transport(prompt: str, system: str | None):
+        if "Extract the checkable knowledge" in prompt:
+            return json.dumps(_ATOMS), None
+        if "Does the source text below support" in prompt:
+            return json.dumps({"verdict": "supported", "why": "verbatim"}), None
+        if "TASK NAME:" in prompt:
+            return json.dumps(_GRAPH), None
+        if "Reword each question" in prompt:
+            questions = prompt.split("QUESTIONS:", 1)[1].strip().splitlines()
+            return json.dumps([f"Reworded: {q}" for q in questions if q.strip()]), None
+        if "Rewrite each statement" in prompt:
+            statements = prompt.split("STATEMENTS:", 1)[1].strip().splitlines()
+            flipped = [f"Isn't it true that not {s}?" for s in statements if s.strip()]
+            return json.dumps(flipped), None
+        if "judge how it functions" in prompt:
+            rows = [
+                {"n": 1, "needed": True, "scaffolding": False},
+                {"n": 2, "needed": True, "scaffolding": False},
+            ]
+            return json.dumps(rows), None
+        if "Find pairs of statements" in prompt:
+            return json.dumps({"conflicts": []}), None
+        if "Grade the RESPONSE" in prompt or "false premise" in prompt:
+            informed = "INFORMED" in prompt
+            verdict = "correct_complete" if informed else "wrong_other"
+            return json.dumps({"verdict": verdict, "why": "stub"}), None
+        if prompt.startswith("Reference material:"):
+            return "INFORMED answer\nconfidence: 0.8", None
+        if prompt.startswith("Question:"):
+            return "I am not sure\nconfidence: 0.2", None
+        return json.dumps({"verdict": "retained"}), None
+
+    assert kind == "informed"
+    return transport
+
+
+def _clients():
+    transport = _scripted("informed")
+    return (
+        LLMClient(model="extractor-m", role="extractor", transport=transport),
+        LLMClient(model="answerer-m", role="answerer", transport=transport),
+        LLMClient(model="judge-m", role="judge", transport=transport),
+    )
+
+
+def _analyze(tmp_path, **overrides):
+    path = tmp_path / "accel-tuning" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(
+        artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+        description=description, frontmatter=frontmatter, concurrency=1, **overrides,
+    )
+    extractor, answerer, judge = _clients()
+    return analyze(body, config, extractor=extractor, answerer=answerer, judge=judge)
+
+
+def test_skill_reference_splits_frontmatter_from_body(tmp_path):
+    path = tmp_path / "accel-tuning" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    assert (kind, name) == ("skill", "accel-tuning")
+    assert "Configure the accelerator" in description
+    assert "name: accel-tuning" in frontmatter
+    assert body.lstrip().startswith("# Accelerator tuning")
+
+
+def test_skill_frontmatter_is_kept_verbatim_so_a_candidate_still_loads(tmp_path):
+    import yaml
+
+    from agent_benchmarks.skills.loader import load_skill
+
+    head = '---\nname: s\ndescription: "Use when: tuning"\nlicense: MIT\n---'
+    (tmp_path / "s").mkdir()
+    (tmp_path / "s" / "SKILL.md").write_text(f"{head}\n# Body\n", encoding="utf-8")
+    frontmatter = load_artifact_text(f"skill:{tmp_path / 's'}")[3]
+    assert frontmatter == head
+    yaml.safe_load(frontmatter.strip("-"))
+    (tmp_path / "c").mkdir()
+    (tmp_path / "c" / "SKILL.md").write_text(f"{frontmatter}\n\nbody\n", encoding="utf-8")
+    assert load_skill(tmp_path / "c").description == "Use when: tuning"
+
+
+def test_a_plain_text_artifact_has_no_description(tmp_path):
+    path = tmp_path / "notes.md"
+    path.write_text("# Notes\n\nAlways pin the driver.\n", encoding="utf-8")
+    kind, _name, description, frontmatter, body = load_artifact_text(f"text:{path}")
+    assert (kind, description, frontmatter) == ("text", "", "")
+    assert "pin the driver" in body
+
+
+def test_end_to_end_artifact_validates_and_reports_added_knowledge(tmp_path):
+    result = _analyze(tmp_path)
+    artifact = result.artifact
+    validate_artifact("novelty", dict(artifact, schema_version="novelty.v1"))
+    assert artifact["atoms"]["n"] == 2
+    assert artifact["paired"]["lenient"]["added"] > 0
+    assert artifact["paired"]["strict"]["added"] > 0
+    assert artifact["k0"]["lenient"] == 0.0      # the baseline arm answered nothing right
+    assert artifact["k0"]["strict"] == 0.0
+    assert artifact["model"] == "answerer-m"
+    assert artifact["judge_model"] == "judge-m"
+    assert artifact["categories"]["novel_useful"] == 2
+    # the kind/tag cut is present under both scorings, even when every slice is thin
+    kinds = artifact["by_knowledge_kind"]
+    assert set(kinds) == {"lenient", "strict"}
+    assert kinds["strict"]["by_kind"]
+    assert artifact["spans"]["capped_atom_set"] is False
+
+
+def test_artifact_round_trips_through_save_and_load(tmp_path):
+    result = _analyze(tmp_path)
+    out = tmp_path / "novelty.json"
+    save_artifact("novelty", result.artifact, out)
+    loaded = load_artifact("novelty", out)
+    assert loaded["schema_version"] == "novelty.v1"
+    assert loaded["paired"]["lenient"]["n_paired"] == result.artifact["paired"]["lenient"][
+        "n_paired"
+    ]
+
+
+def test_caveats_and_markdown_state_the_limits(tmp_path):
+    result = _analyze(tmp_path)
+    markdown = render_novelty_markdown(result.artifact)
+    caveats = " ".join(result.artifact["caveats"]).lower()
+    assert "model" in caveats  # the result is a property of the (artifact, model) pair
+    assert "novelty" in markdown.lower()
+    assert "answerer-m" in markdown
+
+
+def test_an_extractor_that_fails_every_batch_fails_the_run(tmp_path):
+    import pytest
+
+    from agent_benchmarks.novelty.atoms import ExtractionError
+
+    path = tmp_path / "s" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                           description=description, frontmatter=frontmatter, concurrency=1)
+
+    def no_model(prompt, system):
+        raise RuntimeError("model gpt-4o-mini is not available on this provider")
+
+    _, answerer, judge = _clients()
+    extractor = LLMClient(model="extractor-m", role="extractor", transport=no_model)
+    with pytest.raises(ExtractionError, match="not available"):
+        analyze(body, config, extractor=extractor, answerer=answerer, judge=judge)
+
+
+def test_no_atoms_is_not_reported_as_a_skipped_classification(tmp_path):
+    transport = _scripted("informed")
+    empty = LLMClient(model="extractor-m", role="extractor", transport=lambda p, s: (
+        "[]" if "Extract the checkable knowledge" in p else transport(p, s)[0], None))
+    path = tmp_path / "s" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                           description=description, frontmatter=frontmatter, concurrency=1)
+    _, answerer, judge = _clients()
+    warnings = analyze(body, config, extractor=empty, answerer=answerer,
+                       judge=judge).artifact["warnings"]
+    assert not any("--no-classify" in w for w in warnings)
+
+
+def test_skipping_classification_is_recorded_as_a_warning(tmp_path):
+    result = _analyze(tmp_path, classify_content=False)
+    assert any("categories" in w for w in result.artifact["warnings"])
+    assert result.artifact["categories"] == {}
+
+
+def test_span_citations_are_confirmed_by_default(tmp_path):
+    result = _analyze(tmp_path)
+    confirmation = result.artifact["attribution"]["carrier_confirmation"]
+    assert confirmation["n_atoms"] == 2
+    assert confirmation["n_pairs_checked"] >= 2
+    assert confirmation["checked_with_heading_path"] is True
+
+
+def test_skipping_carrier_confirmation_is_recorded_as_a_warning(tmp_path):
+    result = _analyze(tmp_path, confirm_carriers=False)
+    assert any("--no-confirm-carriers" in w for w in result.artifact["warnings"])
+    assert "carrier_confirmation" not in result.artifact["attribution"]
+
+
+def test_protected_spans_survive_every_offered_candidate(tmp_path):
+    result = _analyze(tmp_path)
+    offered = [c for c in result.artifact["shortening"] if c["safe"]]
+    assert all(c["protection"] == 1.0 for c in offered)
+    assert all(not c["dropped_protected_spans"] for c in offered)
+
+
+def test_the_version_gate_is_coloured_amber_not_grey(tmp_path):
+    result = _analyze(tmp_path)
+    gate = next(a for a in result.attributions if "driver 1.0" in a.span.text)
+    assert gate.colour in {"green", "amber", "red"}
+    assert gate.span.protection
+
+
+def test_the_cell_records_what_decided_its_numbers(tmp_path, monkeypatch):
+    from agent_benchmarks.novelty import measure
+
+    result = _analyze(tmp_path, seed=7, classify_content=False)
+    run_config = result.artifact["run_config"]
+    assert (run_config["seed"], run_config["stages"]["classify"]) == (7, False)
+    validate_artifact("novelty", dict(result.artifact, schema_version="novelty.v1"))
+
+    monkeypatch.setattr(measure, "_JUDGE_PROMPT", measure._JUDGE_PROMPT + " ")
+    again = _analyze(tmp_path / "again", seed=7, classify_content=False).artifact["run_config"]
+    assert again["prompts_sha256"] != run_config["prompts_sha256"]
+    monkeypatch.setattr(measure, "_ANSWER_SYSTEM", measure._ANSWER_SYSTEM + " ")
+    third = _analyze(tmp_path / "third", seed=7, classify_content=False).artifact["run_config"]
+    assert third["prompts_sha256"] != again["prompts_sha256"]
