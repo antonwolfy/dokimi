@@ -1,12 +1,11 @@
-"""Questions-and-tasks coverage contract (ADR 2026-06-10, Phase A).
+"""Questions-and-tasks coverage contract.
 
-Implements the *coverage contract* from
-``docs/decisions/2026-06-10-questions-and-tasks-coverage-contract.md``: every
+Implements the *coverage contract*: every
 in-scope product declares an **awareness** signal (a golden question set) and a
 **work** signal (>=1 executable terminal-bench task), and any gap is surfaced as
 a checked matrix instead of being a silent default.
 
-Design decisions taken here (resolving the ADR's open questions):
+Design decisions taken here:
 
 * **O4 — where the contract lives:** the canonical top-level ``products.yaml``.
   It already owns product identity and ``doc_sources`` and is the registry
@@ -16,9 +15,8 @@ Design decisions taken here (resolving the ADR's open questions):
 * **work signal is *derived*, not hand-listed:** a product's tasks are computed
   by scanning ``<tasks-root>/*/task.toml`` ``tags`` for the product key, where
   ``<tasks-root>`` is supplied by the caller (``--tasks-root``, or the
-  ``tasks_dir`` argument). This avoids the ADR's noted negative ("a per-product
-  ``tasks`` list is a second place task identity lives") — the task directory
-  stays the single source of truth.
+  ``tasks_dir`` argument). This avoids making a per-product ``tasks`` list a second place task
+  identity lives — the task directory stays the single source of truth.
 * **roots are explicit:** awareness (``<questions-root>/<key>_golden.json``) and
   work (``<tasks-root>``) are resolved against roots the caller names; the
   evaluation content itself lives outside this repository. When a root is not
@@ -31,7 +29,7 @@ Design decisions taken here (resolving the ADR's open questions):
   A simply-missing work half is a tracked, visible ``questions-only`` gap, not a
   failure.
 
-Awareness and work are never blended into one scalar (ADR §3.4).
+Awareness and work are never blended into one scalar.
 """
 
 from __future__ import annotations
@@ -51,7 +49,7 @@ import yaml
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _PRODUCTS_PATH = _REPO_ROOT / "products.yaml"
 
-# Honest self-report states (ADR §3.1).
+# Honest self-report states.
 STATUS_COVERED = "covered"            # has questions AND >=1 task
 STATUS_QUESTIONS_ONLY = "questions-only"  # awareness only; a visible TODO
 STATUS_PLANNED = "planned"            # neither yet (onboarding)
@@ -220,7 +218,7 @@ def coverage_issues(
     tasks_dir: Path | None = None,
     questions_dir: Path | None = None,
 ) -> list[str]:
-    """Hard-error issues for CI (ADR O1: soft enforcement).
+    """Hard-error issues for CI.
 
     Only a *broken declaration* is an error:
       * ``coverage_status: covered`` but no task resolves, or no question set —

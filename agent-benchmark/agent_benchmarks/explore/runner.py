@@ -1,11 +1,11 @@
-"""ExploreBench suite runner (exploration-quality ADR §3.4).
+"""ExploreBench suite runner.
 
 Runs each exploration task through one or more *arms* (explorers), parses the
 ``<final_answer>`` block each returns, scores it against the task's reference
 locations with :func:`score_localization`, and emits an ``explore_runs.v1``
 artifact with per-arm rollups and baseline deltas.
 
-Each run also records a ``subagent`` operation (the ADR §3.3 telemetry shape) so
+Each run also records a ``subagent`` operation so
 the result is consumable by the same exploration-metrics layer as the executable
 task track.
 """

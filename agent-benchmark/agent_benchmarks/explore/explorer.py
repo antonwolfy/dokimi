@@ -12,7 +12,7 @@ explorers ship here:
   ``AGENT_BENCHMARK_OP`` / ``operations.jsonl`` telemetry it produced.
 
 Both return an :class:`ExplorerResult`, so the ExploreBench runner and the
-command-wrapper harness (exploration-quality ADR slices 5 + 6) consume one shape.
+command-wrapper harness consume one shape.
 """
 
 from __future__ import annotations
@@ -187,7 +187,7 @@ def build_subagent_op(
     elapsed_sec: float = 0.0,
     status: str = "ok",
 ) -> OperationRecord:
-    """Build the ``subagent`` telemetry op for one exploration (ADR §3.3).
+    """Build the ``subagent`` telemetry op for one exploration.
 
     This is the bridge between the exploration step and the operation-stream
     metrics layer: a terminal-bench wrapper that delegates context discovery to

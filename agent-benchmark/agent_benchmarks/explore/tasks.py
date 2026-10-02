@@ -1,4 +1,4 @@
-"""ExploreBench task discovery (exploration-quality ADR §3.4).
+"""ExploreBench task discovery.
 
 An exploration task poses a localization question over a repository/doc tree and
 declares the reference locations a good explorer should cite. Tasks are small

@@ -1,4 +1,4 @@
-"""Render exploration-quality panels from run artifacts (ADR §3.6).
+"""Render exploration-quality panels from run artifacts.
 
 Two inputs are supported:
 

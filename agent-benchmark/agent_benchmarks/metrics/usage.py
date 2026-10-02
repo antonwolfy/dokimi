@@ -1,7 +1,6 @@
 """Normalized per-run telemetry record.
 
-One shape for tokens, cache, cost, and latency returned by every LLM call (see
-``docs/decisions/2026-06-19-run-telemetry-metrics.md``). The ``llm.py``
+One shape for tokens, cache, cost, and latency returned by every LLM call. The ``llm.py``
 chokepoints build a :class:`UsageRecord`; runners accumulate it across agentic
 turns with ``+`` and serialize it into the per-row ``metrics{}`` block (plus the
 legacy 3-key ``token_usage`` alias).
@@ -96,13 +95,13 @@ class UsageRecord:
     def as_metrics_dict(
         self, answer_chars: Optional[int] = None, final_chars: Optional[int] = None
     ) -> dict:
-        """The per-row ``metrics{}`` block (plugin ADR §3.3 field names).
+        """The per-row ``metrics{}`` block.
 
         ``answer_chars`` is the *raw* model output size; ``final_chars`` is the
         size delivered after any output-shaper plugin ran. When ``final_chars``
         is omitted the two are equal (no shaper). Storing both is what lets a
         Caveman-style shaper report a length reduction it did *not* save in
-        billed model tokens (ADR §3.3).
+        billed model tokens.
         """
         m: dict[str, Any] = {
             "prompt_tokens": self.prompt_tokens,
@@ -170,7 +169,7 @@ def to_record(
 
 
 def roll_up_by_role(records: "Iterable[UsageRecord]") -> dict:
-    """Split usage into main-agent vs subagent buckets (telemetry ADR + #60).
+    """Split usage into main-agent vs subagent buckets.
 
     Groups records by ``role`` (anything other than ``"subagent"`` counts as
     main) and reports tokens and cost for each bucket plus the full-system

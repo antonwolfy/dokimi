@@ -53,5 +53,5 @@ See `agent-benchmark/CONTRIBUTING.md` for the full set of checks to run before a
 - All changes to `main` go through pull requests.
 - Persisted answer/eval JSON keeps legacy `with_docs`/`without_docs` keys for
   the two answer conditions — do not rename them in data files.
-- Docs: `agent-benchmark/docs/README.md` is the documentation index; design
-  decisions go in `agent-benchmark/docs/decisions/` as dated ADRs.
+- Docs: `agent-benchmark/docs/README.md` is the documentation index; record
+  design rationale in PR descriptions and issues, not as in-repo ADRs.

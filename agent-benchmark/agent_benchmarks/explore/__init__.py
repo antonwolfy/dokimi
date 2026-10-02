@@ -2,8 +2,7 @@
 
 Scores whether an agent can *locate* the right files and line ranges for a task
 (file:line citations vs. reference locations), independent of whether it can use
-them to answer or solve. See ``docs/decisions/2026-06-23-exploration-quality-
-fastcontext.md``.
+them to answer or solve.
 """
 
 from .explorer import CommandExplorer, Explorer, ExplorerResult, StaticExplorer

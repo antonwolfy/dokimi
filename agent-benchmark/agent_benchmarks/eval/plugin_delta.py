@@ -1,6 +1,6 @@
 """Compare paired plugin/no-plugin treatment-arm artifacts.
 
-The plugin-aware ADR requires plugin effects to be computed only between paired
+Plugin effects must be computed only between paired
 cells that hold model, harness, suite, judge, and treatment arm fixed. This
 module compares two ``arms.v1`` artifacts and emits that plugin-delta view
 without rerunning the expensive answer/judge steps.

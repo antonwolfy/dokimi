@@ -244,4 +244,5 @@ per answer in `answers/<product>.json`.
   documentation metric.
 - [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)
   — add an executable oneTBB / oneAPI task.
-- [decisions/](decisions/) — historical design reviews and trade-off notes.
+- [methodology.md](methodology.md) — model roles, question types, judging, and
+  trust checks.

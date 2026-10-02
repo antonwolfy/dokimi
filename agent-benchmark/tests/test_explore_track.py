@@ -1,6 +1,6 @@
 """Tests for the ExploreBench track + exploration report + token-role rollup.
 
-Covers slices 3/5/6/7 of the exploration-quality ADR:
+Covers:
 
 * ``explore/tasks.py`` — task loading and reference-location construction.
 * ``explore/explorer.py`` — static/oracle explorers and the subagent-op bridge.

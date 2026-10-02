@@ -1,4 +1,4 @@
-"""explore subcommand group: run the ExploreBench localization track (#60)."""
+"""explore subcommand group: run the ExploreBench localization track."""
 
 from __future__ import annotations
 
@@ -139,7 +139,7 @@ def register(sub, positive_int) -> None:
     """Add the `explore` subcommand group."""
     explore_p = sub.add_parser(
         "explore",
-        help="Run exploration-only localization tasks (ExploreBench, #60)",
+        help="Run exploration-only localization tasks (ExploreBench)",
     )
     explore_sub = explore_p.add_subparsers(dest="explore_cmd", required=True)
 

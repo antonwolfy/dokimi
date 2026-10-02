@@ -73,7 +73,7 @@ def cost_summary(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     Aggregates the per-row ``metrics{}`` blocks. ``cost_usd`` is summed only
     over priced rows (``None`` rows are skipped); the cache-hit ratio guards
     against a zero prompt-token denominator. The exact ratio is provider-
-    dependent (see ADR O2) — here it is read cache tokens / prompt tokens.
+    dependent — here it is read cache tokens / prompt tokens.
     """
     per_arm: Dict[str, Dict[str, Any]] = {}
     for rec in records:

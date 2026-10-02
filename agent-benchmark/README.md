@@ -143,7 +143,7 @@ python cli.py benchmark run --target onedal --questions-from results/onedal_seed
 
 Generated artifacts — answer runs, judge scores and benchmark snapshots — go under `results/`, `reports/`, `answers/`, `eval/` or `baselines/`; those paths are git-ignored and no captured run is committed. Curated, version-controlled *inputs* live under `data/` (`data/skills/fastcontext/`, `data/agent_profiles/`, `data/explore_tasks/`) — see [`data/README.md`](data/README.md). Product skills, question sets and personas are evaluation content: they come from a separate content repository and are passed in by path (`skill:<path>`, `--questions <path>`, `--questions-root <dir>`).
 
-See [docs/decisions/benchmark-methodology.md](docs/decisions/benchmark-methodology.md) for the detailed model roles, question types, difficulty levels, task workflow, and trust checks.
+See [docs/methodology.md](docs/methodology.md) for the detailed model roles, question types, difficulty levels, task workflow, and trust checks.
 
 ## Executable tasks
 
@@ -193,7 +193,7 @@ docs/                    Documentation
   contributing-metric.md How to add a static documentation metric
   contributing-terminal-bench-task.md
                          Executable task format (tasks live in the content repo)
-  decisions/             Historical design reviews and investigations
+  methodology.md         Model roles, question types, judging, trust checks
 tests/                   Pytest suite
 ```
 

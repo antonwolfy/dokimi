@@ -91,8 +91,7 @@ where the model decides to call a doc-search or skill tool (`agent:`,
 `skill-agent:`) via the tool-calling loop in `eval/agent_runner.py`.
 `eval/arm_runner.py` generates and judges answers for every arm and reports
 per-arm deltas vs a baseline. Entry point: `python cli.py arms run`. Details in
-[evaluating-treatments.md](evaluating-treatments.md) and
-[decisions/2026-05-29-evaluating-mcp-skills-personas.md](decisions/2026-05-29-evaluating-mcp-skills-personas.md).
+[evaluating-treatments.md](evaluating-treatments.md).
 
 ## Executable task track
 

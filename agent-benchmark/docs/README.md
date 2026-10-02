@@ -111,8 +111,8 @@ content it measures comes from.
   `cli.py arms run` with any mix of arms.
 - Full pipeline in one command: [quickstart.md](quickstart.md) — personas →
   questions → answers → judge → report, with cost estimates.
-- Design rationale: [decisions/benchmark-methodology.md](decisions/benchmark-methodology.md)
-  and [decisions/2026-05-29-evaluating-mcp-skills-personas.md](decisions/2026-05-29-evaluating-mcp-skills-personas.md).
+- Design rationale: [methodology.md](methodology.md) — model roles, question
+  types, difficulty levels, judging, trust checks, and executable agent tasks.
 
 ---
 
@@ -133,7 +133,7 @@ CLI surface. The files in this directory go deeper:
   and a cost estimate.
 - [benchmarking-and-comparison.md](benchmarking-and-comparison.md) — how to
   run static benchmarks, LLM context benchmarks, fair multi-model comparisons,
-  treatment-arm comparisons, dashboards, baselines, and PR #60 comparison
+  treatment-arm comparisons, dashboards, baselines, and comparison
   scripts.
 - [adding-doc-source.md](adding-doc-source.md) — point the pipeline at local
   files, a single URL, a real MCP server, or a custom client.
@@ -162,52 +162,8 @@ CLI surface. The files in this directory go deeper:
   metric extracts and runs fenced code examples in isolation.
 - [ingestion-docling.md](ingestion-docling.md) — ingesting non-Markdown
   documents (PDF, HTML, …) via Docling, installed with the optional `ocr` extra.
+- [methodology.md](methodology.md) — operational methodology: model roles,
+  question types, difficulty levels, answer generation, judging, trust checks,
+  and executable agent tasks.
 - [difficulty-rubric.md](difficulty-rubric.md) — the difficulty/level rubric
   used to grade performance-skill questions and tasks.
-
-## Historical decisions
-
-The `decisions/` directory keeps point-in-time design reviews and
-investigations. They reflect the state of the project at their dated time
-and may have been partially superseded — each file's header notes its
-current status.
-
-- [decisions/2026-02-12-review-devils-advocate.md](decisions/2026-02-12-review-devils-advocate.md)
-- [decisions/2026-02-12-review-intel-product.md](decisions/2026-02-12-review-intel-product.md)
-- [decisions/2026-02-14-context7-http-vs-mcp.md](decisions/2026-02-14-context7-http-vs-mcp.md)
-- [decisions/2026-05-29-evaluating-mcp-skills-personas.md](decisions/2026-05-29-evaluating-mcp-skills-personas.md)
-  — assessment + proposal for evaluating MCP docs, skills, and agent persona
-  prompts as first-class treatment arms.
-- [decisions/2026-05-29-external-feedback-assessment.md](decisions/2026-05-29-external-feedback-assessment.md)
-  — claim-by-claim verification of an external code review of the repo, with the
-  prioritized response that followed (licensing, schema validation, packaging,
-  reproducibility).
-- [decisions/2026-06-10-evaluation-beyond-mcp-docs.md](decisions/2026-06-10-evaluation-beyond-mcp-docs.md)
-  — **umbrella / index** for extending evaluation beyond MCP docs; states the
-  shared motivation and sequences the ADRs below.
-  - [decisions/2026-06-10-questions-and-tasks-coverage-contract.md](decisions/2026-06-10-questions-and-tasks-coverage-contract.md)
-    — pair every project's question set (awareness) with an executable task set
-    (work); surface the gap as a checked matrix. *(Phase A.)*
-  - [decisions/2026-06-10-model-harness-dimension.md](decisions/2026-06-10-model-harness-dimension.md)
-    — make base model × harness an explicit, swept, reported dimension; deltas
-    only comparable within a `(model, harness)` cell. *(Phase B.)*
-  - [decisions/2026-06-11-plugin-and-harness-aware-benchmarks.md](decisions/2026-06-11-plugin-and-harness-aware-benchmarks.md)
-    — add plugins such as Caveman (`prompt_middleware`) and a `truncate`
-    `output_shaper` as explicit runtime behavior modifiers and report token/cost
-    gains separately from quality or task-success loss. Use `arms plugin-delta`
-    to compare paired no-plugin/plugin `arms.v1` artifacts. *(Phase C.)*
-  - [decisions/2026-06-19-run-telemetry-metrics.md](decisions/2026-06-19-run-telemetry-metrics.md)
-    — capture per-run tokens, cost, cache, and latency as a normalized
-    `metrics{}` block on every result row; answers the plugin ADR's O5.
-    *(Phase C.0 — prerequisite for Phase C.)*
-  - [decisions/2026-06-10-artifacts-as-evaluation-subjects.md](decisions/2026-06-10-artifacts-as-evaluation-subjects.md)
-    — promote skills/profiles/bundles from arms to first-class evaluation
-    *subjects* emitting a per-subject scorecard. *(Phase D.)*
-  - [decisions/2026-06-23-exploration-quality-fastcontext.md](decisions/2026-06-23-exploration-quality-fastcontext.md)
-    — add exploration quality (citation localization F1, pre-edit cost,
-    main-vs-subagent token accounting) as a measurable layer; FastContext skill
-    arm + standalone ExploreBench track. *(Item #60.)*
-- [decisions/benchmark-methodology.md](decisions/benchmark-methodology.md)
-  — current operational methodology for model roles, question types,
-  difficulty levels, answer generation, judging, trust checks, and executable
-  agent tasks.

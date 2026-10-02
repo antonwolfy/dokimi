@@ -61,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     subjects.register(sub, positive_int)        # subjects (Phase D)
     tasks.register(sub, positive_int)           # tasks
     catalog.register(sub, positive_int)         # catalog (external skills/tasks)
-    explore.register(sub, positive_int)         # explore (ExploreBench, #60)
+    explore.register(sub, positive_int)         # explore (ExploreBench)
     dataset.register(sub, positive_int)         # dataset
     ingest.register(sub, positive_int)          # ingest
 

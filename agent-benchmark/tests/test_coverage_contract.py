@@ -1,4 +1,4 @@
-"""Tests for the questions-and-tasks coverage contract (ADR Phase A)."""
+"""Tests for the questions-and-tasks coverage contract."""
 
 from __future__ import annotations
 

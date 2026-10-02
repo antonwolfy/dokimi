@@ -1,4 +1,4 @@
-"""Tests for output-shaper plugins (ADR 2026-06-11 Phase C).
+"""Tests for output-shaper plugins.
 
 Output shapers post-process the model answer, so ``raw_answer_chars`` and
 ``final_answer_chars`` diverge — the metric divergence the plugin-delta view

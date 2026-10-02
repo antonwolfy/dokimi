@@ -1,7 +1,6 @@
-"""Model × harness evaluation cells (ADR 2026-06-10, Phase B).
+"""Model × harness evaluation cells.
 
-Implements the load-bearing rules from
-``docs/decisions/2026-06-10-model-harness-dimension.md``:
+Implements the load-bearing rules of the model × harness dimension:
 
   §2.1  **Stamp every result row** with its ``(model, harness)`` (and, per the
         plugin-aware extension, ``plugin_set``).
@@ -10,10 +9,8 @@ Implements the load-bearing rules from
         difference is variance *of the axis*, never a treatment effect. This
         module makes that rule executable via :func:`safe_delta`, so the
         invariant is enforced in code rather than left to reviewer discipline
-        (the ADR calls this rule "load-bearing, not pedantry").
 
 This is pure, offline logic — no LLM calls — so it is fully unit-testable in CI.
-The harness taxonomy mirrors ADR §3.1.
 """
 
 from __future__ import annotations
@@ -23,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# Harness taxonomy (ADR §3.1). `terminal-bench:<agent>` is a family; a concrete
+# Harness taxonomy. `terminal-bench:<agent>` is a family; a concrete
 # instance pins one Harbor agent (e.g. "terminal-bench:terminus").
 HARNESS_SINGLE_SHOT = "single-shot"   # one completion; judge score
 HARNESS_AGENT = "agent"               # bounded tool-calling loop; judge + tool_use_rate
@@ -43,7 +40,7 @@ EMPTY_PLUGIN_SET = "none"
 
 
 class CrossCellDeltaError(ValueError):
-    """Raised when a delta is attempted across two different cells (ADR §2.2)."""
+    """Raised when a delta is attempted across two different cells."""
 
 
 def is_known_harness(harness: str) -> bool:
@@ -63,7 +60,7 @@ def is_known_harness(harness: str) -> bool:
 @dataclass(frozen=True)
 class Cell:
     """A ``(model, harness, plugin_set)`` evaluation cell — the unit within which
-    deltas are valid (ADR §2.2 + plugin-aware extension §2)."""
+    deltas are valid."""
 
     model: str
     harness: str
@@ -108,7 +105,7 @@ def safe_delta(
 ) -> float | None:
     """Return ``treated_score - baseline_score`` only if both share a cell.
 
-    Enforces ADR §2.2: a delta across different ``(model, harness, plugin_set)``
+    A delta across different ``(model, harness, plugin_set)``
     cells is not a treatment effect and must not be computed. Raises
     :class:`CrossCellDeltaError` rather than silently returning a misleading
     number. Returns ``None`` if either score is missing.
@@ -118,8 +115,7 @@ def safe_delta(
         cb = baseline if isinstance(baseline, Cell) else Cell.from_row(baseline)
         raise CrossCellDeltaError(
             f"refusing cross-cell delta: treated {ct} vs baseline {cb}; "
-            "deltas are only valid within one (model, harness, plugin_set) cell "
-            "(ADR 2026-06-10 §2.2)"
+            "deltas are only valid within one (model, harness, plugin_set) cell"
         )
     if treated_score is None or baseline_score is None:
         return None
@@ -127,7 +123,7 @@ def safe_delta(
 
 
 def group_by_cell(rows: list[dict]) -> dict[str, list[dict]]:
-    """Group stamped result rows by their cell key (ADR §3.3 result cube)."""
+    """Group stamped result rows by their cell key."""
     out: dict[str, list[dict]] = {}
     for row in rows:
         out.setdefault(Cell.from_row(row).key, []).append(row)

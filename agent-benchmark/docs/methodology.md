@@ -177,9 +177,9 @@ For reproducibility:
 
 ## Executable Agent Tasks
 
-The `terminal-bench-tasks/` directory contains Harbor-compatible tasks for agent evaluation. A task gives the agent instructions and a Docker environment, then scores the result with automated tests and `/logs/verifier/reward.txt`.
+Executable tasks are Harbor-compatible task directories supplied from an external content repository via `--tasks-root` (see [external-content.md](external-content.md) and [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)). A task gives the agent instructions and a Docker environment, then scores the result with automated tests and `/logs/verifier/reward.txt`.
 
-This is the right workflow when the benchmark question is not "did the answer sound good?" but "did the agent produce working code?" Current oneTBB tasks cover sorting, streaming kernels, stencil, transpose, reductions, prefix scan, and flow graph pipelines.
+This is the right workflow when the benchmark question is not "did the answer sound good?" but "did the agent produce working code?"
 
 These tasks can be used to evaluate:
 
@@ -188,4 +188,4 @@ These tasks can be used to evaluate:
 - different agent profiles on the same task set,
 - documentation changes that should improve coding success rate.
 
-Keep provenance and license notes in `terminal-bench-tasks/PROVENANCE.md`, update the coverage matrix, and verify oracle solutions offline with network disabled before relying on task scores.
+Keep provenance and license notes alongside the tasks in the content repository, and verify oracle solutions offline with network disabled before relying on task scores.

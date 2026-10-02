@@ -1,8 +1,7 @@
 """Derive exploration-quality metrics from a harness operation stream.
 
 Companion to ``agent_benchmarks/metrics/exploration.py`` (citation scoring),
-implementing the trajectory-shape slice of
-``docs/decisions/2026-06-23-exploration-quality-fastcontext.md``.
+implementing the trajectory-shape slice of exploration quality.
 
 Given the ``OperationRecord`` list a harness already collects (see
 ``operations.py``), summarize *how* the agent explored before it acted: how many

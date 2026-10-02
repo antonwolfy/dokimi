@@ -12,8 +12,8 @@
 #   name, description, repo, context7_id, doc_sources  — identity (required:
 #     name, description).
 #   coverage_status: covered | questions-only | planned — the self-reported
-#     state of the coverage contract (see docs/decisions/
-#     2026-06-10-questions-and-tasks-coverage-contract.md). Optional. Declaring
+#     state of the coverage contract (see
+#     agent_benchmarks/coverage.py). Optional. Declaring
 #     `covered` is a promise a reviewer can check: it fails the coverage check
 #     unless the named roots really do hold a golden question set and a tagged
 #     task for the product. No product declares `covered` here, because the

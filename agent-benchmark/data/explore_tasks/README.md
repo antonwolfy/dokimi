@@ -1,7 +1,6 @@
 # Exploration tasks (ExploreBench)
 
-Each YAML file here is one **exploration-only** task for the ExploreBench track
-(see `docs/decisions/2026-06-23-exploration-quality-fastcontext.md`).
+Each YAML file here is one **exploration-only** task for the ExploreBench track.
 A task poses a localization question and declares the reference locations a good
 explorer should cite. It scores *whether the agent can find the right evidence*
 — separately from whether it can answer or solve.
@@ -62,6 +61,6 @@ python cli.py explore run --all --tasks-root <checkout>/explore_tasks \
 ```
 
 Derive their `references` from the oracle solution's edited files/ranges, or
-curate doc/example locations. Per the ADR caveat, pair citation F1 with task
+curate doc/example locations. Pair citation F1 with task
 pass-rate and judge score; patch-derived locations under-credit supporting
 evidence (tests, callers, neighbors).

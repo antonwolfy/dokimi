@@ -122,7 +122,7 @@ python cli.py arms matrix-run \
 ```
 
 `--matrix-cells` accepts JSON shaped as `{"matrix": {"cells": [...]}}`,
-`{"cells": [...]}`, or a top-level list. Each cell can use `id` (ADR-style) or
+`{"cells": [...]}`, or a top-level list. Each cell can use `id` or
 `name` as its identifier. A selected cell controls `model`, `provider`,
 `harness`, and `plugins`, and the run refuses unsupported plugin/harness
 combinations before calling the model. `arms matrix-run` writes one `arms.v1`
@@ -185,7 +185,7 @@ artifact per cell, a `matrix_rollup.v1` JSON/Markdown report, and paired
   profile digest.
 
   Where 12,000 comes from: it is the default the skill loader has always carried
-  (≈3k tokens), an inherited convention rather than a tuned figure — no ADR or commit
+  (≈3k tokens), an inherited convention rather than a tuned figure — no design note or commit
   justifies the number, and profiles adopted it for parity, not because it is optimal.
   Read it as a guardrail against a fixture that would dominate the prompt. If you change
   it, change it in **all** channels at once (`skills/loader.py`,

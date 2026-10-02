@@ -1,4 +1,4 @@
-"""Tests for model × harness evaluation cells (ADR Phase B, §2.2)."""
+"""Tests for model × harness evaluation cells."""
 
 from __future__ import annotations
 

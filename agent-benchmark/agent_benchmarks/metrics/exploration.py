@@ -1,8 +1,6 @@
 """Exploration-quality metrics: citation parsing and localization scoring.
 
-Implements the keystone slice of
-``docs/decisions/2026-06-23-exploration-quality-fastcontext.md``:
-score whether an agent (or an exploration subagent) located the *right* files
+Scores whether an agent (or an exploration subagent) located the *right* files
 and line ranges, independent of whether it went on to answer or solve.
 
 A FastContext-style explorer returns a compact citation block::

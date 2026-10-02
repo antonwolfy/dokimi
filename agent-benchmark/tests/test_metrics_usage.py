@@ -1,6 +1,6 @@
 """Tests for the run-telemetry layer (UsageRecord + llm.py extraction).
 
-Covers the ADR's required guarantees: defensive token/cache/reasoning
+Covers the required guarantees: defensive token/cache/reasoning
 extraction, cost-None when litellm has no pricing, additive accumulation across
 turns, streaming TTFT, and the per-row metrics{} block plus the retained
 token_usage alias.

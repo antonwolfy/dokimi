@@ -37,7 +37,7 @@ class Skill:
         """Render the skill as an injectable context block, capped at *max_chars*.
 
         The 12,000-char default (≈3k tokens) is an inherited convention, not a tuned
-        value: it arrived with this loader and no ADR or commit justifies the figure.
+        value: it arrived with this loader and no design note or commit justifies the figure.
         Treat it as a guardrail against a fixture that would dominate the prompt, and
         change it only deliberately — every channel must cap at the *same* number, or
         a ``profile:`` arm and a ``skill:`` arm stop being comparable.

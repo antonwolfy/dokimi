@@ -1,15 +1,15 @@
 """Runtime plugins for treatment-arm runs.
 
 Plugins are behavior modifiers applied inside a fixed model/harness cell.  Two
-plugin kinds are implemented (ADR 2026-06-11 §3.1 taxonomy):
+plugin kinds are implemented:
 
 * ``prompt_middleware`` — modifies the system prompt *before* the model runs
   (e.g. a Caveman brevity instruction). Raw and final answer are identical.
 * ``output_shaper`` — post-processes the model's answer *after* it is produced
   (e.g. a hard truncation). This is the kind whose whole point is that the
   final answer differs from the raw model output, which is why the metrics
-  block carries distinct ``raw_answer_chars`` / ``final_answer_chars`` (ADR
-  §3.3): a shaper can cut the delivered text without reducing the tokens the
+  block carries distinct ``raw_answer_chars`` / ``final_answer_chars``:
+  a shaper can cut the delivered text without reducing the tokens the
   model was already billed for.
 
 Every run records a canonical plugin-set identity for reports.
@@ -108,7 +108,7 @@ class Plugin:
         """Post-process a model answer (output shapers only).
 
         Deterministic and offline — no LLM call — so the token/length trade-off
-        can be exercised in CI without a live runtime (ADR §4.6). A non-shaper
+        can be exercised in CI without a live runtime. A non-shaper
         plugin returns the answer unchanged.
         """
         if not self.is_output_shaper or answer is None:
