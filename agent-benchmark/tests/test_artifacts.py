@@ -5,12 +5,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from agent_benchmarks.artifacts import (
     SCHEMA_VERSIONS,
+    SUPERSEDED_VERSIONS,
     ArtifactValidationError,
     load_artifact,
     save_artifact,
@@ -205,6 +207,58 @@ def test_save_does_not_mutate_caller():
 def test_schema_version_const_rejects_wrong_value():
     with pytest.raises(ArtifactValidationError):
         validate_artifact("questions", {"schema_version": "questions.v2", "questions": []})
+
+
+def _scorecard_v1():
+    """A subject scorecard written before the novelty bump: no ``novelty`` block at all."""
+    return {
+        "schema_version": "subject_scorecard.v1",
+        "generated_at": "2026-01-01T00:00:00Z",
+        "subject": {"id": "s", "kind": "doc-source", "ref": "local:docs"},
+        "suite": {"products": ["oneTBB"], "questions": ["q.json"]},
+        "baseline": "baseline",
+        "awareness": {"arm_specs": [], "runs": []},
+        "work": {"status": "not_run", "arm_specs": [], "tasks": []},
+        "cells": [],
+        "plugin_deltas": [],
+        "warnings": [],
+    }
+
+
+def test_all_superseded_versions_have_schema_files():
+    for kind, versions in SUPERSEDED_VERSIONS.items():
+        assert kind in SCHEMA_VERSIONS
+        for version in versions:
+            assert (REPO / "agent_benchmarks" / "schemas" / f"{version}.json").exists()
+
+
+def test_a_superseded_scorecard_still_loads(tmp_path):
+    # A bump is additive by policy, so an artifact written before it is still a valid artifact.
+    validate_artifact("subject_scorecard", _scorecard_v1())
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(_scorecard_v1()), encoding="utf-8")
+    assert load_artifact("subject_scorecard", path)["schema_version"] == "subject_scorecard.v1"
+
+
+def test_rewriting_a_superseded_payload_must_state_its_novelty_status(tmp_path):
+    # `stamp` always writes the current version, and v2 requires `novelty`, so a v1 payload cannot
+    # be re-saved by silently omitting it: an absent block would read as "no novelty" rather than
+    # "not measured". Adding the explicit not_run block is what makes it a v2 artifact.
+    path = tmp_path / "new.json"
+    with pytest.raises(ArtifactValidationError, match="novelty"):
+        save_artifact("subject_scorecard", _scorecard_v1(), path)
+    upgraded = dict(_scorecard_v1(), novelty={"status": "not_run", "cells": []})
+    save_artifact("subject_scorecard", upgraded, path)
+    assert json.loads(path.read_text(encoding="utf-8"))["schema_version"] == "subject_scorecard.v2"
+
+
+def test_an_unknown_version_is_still_rejected_rather_than_skipping_validation():
+    # The fallback is the *current* schema, whose const rejects the string: a typo or a future
+    # version must not read as "no schema to check against".
+    with pytest.raises(ArtifactValidationError):
+        validate_artifact(
+            "subject_scorecard", dict(_scorecard_v1(), schema_version="subject_scorecard.v9")
+        )
 
 
 def _factorial_summary():

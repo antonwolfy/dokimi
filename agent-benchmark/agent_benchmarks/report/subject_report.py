@@ -6,6 +6,72 @@
 from __future__ import annotations
 
 
+def _fmt(value: object, digits: int = 3) -> str:
+    """Render a rate, or ``n/a`` — a missing measurement is never printed as a zero."""
+    return "n/a" if value is None else (f"{value:.{digits}f}" if isinstance(value, float) else str(value))
+
+
+def _gate_status(gate: dict) -> str:
+    """The cell's gate status, with how many of its checks this run did not measure."""
+    skipped = gate.get("not_measured") or []
+    status = gate.get("status", "n/a")
+    return f"{status} ({len(skipped)} not measured)" if skipped else status
+
+
+def _novelty_section(novelty: dict) -> list[str]:
+    """The ``## Novelty`` section: one row per (artifact, model) cell, no subject-level total.
+
+    Deliberately not sortable and deliberately not aggregated. Ranking artifacts by `added` inside
+    one model correlated with the measured task delta at -0.446 over 13 artifacts, and in that same
+    group the two validity checks flipped sign, so a column that invites a cross-artifact comparison
+    would invite a wrong one. Each row is one pair, with its n and its soft-gate status.
+    """
+    lines = ["", "## Novelty"]
+    cells = novelty.get("cells") or []
+    if not cells:
+        lines.append(
+            "- not measured (attach `novelty analyze` artifacts with `--novelty-artifact`)"
+        )
+        return lines
+    lines.extend([
+        "",
+        "| Artifact | Model | added (len/strict) | K0 (len/strict) | paired n | dead tok | Gate |",
+        "| --- | --- | ---: | ---: | ---: | ---: | --- |",
+    ])
+    for cell in cells:
+        paired = cell.get("paired", {}) or {}
+        lenient = paired.get("lenient", {}) or {}
+        strict = paired.get("strict", {}) or {}
+        k0 = cell.get("k0", {}) or {}
+        spans = cell.get("spans", {}) or {}
+        dead = spans.get("frac_carrying_nothing")
+        dead_s = _fmt(dead) + (" (capped)" if spans.get("capped_atom_set") else "")
+        lines.append(
+            f"| `{(cell.get('artifact') or {}).get('ref', '?')}` | `{cell.get('model', '?')}` | "
+            f"{_fmt(lenient.get('added'))} / {_fmt(strict.get('added'))} | "
+            f"{_fmt(k0.get('lenient'))} / {_fmt(k0.get('strict'))} | "
+            f"{lenient.get('n_paired', 'n/a')} | {dead_s} | "
+            f"{_gate_status(cell.get('gate') or {})} |"
+        )
+    flagged = [
+        (cell, check)
+        for cell in cells
+        for check in (cell.get("gate") or {}).get("checks", [])
+        if not check.get("passed") and check.get("severity") == "warn"
+    ]
+    if flagged:
+        lines.extend(["", "Soft-gate warnings (none of these block):"])
+        for cell, check in flagged:
+            ref = (cell.get("artifact") or {}).get("ref", "?")
+            lines.append(f"- `{ref}` / `{cell.get('model', '?')}` — **{check['name']}**: "
+                         f"{check['message']}")
+    caveats = novelty.get("caveats") or []
+    if caveats:
+        lines.append("")
+        lines.extend(f"- _{caveat}_" for caveat in caveats)
+    return lines
+
+
 def render_subject_scorecard(scorecard: dict) -> str:
     """Render a compact human-readable subject scorecard."""
     subject = scorecard.get("subject", {})
@@ -79,6 +145,8 @@ def render_subject_scorecard(scorecard: dict) -> str:
             lines.append(
                 f"| `{harness}` | {rate_s} | {stats.get('passed', 0)} | {stats.get('n', 0)} |"
             )
+
+    lines.extend(_novelty_section(scorecard.get("novelty", {}) or {}))
 
     warnings = scorecard.get("warnings", [])
     if warnings:

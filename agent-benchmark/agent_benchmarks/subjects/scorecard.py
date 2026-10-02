@@ -12,6 +12,7 @@ from typing import Any
 
 from .loader import awareness_arm_specs, work_arm_specs
 from .models import SubjectDescriptor
+from .novelty_track import build_novelty_block, novelty_warnings
 
 
 def build_subject_scorecard(
@@ -20,9 +21,18 @@ def build_subject_scorecard(
     awareness_runs: list[dict[str, Any]],
     out_dir: Path,
     work_run: dict[str, Any] | None = None,
+    novelty_artifacts: list[dict[str, Any]] | None = None,
+    novelty_sources: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build a subject_scorecard.v1 artifact from matrix rollup runs."""
+    """Build a subject_scorecard.v2 artifact from matrix rollup runs.
+
+    ``novelty_artifacts`` are ``novelty.v1`` payloads produced separately by ``novelty analyze``
+    and attached by path. They are not produced here: the measurement is
+    ``atoms x probes x arms x (answer + grade)`` and would dominate a subject run's cost.
+    """
     warnings: list[str] = []
+    novelty = build_novelty_block(novelty_artifacts or [], sources=novelty_sources)
+    warnings.extend(novelty_warnings(novelty))
     if descriptor.suite.tasks:
         if work_run is None:
             warnings.append(
@@ -57,7 +67,7 @@ def build_subject_scorecard(
         warnings.extend(rollup.get("warnings", []))
 
     return {
-        "schema_version": "subject_scorecard.v1",
+        "schema_version": "subject_scorecard.v2",
         "generated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z",
         "subject": {
             "id": descriptor.subject.id,
@@ -103,6 +113,7 @@ def build_subject_scorecard(
             "summary": work_run.get("summary", {}) if work_run else {},
         },
         "cells": cells,
+        "novelty": novelty,
         "plugin_deltas": plugin_deltas,
         "run_manifest": {
             "out_dir": str(out_dir),

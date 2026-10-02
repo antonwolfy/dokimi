@@ -125,8 +125,11 @@ Read it in this order:
    holds the frontmatter fixed so the two are not confounded.
 2. **`harmful_conflicting` next.** Conflicts are the only category that can make the artifact worse
    than nothing.
-3. **`frac_carrying_nothing`.** Tokens that carry no extractable knowledge. Eleven of thirteen
-   skills were ≤0.17; the outliers were 0.50 and 0.74.
+3. **`frac_carrying_nothing`.** Tokens that carry no extractable knowledge. Measured against the full
+   extracted atom set this was ≤0.14 on every artifact in the study. **Only trust it when the atom
+   set behind it is complete:** the study's two apparent outliers (0.50 and 0.74) turned out to be
+   artifacts of a 250-atom-per-artifact judging cap on the two largest artifacts, whose real figures
+   are 0.068 and 0.064. Always read this metric next to its judged/extracted atom ratio.
 4. **`added` last** — it tells you whether the artifact is worth its tokens, but the three checks
    above tell you what to do.
 
@@ -149,6 +152,21 @@ Two derived views an author acts on directly:
 - **Sole carriers**: spans that are the only source of some atom. These are what a careless edit
   silently deletes; the shortener pins them.
 
+Going finer than a span — highlighting the *words* that carry an atom — was measured before being
+built, by masking them and masking the same number of other words from the same span: the attributed
+words cost 0.34–0.39 more retention than the control (95% CI 0.31–0.47, 47 of 48 decided cells), so
+the highlight is load-bearing. Three measured constraints ship with it:
+
+- **Do not attribute by lexical overlap** with the atom statement. It misses negation — negation words
+  are function words — so its extra loss on `negative-constraint` atoms is +0.143 against an LLM
+  attributor's +0.392. The cheap attributor is weakest on exactly the knowledge that matters most.
+- **Carry the heading path** wherever a span is checked. Atom recovery from a bare span is 0.833 and
+  rises to 0.907 with the heading path prepended, for about 16 tokens: a span reading "Use 4 for most
+  workloads" is not a bad citation, it is a sentence whose subject lives in its heading.
+- **Render an unlocated state.** 19% of atoms are not recoverable from their cited *file* at all —
+  syntheses inferred while reading the whole document, which the faithfulness check calls supported.
+  Their span pointer is a fiction, and colouring a span for them is worse than saying nothing.
+
 ### 3. Shortening, with five separate scores
 
 ```bash
@@ -169,10 +187,42 @@ failure the atom statement does not encode.
 | `protection` | negations / gates / versions / orderings survive |
 | `routing` | the description still claims the artifact's own queries |
 
+**Read `value` next to its `value_coverage`.** The weight is relevance × novelty, and novelty needs a
+measured `K0`, which only probed atoms have. In the study that left per-model value defined on 148 of
+2422 atoms — 3 of 279 on the largest artifact — so both the reported rate and the `greedy_value`
+ranking were, in practice, atom *coverage* per token. Candidates therefore ship `value_coverage` and a
+`value_is_coverage_proxy` flag, and `pick_best` tie-breaks on `knowledge` rather than `value` when the
+flag is set. Coverage per token is a fine selection rule; it is just not a relevance claim.
+
 Rule of thumb from the measurements: a safety-pinned strategy at 0.60 token fraction held
-`protection = 1.000` with knowledge 0.81–0.96 and **no** measured task loss on strong models. Every
-task-score loss worse than −0.08 in the study belonged to the smallest model. Small models need the
-redundancy you can take away from large ones.
+`protection = 1.000` with knowledge 0.81–0.96, and pooled across the behavioural sweep every
+shortener tested was non-inferior to the full package at a 0.05 task-score margin.
+
+**Is any of this better than a generic prompt compressor?** Measured against LLMLingua-2 at the same
+achieved token count on four artifacts, with both sides scored by the same retention oracle: span
+selection is +0.03 on bulk knowledge (7 of 8 cells), +0.07 on strict knowledge (8 of 8), and **+0.12
+lenient / +0.20 strict on the atoms carried by protected spans** (8 of 8). The knowledge-aware
+selector's advantage is small on prose and large on negations, gates and thresholds — a token-level
+compressor drops a `not` for one token's saving. Retention only; neither side was run behaviourally.
+
+That gap is not a mis-configured baseline. LLMLingua-2 takes a `force_tokens` list, and re-running the
+comparison with up to 40 protection terms mined from each artifact's own protected atoms — negations,
+gate words, flags, versions, limits — moves protected-atom retention by **+0.0003 lenient and −0.0009
+strict, 4 cells up and 4 down**, while span selection keeps its full +0.20 strict lead in 8 of 8 cells.
+Pinning a token keeps the *word* and not the clause it governs: the compressor retains a `not` whose
+sentence is gone, which is worse than dropping both. **Do not substitute a token-level compressor for
+the protection axis at any configuration.**
+
+Two limits on that rule, both measured:
+
+- **Per artifact it is unproven.** With 7–8 tasks per (artifact, model) cell the 95% interval is
+  ~0.32 task-score points wide, so 44 of 60 individual cells were inconclusive. Pooled evidence
+  licenses a shortening *policy*; it does not license a specific cut without running that cut.
+- **The verdict does not transfer across model tiers.** Of 20 (artifact, candidate) pairs measured on
+  three models each, only 9 agreed; the smallest model was the worst-hit in 9 of 20, and the same
+  candidate was non-inferior on a frontier model and *worse* on a small one. Small models need the
+  redundancy you can take away from large ones, so a shortening decision must name the tier it was
+  measured on and include the weakest deployed tier.
 
 ### 4. What the artifact should *not* teach
 
@@ -185,7 +235,62 @@ Two content patterns were measured as actively harmful, independent of topic:
 - **Investment in prose order.** An arm with the same spans in shuffled order scored *higher* than
   the intact artifact on four of five models. Ordering, transitions and narrative framing carried no
   measurable knowledge. Spend the effort on facts, qualifiers and exact values — that is where the
-  strict-grading `added` lives.
+  strict-grading `added` lives. A probe asks one atom at a time and so cannot punish a scrambled
+  document, so this was retested behaviourally on the 71 generated tasks whose graded requirements
+  themselves name an ordering: the two arms stay level there too, on the whole task (+0.003) and on
+  the ordering items alone (+0.022, 95% CI −0.027 to +0.072, 213 paired cells). Read with its
+  resolution — a cost of scrambling smaller than ~0.07 is not excluded, and each artifact was
+  scrambled with one seed.
+
+Third pattern, and it is the one with the largest measured effect in the study:
+
+- **Every exact value you write will be believed, so anchor it.** Planting a false numeric value at
+  every occurrence in an artifact makes three model families state it **0.942** of the time when it is
+  plausible and **0.846** of the time when it is wrong by 64× — a `32768 MiB` scratch allowance, a
+  `>95%` regression threshold. They flagged the conflict in **3 of 93 adoptions**, and two of the three
+  families never flagged anything. Where the model's own prior was correct (6 cells of 52), it abandoned
+  that prior **6 times out of 6**. Absurdity does not protect and the reader will not catch it for you.
+
+  Three values out of twenty ever survived a plant, and what they had in common was not being
+  implausible — it was an **independent anchor**: a hardware SKU the model already knows, an arithmetic
+  identity it can recompute, or a second unmutated correlate in the same document (the OS release number
+  resisted because the codename sat next to it). So when you write a threshold, a capacity or a version,
+  **write the checkable correlate beside it** — the part name, the formula it derives from, the codename.
+  That is the only mechanism observed to make a stale value detectable, and it is the one property under
+  the author's control rather than the model's.
+
+### 5. Which *kind* of knowledge to write
+
+A single `added` number tells an author the artifact is worth its tokens but not what to write more
+of. Re-cutting the same probes by what the atom is — a fact the model could know from public
+material, versus a local contract, versus an ordered procedure — splits the average in a way that is
+directly actionable. Strict grading, measured across five models:
+
+| atom kind | models already knew it | artifact supplied it |
+|---|---|---|
+| `public` — concepts, general technique | 0.23–0.55 | 0.17–0.23 |
+| `local` — this stack's specific contract | 0.00–0.26 | 0.32–0.43 |
+| `motif` — ordered procedure, gate, halt | 0.07–0.17 | 0.23–0.56 |
+| `proposition` — a standalone claim | 0.14–0.46 | 0.16–0.31 |
+
+Prior knowledge of public material is roughly **double** that of local contracts on every model, and
+the artifact's contribution runs the other way. The weakest model knew *no* local contract at all
+(strict `K0` 0.000). Two authoring consequences:
+
+- **Conceptual prose is the first thing to cut.** It is the half the model already has. Explaining
+  what a cache miss is spends tokens; stating this stack's exact flag, threshold or ordering does not.
+- **Write the procedure down, precisely.** `motif` and `contract` atoms — gates, orderings, flags,
+  output formats — are where the artifact is least replaceable, and they are also the atoms a greedy
+  token-budget shortener discards first (their value is conditional on a failure the sentence does
+  not mention). That is why `protection` is a separate axis.
+
+Two caveats belong next to the table. The judge is *least* reliable on exactly these content types
+(κ 0.558 on `motif`, 0.605 on `edge`, against 0.714 on `proposition`). Judge noise inflates both arms
+of a paired comparison and therefore shrinks the measured difference rather than inventing it, so the
+direction holds and the magnitudes are soft. And the rows are labels, not measurements: the tag rows
+re-derive under two independent labellers to within 0.08, but the `motif`-vs-`contract` boundary does
+not (κ 0.32–0.38 on the shape vocabulary), so read the shape rows as "ordered/required content" versus
+"standalone claim" rather than as four distinct classes.
 
 ## Comparing knowledge: which matcher is allowed to answer
 
@@ -210,9 +315,56 @@ The hybrid ships. Two consequences worth remembering when reading a `knowledge` 
 - **The oracle fails safe.** With no adjudicator configured, the ambiguous band resolves to *absent*,
   so reported `knowledge` is a floor — a shortening can look worse than it is, never better.
 
+**Which cheap scorer fills the first stage was measured separately, and the answer is not NLI.** Scoring
+every candidate on the 3972 pairs that actually escalated — reference labels being the adjudicator's own
+cached verdicts, so this is approximation of the adjudicator and not truth — a cross-encoder NLI stage
+lands at AUC 0.576, κ −0.001, balanced accuracy 0.500 against a 0.896 majority baseline: chance at its threshold.
+HHEM-2.1-open reaches **0.804 at the same cost** (59 vs 57 CPU s/1000, 946 vs 856 MB), and the score
+decay as more surrounding context is supplied (−0.046 heading→whole file, 50.8% of atoms, p = 0.005)
+reverses to +0.047. Two things not to conclude from that:
+
+- **It buys accuracy, not cost.** An ends-only shortcut at ≥0.90 agreement removes **0.003** of
+  adjudications, ≤0.0072 even at 0.80 agreement, and replacing per-pair verdicts with a calibrated
+  aggregate collapses to a constant. The escalation *is* the oracle. Shortcut only at `hhem ≥ 0.995 AND
+  top_sim ≥ 0.6 AND the atom carries no number or version`, and never shortcut the "no" end.
+- **No cheap matcher may score a protected atom.** Agreement against the band mean falls −0.18 to −0.25
+  on numeric atoms, −0.07 to −0.10 on version-bound ones, −0.03 to −0.05 on negations, because a
+  similarity score reads topic and not value: `_mm512_reduce_add_epi64` scores mid-scale against an atom
+  about `_mm512_reduce_add_pd`. The same blindness defeats a prompt compressor told to pin the words
+  (above) and a reader model shown a wrong number (below).
+
 The graph matcher's 0.551 is not an argument against the graph. Structural overlap is the wrong
 instrument for semantic equivalence; the graph's job is the step before, deciding which question is
 being asked at all.
+
+## Tracking it on a subject scorecard
+
+A novelty run is attached to a subject run, not produced by one — the measurement is
+`atoms × probes × arms × (answer + grade)` and would dominate a subject's cost. Produce it with
+`novelty analyze`, then name the artifacts by path:
+
+```bash
+python cli.py subjects run subject.toml \
+  --novelty-artifact results/novelty/accel-tuning-on-opus.json \
+  --novelty-artifact results/novelty/accel-tuning-on-haiku.json
+```
+
+The scorecard (`subject_scorecard.v2`) then carries a `novelty` block with **one cell per
+`(artifact, model)` pair and no aggregate**: a strong model has both a smaller `added` and less
+headroom, so a mean over cells mixes two effects, and ranking artifacts by `added` inside one model
+correlated with the measured task delta at ρ −0.446. The block states `status: not_run` when nothing
+was attached, so an unmeasured subject never reads as a subject with no novelty. The rendered report
+gets a `## Novelty` section with the same per-cell rows plus the caveats.
+
+Each cell carries a soft-gate verdict (`agent_benchmarks/gate/novelty_gate.py`): `added_floor`,
+`harmful_atoms`, `dead_tokens`, `protection_invariant`, `span_citations_confirmed`,
+`value_is_measured`, `order_independence`. **Every one of them is soft and none blocks a build** —
+a threshold on `added` flipped its verdict on up to 24% of artifacts at a 0.25 probe budget, so a
+blocking novelty check would be a blocking opinion about probe count. Checks whose input a run did
+not produce are marked `measured: false` at `info` severity and listed in the verdict's `not_measured`
+(rendered as `PASS (k not measured)`) rather than passed silently, so a skipped stage never reads as a
+cleared one; failing `warn`-severity checks and the artifact's own `warnings` also surface in the
+scorecard's top-level `warnings`.
 
 ## Cost, and how it is kept down
 
@@ -224,11 +376,35 @@ disk cache keyed on (atom, text). Full sweeps are opt-in.
 
 ## Limits to state when quoting these numbers
 
-- **Extractor recall is unmeasured.** Faithfulness of the extracted atoms was verified; recall was
-  not. Knowledge the extractor missed is invisible to every number — including "dead tokens", part
-  of which may be knowledge it could not formalize. Treat `frac_carrying_nothing` as an upper bound
-  on waste.
-- **Judge calibration.** See above: signs and rankings, not second decimals.
+- **Extractor coverage reproduces; atom *granularity* does not.** Three extractors over the same
+  artifacts cited the same spans (Jaccard 0.87–0.99, each one's blind spot ≤2.4% of union tokens),
+  including one with no exposure to the reference atom set at all, so "which text carries knowledge"
+  is stable and `frac_carrying_nothing` is not hiding unformalizable knowledge. But the other two
+  produced 17–19% more, ~30% shorter atoms, and at statement level the recovery rate is asymmetric and
+  far from 1 (0.629 one way, 0.851 the other, over 1134 oracle comparisons, and 0.733/0.876 with a third extractor that never saw the reference set). **An atom count is
+  extractor-conditional; an `added` rate is a ratio over whatever inventory the extractor produced and
+  is far more robust.** Quote counts with the extractor named.
+- **Tag labelling reproduces; the `type` vocabulary does not.** Holding extraction fixed and having two
+  other models re-label the same 2640 atoms under the same glossary, six of nine tags reach κ 0.52–0.73
+  and the knowledge-type table above re-derives to within 0.08 under every labeller — so the
+  cut-conceptual-prose recommendation is a property of the knowledge, not of one labeller. Three
+  exceptions to respect: `rare-critical` (κ 0.39–0.45) and `temporal` (one labeller tagged it at 2.7×
+  the reference rate) are not gate-grade, and the 5-way `type` vocabulary agrees at only κ 0.32–0.38,
+  with both labellers moving `contract` and `edge` atoms into `motif`. Gate on the protection tags
+  (`routing`, `negative-constraint`, `version-bound` — the top three by κ); report shape slices without
+  gating on them.
+- **Judge calibration — and a 0.15 band on `added` differences.** Signs and rankings, not second decimals.
+  Quantified: the two graders' fine-scale κ is 0.576 (the 0.664 figure is raw agreement), and they differ
+  by +7.7pp under strict grading and −11.6pp under lenient — opposite directions, which is the bias shape
+  that survives paired differencing. Measured delta-of-deltas across graders is **0.149, CI
+  [0.106, 0.194]**, so **no `added` difference below 0.15 may be quoted**, and for one model that band
+  covers almost the entire between-artifact spread. Narrowing it needs more dual grading (only 25 probes
+  have both arms dual-graded), not more probes.
+- **Retention is not monotone in the text you supply.** The matcher retrieves its top chunks before it
+  entails, so a longer text can score *lower* than a subset of itself: atom recovery from a cited span
+  is 0.833, rises to 0.907 with the heading path, then falls to 0.809 when the whole file is supplied.
+  Compare retention only between texts of similar length — which the shortening candidates are, by
+  construction — and never read a retention figure across a large length gap.
 - **The need graph has a 14% noise floor** (author/critic path-label agreement was 86%), which
   propagates into relevance-weighted `value`.
 - **Need frequency is assumed uniform.** Nothing here measures how often each need actually arises,
@@ -237,6 +413,36 @@ disk cache keyed on (atom, text). Full sweeps are opt-in.
 - **Category boundaries are judged, not measured.** An independent reviewer agreed with the
   five-category assignment on 72% of atoms; the disagreements concentrate on useful-vs-inert
   (±3 points) and known-vs-novel (±2 points). The scaffolding share is the most robust of them.
+- **Per-artifact `added` is a profile, not a ranking.** Paired probes per artifact were 12–29 in the
+  study, and subsampling shows the cross-artifact ranking destabilizing below a 0.75 probe budget
+  (Spearman ρ 0.43–0.63 at 0.10). Correlating `added` against the measured task delta says the same
+  thing from the other side: across 12 (artifact, model) cells, strict `added` ranks *models* inside
+  one artifact at ρ 0.625 with the same sign in all four artifacts, and ranks *artifacts* inside one
+  model at ρ −0.105 with the three per-model correlations at +1.0, −0.32 and −1.0. Re-run at the
+  planned artifact count — 13 artifacts ranked inside one model, 24 cells — the artifact ranking gets
+  *worse*, not better: ρ **−0.446**, signs still disagreeing across models (+0.60 / −0.30 / −0.45), and
+  in that group the two validity checks flip as well, because comparing artifacts varies task
+  difficulty along with the artifact. So the cross-artifact ranking is refuted, not just unproven.
+  Compare an artifact
+  to itself over time, use `added` to choose the tier an artifact is for, and keep any `added` gate
+  soft. Two validity checks come with it: `K0` and `degraded` both predict the delta negatively in
+  every group, as designed. All of it under **strict** grading — lenient `added` correlates at 0.126
+  pooled and 0.000 within-artifact, so partial credit does not survive to task outcomes.
+- **A topic-level verdict is a distribution, never a label.** No whole artifact in the study had
+  unanimous atom outcomes under strict grading, on any model; at heading level unanimity was 0.39–0.44
+  and roughly one atom in four disagreed with its own section's majority. "This section is redundant"
+  is not a statement this instrument can make.
+- **Loading an artifact lowers resistance to a reversed premise.** Paired on the same planted
+  inversions, 45 probes got worse and 14 better across five models, every model pointing the same way.
+  In-context text raises willingness to commit, including to a false premise in the question, so
+  correctness of content gates before volume of content. Measured directly for a false premise *inside*
+  the artifact: a planted wrong value is stated 0.942 of the time when plausible, 0.846 when absurd, and
+  flagged 3% of the time. `degraded` is the visible tip of that; the channel underneath it transmits at
+  85–94%.
+- **A cell can stop being re-measurable.** Two of the models behind most of these numbers no longer
+  resolve, and one that does no longer accepts `temperature=0`. A novelty figure is quotable only with
+  the served model named and the date attached; a cell whose model is gone is a dead cell, not a cell
+  to re-point at a successor model.
 
 ## See also
 

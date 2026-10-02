@@ -74,11 +74,22 @@ def cmd_subjects_run(args: argparse.Namespace) -> None:
     from agent_benchmarks.report.subject_report import render_subject_scorecard
     from agent_benchmarks.subjects import build_subject_scorecard, load_subject
     from agent_benchmarks.subjects.loader import awareness_arm_specs
+    from agent_benchmarks.subjects.novelty_track import load_novelty_artifacts
 
     try:
         descriptor = load_subject(args.subject)
     except (ValueError, FileNotFoundError) as exc:
         print(f"Error loading subject: {exc}", file=sys.stderr)
+        sys.exit(1)
+    # Attached, not produced: a novelty run costs atoms x probes x arms x (answer + grade), so it is
+    # produced by `novelty analyze` and named here by path. A bad path fails now, before any cell
+    # runs, rather than after the expensive part.
+    try:
+        novelty_artifacts, novelty_sources = load_novelty_artifacts(
+            list(getattr(args, "novelty_artifact", None) or [])
+        )
+    except (ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
+        print(f"Error loading novelty artifact: {exc}", file=sys.stderr)
         sys.exit(1)
     try:
         work_tasks = _validate_subject_work_args(descriptor, args)
@@ -126,6 +137,8 @@ def cmd_subjects_run(args: argparse.Namespace) -> None:
         awareness_runs=awareness_runs,
         work_run=work_run,
         out_dir=out_dir,
+        novelty_artifacts=novelty_artifacts,
+        novelty_sources=novelty_sources,
     )
     out_json = Path(args.out_json) if args.out_json else out_dir / "subject-scorecard.json"
     out_md = Path(args.out_md) if args.out_md else out_json.with_suffix(".md")
@@ -187,6 +200,14 @@ def register(sub, positive_int) -> None:
                             "dimension for curated golden sets. Keyword-style topics are ignored")
     run_p.add_argument("--concurrency", type=positive_int, default=5)
     run_p.add_argument("--no-plugin-deltas", action="store_true", dest="no_plugin_deltas")
+    run_p.add_argument(
+        "--novelty-artifact", action="append", default=None, dest="novelty_artifact",
+        metavar="PATH",
+        help="Attach a novelty.v1 artifact from `novelty analyze` (repeatable, one per "
+             "(artifact, model) pair). Reported per cell and never averaged: novelty is a property "
+             "of a pair, and ranking artifacts by `added` inside one model correlated with the "
+             "measured task delta at -0.446. All novelty checks are soft and never block",
+    )
     run_p.add_argument(
         "--work-harnesses",
         default="",

@@ -468,6 +468,12 @@ def shuffle_text(text: str, *, seed: int = 0) -> str:
 
     Seeded from a string rather than :func:`hash`, because Python salts string hashing
     per process and a control that changes between runs is not a control.
+
+    Expect this arm to score at least as high as ``full``: it did on four of five models in
+    the study, and a behavioural retest on 71 tasks whose graded requirements *name* an
+    ordering kept the two level (+0.022 on the ordering items, 95% CI -0.027 to +0.072). A
+    probe cannot punish a scrambled document, so treat a ``shuffled`` win as the expected
+    reading and not as a bug in the shuffle.
     """
     from .spans import segment
 

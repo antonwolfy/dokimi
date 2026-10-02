@@ -10,9 +10,8 @@ author needs to see the harm, and averaging would bury it.
 Two derived listings do most of the work in practice:
 
 * **dead weight** — spans no atom came from, sorted by token cost. In the study eleven of
-  thirteen skills sat at ≤0.17 of tokens, and the two outliers at 0.50 and 0.74. A
-  dedupe-only pass on the 0.74 skill returned token fraction 1.01: its bulk was not
-  duplicated knowledge, it was text that never carried knowledge.
+  thirteen skills sat at ≤0.17 of tokens; the two outliers (0.50, 0.74) were a judging-cap
+  artifact and are 0.068 and 0.064 on the full atom set (evidence §10.7).
 * **sole carriers** — spans that are the only source of some atom. These are what a
   careless edit silently deletes, so the shortener pins them.
 

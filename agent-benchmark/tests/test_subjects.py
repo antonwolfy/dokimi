@@ -24,6 +24,7 @@ from agent_benchmarks.commands.subjects import (
 )
 from agent_benchmarks.report.subject_report import render_subject_scorecard
 from agent_benchmarks.subjects import build_subject_scorecard, load_subject
+from agent_benchmarks.subjects.novelty_track import CAVEATS as NOVELTY_CAVEATS
 from agent_benchmarks.subjects.loader import awareness_arm_specs, matrix_config, work_arm_specs
 
 
@@ -278,6 +279,122 @@ questions = ["questions.json"]
     md = render_subject_scorecard(scorecard)
     assert "# Subject scorecard: docs-subject" in md
     assert "`out/matrix-rollup.json`" in md
+
+
+def _minimal_subject(tmp_path: Path):
+    descriptor_path = tmp_path / "subject.toml"
+    descriptor_path.write_text(
+        """
+[subject]
+id = "docs-subject"
+kind = "doc-source"
+ref = "local:docs"
+
+[suite]
+products = ["oneTBB"]
+questions = ["questions.json"]
+""".strip(),
+        encoding="utf-8",
+    )
+    return load_subject(descriptor_path)
+
+
+def _novelty_artifact(**overrides):
+    artifact = {
+        "artifact": {"ref": "skill:skills/accel-tuning", "kind": "skill"},
+        "model": "m",
+        "provider": "openai",
+        "judge_model": "j",
+        "atoms": {"n": 40, "n_probed": 40, "sampling": "all"},
+        "paired": {
+            "lenient": {"added": 0.42, "n_paired": 40},
+            "strict": {"added": 0.30, "n_paired": 40},
+        },
+        "k0": {"lenient": 0.5, "strict": 0.6},
+        "categories": {"harmful_conflicting": 0},
+        "spans": {"n": 60, "tokens": 900, "frac_carrying_nothing": 0.12,
+                  "capped_atom_set": False},
+        "shortening": [],
+        "attribution": {},
+        "warnings": [],
+    }
+    artifact.update(overrides)
+    return artifact
+
+
+def test_attached_novelty_artifacts_land_on_the_scorecard_per_cell(tmp_path: Path):
+    scorecard = build_subject_scorecard(
+        _minimal_subject(tmp_path),
+        awareness_runs=[],
+        out_dir=tmp_path,
+        novelty_artifacts=[_novelty_artifact(), _novelty_artifact(model="m2")],
+        novelty_sources=["a.json", "b.json"],
+    )
+
+    validate_artifact("subject_scorecard", scorecard)
+    assert scorecard["schema_version"] == "subject_scorecard.v2"
+    assert scorecard["novelty"]["status"] == "measured"
+    assert [cell["model"] for cell in scorecard["novelty"]["cells"]] == ["m", "m2"]
+
+    md = render_subject_scorecard(scorecard)
+    assert "## Novelty" in md
+    assert "0.420 / 0.300" in md
+    assert "not comparable across cells" in md
+
+
+def test_a_novelty_cell_warning_becomes_a_subject_warning(tmp_path: Path):
+    scorecard = build_subject_scorecard(
+        _minimal_subject(tmp_path),
+        awareness_runs=[],
+        out_dir=tmp_path,
+        novelty_artifacts=[_novelty_artifact(categories={"harmful_conflicting": 3})],
+    )
+
+    validate_artifact("subject_scorecard", scorecard)
+    assert any("harmful_atoms" in warning for warning in scorecard["warnings"])
+    md = render_subject_scorecard(scorecard)
+    assert "Soft-gate warnings (none of these block)" in md
+    assert scorecard["novelty"]["cells"][0]["gate"]["blocking"] is False
+
+
+def test_a_novelty_cell_that_skipped_stages_does_not_render_a_bare_pass(tmp_path: Path):
+    scorecard = build_subject_scorecard(
+        _minimal_subject(tmp_path), awareness_runs=[], out_dir=tmp_path,
+        novelty_artifacts=[_novelty_artifact(categories={})],
+    )
+    validate_artifact("subject_scorecard", scorecard)
+    assert "| PASS (5 not measured) |" in render_subject_scorecard(scorecard)
+
+
+def test_a_novelty_artifact_warning_reaches_the_scorecard_warnings(tmp_path: Path):
+    note = "judge and answerer are the same model (--allow-self-judge): scores are inflated"
+    scorecard = build_subject_scorecard(
+        _minimal_subject(tmp_path), awareness_runs=[], out_dir=tmp_path,
+        novelty_artifacts=[_novelty_artifact(warnings=[note])],
+    )
+    assert f"novelty [skill:skills/accel-tuning on m]: {note}" in scorecard["warnings"]
+    assert note in render_subject_scorecard(scorecard)
+
+
+def test_a_novelty_cell_keeps_the_run_configuration(tmp_path: Path):
+    run_config = {"seed": 7, "paraphrases": False}
+    scorecard = build_subject_scorecard(
+        _minimal_subject(tmp_path), awareness_runs=[], out_dir=tmp_path,
+        novelty_artifacts=[_novelty_artifact(run_config=run_config), _novelty_artifact()],
+    )
+    validate_artifact("subject_scorecard", scorecard)
+    cells = scorecard["novelty"]["cells"]
+    assert cells[0]["run_config"] == run_config
+    assert "run_config" not in cells[1]
+
+
+def test_a_scorecard_without_novelty_renders_the_not_measured_line(tmp_path: Path):
+    scorecard = build_subject_scorecard(
+        _minimal_subject(tmp_path), awareness_runs=[], out_dir=tmp_path
+    )
+    md = render_subject_scorecard(scorecard)
+    assert "## Novelty" in md
+    assert "not measured" in md
 
 
 def test_subject_scorecard_embeds_work_task_run_summary(tmp_path: Path):
@@ -619,7 +736,10 @@ plugins = []
     args.func(args)
 
     scorecard = json.loads((out_dir / "subject-scorecard.json").read_text(encoding="utf-8"))
-    assert scorecard["schema_version"] == "subject_scorecard.v1"
+    assert scorecard["schema_version"] == "subject_scorecard.v2"
+    assert scorecard["novelty"] == {
+        "status": "not_run", "n_cells": 0, "cells": [], "caveats": list(NOVELTY_CAVEATS),
+    }
     assert scorecard["subject"]["id"] == "docs-subject"
     assert (out_dir / "oneTBB" / "matrix-rollup.json").is_file()
 
