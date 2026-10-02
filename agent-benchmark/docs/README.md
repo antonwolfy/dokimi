@@ -161,6 +161,10 @@ CLI surface. The files in this directory go deeper:
 - [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)
   — the executable task format (directory layout, `task.toml` fields, verifier
   and oracle contract) that tasks in the external content repository follow.
+- [repo-evaluation-contract.md](repo-evaluation-contract.md) — *(proposed)*
+  what a repository provides to be evaluated as a whole: `repo-eval.yaml`,
+  `task.json`, the `grade` entry point and `grade.json`, harness profiles, and
+  the guidance reach probe. Tasks and graders stay in the scanned repository.
 
 ## Reference
 
