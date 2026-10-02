@@ -140,6 +140,14 @@ CLI surface. The files in this directory go deeper:
 - [evaluating-treatments.md](evaluating-treatments.md) — compare
   context-augmentation arms (docs, MCP, skills, agent persona prompts) with
   `cli.py arms run`.
+- [skill-novelty.md](skill-novelty.md) — what a skill *adds* to a given model
+  rather than what it scores: the added/redundant/degraded/still-missing 2×2 per
+  knowledge atom, span/topic/term attribution with colour legend, and
+  five-axis shortening. Authoring tool, usable standalone.
+- [skill-novelty-evidence.md](skill-novelty-evidence.md) — the 33-skill study
+  the novelty numbers come from: method, K0 per model, the 2×2, need-graph
+  statistics, content categories, shortening with measured behaviour, and the
+  caveats each result carries.
 - [coding-harnesses.md](coding-harnesses.md) — run executable coding tasks
   through Codex, Claude Code, or terminal-bench/Harbor harnesses and compare
   verifier pass rate against a baseline.
