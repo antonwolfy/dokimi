@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 
 from agent_benchmarks.defaults import DEFAULT_CONCURRENCY, DEFAULT_JUDGE_MODEL, DEFAULT_JUDGE_PROVIDER
+from agent_benchmarks.eval.judge import JUDGE_PROVIDERS
+from agent_benchmarks.eval.judge_validity import DEFAULT_MIN_ACCURACY
 from agent_benchmarks.utils import normalize_model_ref
 
 
@@ -240,6 +242,57 @@ def cmd_eval_grounding(args: argparse.Namespace) -> None:
         print(f"\n✅ Grounding report saved to {out}")
 
 
+def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
+    """Measure whether the judge can order pairs whose ordering is known."""
+    from agent_benchmarks.eval.degrade import DEGRADATIONS
+    from agent_benchmarks.eval.judge import Judge
+    from agent_benchmarks.eval.judge_validity import judge_scorer, run_validity
+
+    data = json.loads(Path(args.answers).read_text())
+    answers = data.get("answers", data) if isinstance(data, dict) else data
+    library = args.product or (data.get("library_name") if isinstance(data, dict) else None) or "the library"
+
+    variants = [v.strip() for v in args.variants.split(",")] if args.variants else list(DEGRADATIONS)
+    unknown = sorted(set(variants) - set(DEGRADATIONS))
+    if unknown:
+        print(f"Error: unknown degradation(s): {unknown}; known: {sorted(DEGRADATIONS)}", file=sys.stderr)
+        sys.exit(2)
+
+    judge = Judge(model=args.judge_model, provider=args.judge_provider)
+    label = f"{args.judge_provider}/{args.judge_model}"
+    print(f"Judge validity check: {label}, {args.bases} base answers x {len(variants)} degradations")
+
+    def progress(done: int, total: int) -> None:
+        if done % 10 == 0 or done == total:
+            print(f"  [{done}/{total}]", flush=True)
+
+    report = run_validity(
+        answers,
+        judge_scorer(judge),
+        judge=label,
+        n_bases=args.bases,
+        seed=args.seed,
+        variants=variants,
+        library=library,
+        min_accuracy=args.min_accuracy,
+        progress=progress,
+    )
+
+    # Written before anything is printed: a console that cannot encode the summary must not lose the run.
+    if args.output:
+        out = Path(args.output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report.to_dict(), indent=2))
+
+    print()
+    print(report.format_summary())
+    if args.output:
+        print(f"\n✅ Validity report saved to {out}")
+
+    if not report.summary()["passed"]:
+        sys.exit(1)
+
+
 def register(sub, positive_int) -> None:
     """Add the `eval` subcommand group."""
     # Eval subcommand group
@@ -276,6 +329,25 @@ def register(sub, positive_int) -> None:
     grounding_p.add_argument("--threshold", type=float, default=0.5,
                              help="Grounding score above which an answer counts as grounded (default: 0.5)")
     grounding_p.set_defaults(func=cmd_eval_grounding)
+
+    # eval judge-validity (does the judge order known-worse answers below better ones?)
+    validity_p = eval_sub.add_parser(
+        "judge-validity",
+        help="Measure judge discriminative validity on deterministic degradations (exits 1 on FAIL)",
+    )
+    validity_p.add_argument("--answers", required=True, help="Path to answers JSON file")
+    validity_p.add_argument("--product", default=None, help="Library name (default: read from answers file)")
+    validity_p.add_argument("--bases", type=positive_int, default=20,
+                            help="Number of base answers to degrade (default: 20)")
+    validity_p.add_argument("--variants", default=None,
+                            help="Comma-separated degradations (default: all)")
+    validity_p.add_argument("--seed", type=int, default=0, help="Seed for the degradations (default: 0)")
+    validity_p.add_argument("--min-accuracy", type=float, default=DEFAULT_MIN_ACCURACY, dest="min_accuracy",
+                            help=f"Pairwise accuracy gate, per degradation (default: {DEFAULT_MIN_ACCURACY})")
+    validity_p.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="LLM model for judging")
+    validity_p.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=JUDGE_PROVIDERS)
+    validity_p.add_argument("--output", default=None, help="Output JSON report path")
+    validity_p.set_defaults(func=cmd_eval_judge_validity)
 
     # eval panel-score
     panel_p = eval_sub.add_parser("panel-score", help="Score answers using a multi-judge panel")

@@ -37,7 +37,7 @@ ROLE_WEIGHTS: Dict[str, Dict[str, float]] = {
 
 # ── Calibration anchors (shared) ──────────────────────────────────────────────
 
-_ANCHORS = """
+SCORE_ANCHORS = """
 Score anchors — interpolate between these points:
   100 = perfect: complete, accurate, specific, immediately usable
    90 = excellent: tiny wording issues or one minor omission, no impact on usability
@@ -109,7 +109,7 @@ Put "reasoning" FIRST (it helps you think before scoring):
 JUDGE_ROLES: Dict[str, str] = {
     role: _PROMPT_TEMPLATE
     .replace("__ROLE_INTRO__", intro)
-    .replace("__ANCHORS__", _ANCHORS)
+    .replace("__ANCHORS__", SCORE_ANCHORS)
     for role, intro in _ROLE_INTROS.items()
 }
 

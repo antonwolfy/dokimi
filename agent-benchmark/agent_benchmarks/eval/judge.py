@@ -13,6 +13,16 @@ logger = logging.getLogger(__name__)
 
 from agent_benchmarks.llm import ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 from agent_benchmarks.eval.diagnoser import diagnose
+# One calibration scale for both the single judge and the panel, so their
+# numbers mean the same thing and can be compared.
+from agent_benchmarks.eval.panel import SCORE_ANCHORS
+
+# The output format below uses N placeholders on purpose. Concrete example
+# scores anchor the model: a prompt that shows 85/90/80/85/90 gets those exact
+# values back for most items regardless of the answer, which collapses the
+# usable range of the scale. Describe the levels, never demonstrate them.
+_NO_EXAMPLE_SCORES = """- Replace every N with an integer 0-100, picked from the anchors above
+- Score each dimension independently; do not round them toward each other"""
 
 
 JUDGE_PROMPT = """You are evaluating the quality of an answer to a technical question.
@@ -31,26 +41,27 @@ __CONTEXT__
 3. **Specificity (0-100):** Is it specific to __LIBRARY_NAME__ (not generic)?
 4. **Code Quality (0-100):** If code is included, is it correct and runnable?
 5. **Actionability (0-100):** Can the user apply this immediately?
-
+""" + SCORE_ANCHORS + """
 **Instructions:**
-- Score each dimension 0-100
+""" + _NO_EXAMPLE_SCORES + """
+- Use the full range: an answer with a real defect must land well below 90
 - Aggregate score is the average of all 5 dimensions
 - Provide brief reasoning for each score
 
 **Output format (JSON only, no other text):**
 {
-  "correctness": 85,
-  "completeness": 90,
-  "specificity": 80,
-  "code_quality": 85,
-  "actionability": 90,
-  "aggregate": 86,
+  "correctness": N,
+  "completeness": N,
+  "specificity": N,
+  "code_quality": N,
+  "actionability": N,
+  "aggregate": N,
   "reasoning": {
-    "correctness": "Answer is accurate according to docs",
-    "completeness": "Covers main aspects",
-    "specificity": "Uses __LIBRARY_NAME__-specific APIs",
-    "code_quality": "Code compiles and follows best practices",
-    "actionability": "Clear steps provided"
+    "correctness": "<one sentence>",
+    "completeness": "<one sentence>",
+    "specificity": "<one sentence>",
+    "code_quality": "<one sentence>",
+    "actionability": "<one sentence>"
   }
 }"""
 
@@ -84,21 +95,22 @@ __CONTEXT__
    - 60: Some facts correct, some missing or vague
    - 40: Answer contradicts or ignores key information from excerpt
    - 0: Answer is completely inconsistent with the excerpt
-
+""" + SCORE_ANCHORS + """
 **Instructions:**
-- Score each dimension 0-100
+""" + _NO_EXAMPLE_SCORES + """
+- Use the full range: an answer with a real defect must land well below 90
 - Aggregate = weighted mean: (correctness×2 + completeness + specificity + code_quality + actionability + factual_grounding×2) / 8
 - Python computes the aggregate — do NOT compute it yourself, set aggregate=0
 - Provide brief reasoning per dimension
 
 **Output format (JSON only, no other text):**
 {
-  "correctness": 85,
-  "completeness": 90,
-  "specificity": 80,
-  "code_quality": 85,
-  "actionability": 90,
-  "factual_grounding": 88,
+  "correctness": N,
+  "completeness": N,
+  "specificity": N,
+  "code_quality": N,
+  "actionability": N,
+  "factual_grounding": N,
   "aggregate": 0,
   "reasoning": {
     "correctness": "...",
@@ -111,6 +123,9 @@ __CONTEXT__
 }"""
 
 MAX_GROUND_TRUTH_CHARS = 4000
+
+#: Providers ``Judge.__init__`` accepts; CLI ``--judge-provider`` choices read this.
+JUDGE_PROVIDERS = ("openai", "anthropic", "google", "google-vertex", "openrouter", "amazon-bedrock")
 
 
 def _clip_ground_truth(ground_truth: str, limit: int = MAX_GROUND_TRUTH_CHARS) -> str:

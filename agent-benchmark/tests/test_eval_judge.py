@@ -1,5 +1,6 @@
 """Tests for Judge."""
 
+import re
 import sys
 import types
 import pytest
@@ -14,7 +15,7 @@ for mod_name in ['langchain_openai', 'langchain_anthropic']:
         mock_mod.ChatAnthropic = Mock
         sys.modules[mod_name] = mock_mod
 
-from agent_benchmarks.eval.judge import Judge, JUDGE_PROMPT
+from agent_benchmarks.eval.judge import Judge, JUDGE_PROMPT, JUDGE_PROMPT_GROUNDED
 
 
 @pytest.fixture
@@ -238,3 +239,25 @@ class TestPromptTemplate:
         required = ["__QUESTION__", "__ANSWER__", "__CONTEXT__", "__LIBRARY_NAME__"]
         for placeholder in required:
             assert placeholder in JUDGE_PROMPT
+
+    @pytest.mark.parametrize("prompt", [JUDGE_PROMPT, JUDGE_PROMPT_GROUNDED])
+    def test_output_format_shows_no_example_scores(self, prompt):
+        """Example scores anchor the judge — it returns them verbatim.
+
+        A prompt that demonstrates 85/90/80 gets those exact values back for
+        most answers, which collapses the scale to a handful of values and makes
+        arm deltas meaningless. The output template must use N placeholders.
+        """
+        template = prompt[prompt.index("**Output format"):]
+        offenders = re.findall(r'"(\w+)":\s*(\d+)', template)
+        # aggregate=0 in the grounded prompt is an instruction (Python computes
+        # it), not a score example.
+        assert [(k, v) for k, v in offenders if (k, v) != ("aggregate", "0")] == []
+        assert '"correctness": N' in template
+
+    @pytest.mark.parametrize("prompt", [JUDGE_PROMPT, JUDGE_PROMPT_GROUNDED])
+    def test_carries_the_shared_calibration_scale(self, prompt):
+        """Without anchors the judge has no scale, and everything lands near 100."""
+        from agent_benchmarks.eval.panel import SCORE_ANCHORS
+
+        assert SCORE_ANCHORS in prompt
