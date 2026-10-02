@@ -129,7 +129,9 @@ def get_llm(provider: str, model: str, api_key: str = None):
 
     if provider == "amazon-bedrock":
         bearer = _read_key(os.environ.get("AWS_BEARER_TOKEN_BEDROCK", ""))
-        if not model.startswith("arn:") and not model.startswith("anthropic."):
+        # A Bedrock id always has a dot ("anthropic.", "us.anthropic.", "amazon.").
+        # Only a bare name such as the default judge model gets mapped.
+        if not model.startswith("arn:") and "." not in model:
             model = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", model)
         return _LLM(litellm_model=f"bedrock/{model}", key=bearer)
 

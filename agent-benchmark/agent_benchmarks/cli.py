@@ -25,6 +25,7 @@ from agent_benchmarks.commands import (
     subjects,
     tasks,
 )
+from agent_benchmarks.console import tolerate_console_encoding
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Entry point."""
+    tolerate_console_encoding()
     parser = build_parser()
     args = parser.parse_args()
     args.func(args)

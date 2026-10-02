@@ -13,11 +13,13 @@ import sys
 from pathlib import Path
 
 from agent_benchmarks.runner.spec import SpecValidationError, load_spec
+from agent_benchmarks.console import tolerate_console_encoding
 
 DEFAULT_SPECS = ["benchmarks/spec.v1.yaml"]
 
 
 def main(argv: list[str] | None = None) -> int:
+    tolerate_console_encoding()
     argv = list(sys.argv[1:] if argv is None else argv)
     specs = argv or DEFAULT_SPECS
 

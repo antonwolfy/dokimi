@@ -26,6 +26,7 @@ from pathlib import Path
 from agent_benchmarks.config import detect_registry_drift
 from agent_benchmarks.coverage import coverage_issues
 from agent_benchmarks.intents import IntentRegistry
+from agent_benchmarks.console import tolerate_console_encoding
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -50,6 +51,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    tolerate_console_encoding()
     args = _parse_args(argv or [])
     issues = detect_registry_drift()
     issues += IntentRegistry().validate()
