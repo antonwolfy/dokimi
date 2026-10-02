@@ -139,7 +139,9 @@ class TestEvaluateAnswers:
             judge = Judge()
             evals = judge.evaluate_answers("oneTBB", sample_answers)
             
-            assert evals[0]["delta"] == 27  # 89 - 62
+            # Deltas come from the recomputed aggregates, not the 89/62 the
+            # model asserted: (90*2+90+90+90)/5 = 90.0 and (70*2+65+60+65)/5 = 66.0.
+            assert evals[0]["delta"] == 24.0
     
     def test_error_handling(self, sample_answers):
         mock_llm = Mock()
@@ -164,9 +166,79 @@ class TestJudgeAnswer:
             result = judge._judge_answer("oneTBB", "Q?", "A.", "context")
             
             assert result["correctness"] == 85
-            assert result["aggregate"] == 86
+            # 86 is what the mocked model *said*; the aggregate is recomputed
+            # from the dimensions it scored: (85*2 + 90 + 85 + 90) / 5.
+            assert result["aggregate"] == 87.0
             assert "reasoning" in result
-    
+
+    def test_aggregate_ignores_what_the_model_claimed(self, mock_llm):
+        """A judge that scores every dimension 50 cannot report 100."""
+        mock_llm.invoke.return_value.content = json.dumps({
+            "correctness": 50, "completeness": 50, "specificity": 50,
+            "code_quality": 50, "actionability": 50, "aggregate": 100,
+        })
+        mock_cls = Mock(return_value=mock_llm)
+        with patch('agent_benchmarks.eval.judge.ChatAnthropic', mock_cls, create=True), \
+             patch('agent_benchmarks.eval.judge.LANGCHAIN_AVAILABLE', True):
+            result = Judge()._judge_answer("oneTBB", "Q?", "A.", "context")
+        assert result["aggregate"] == 50.0
+
+    def test_specificity_does_not_move_the_aggregate(self, mock_llm):
+        """It is reported as a diagnostic and carries no weight.
+
+        An answer that names dense, correctly-shaped identifiers which are all
+        wrong for the library is the `wrong_tools` degradation, and weighting
+        specificity rewards it for the vocabulary it kept.
+        """
+        base = {"correctness": 40, "completeness": 60,
+                "code_quality": 70, "actionability": 80}
+        got = []
+        mock_cls = Mock(return_value=mock_llm)
+        with patch('agent_benchmarks.eval.judge.ChatAnthropic', mock_cls, create=True), \
+             patch('agent_benchmarks.eval.judge.LANGCHAIN_AVAILABLE', True):
+            judge = Judge()
+            for spec in (0, 100):
+                mock_llm.invoke.return_value.content = json.dumps(
+                    {**base, "specificity": spec, "aggregate": 0})
+                result = judge._judge_answer("oneTBB", "Q?", "A.", "context")
+                assert result["specificity"] == spec
+                got.append(result["aggregate"])
+        assert got[0] == got[1] == 58.0  # (40*2 + 60 + 70 + 80) / 5
+
+    def test_correctness_carries_double_weight(self, mock_llm):
+        """Correctness is the only dimension that punishes a wrong answer."""
+        mock_cls = Mock(return_value=mock_llm)
+        dims = ("correctness", "completeness", "code_quality", "actionability")
+        moved = {}
+        with patch('agent_benchmarks.eval.judge.ChatAnthropic', mock_cls, create=True), \
+             patch('agent_benchmarks.eval.judge.LANGCHAIN_AVAILABLE', True):
+            judge = Judge()
+            for dim in dims:
+                scores = {d: 100 for d in dims}
+                scores[dim] = 0
+                mock_llm.invoke.return_value.content = json.dumps(
+                    {**scores, "specificity": 100, "aggregate": 0})
+                moved[dim] = judge._judge_answer("oneTBB", "Q?", "A.", "context")["aggregate"]
+        assert moved["correctness"] == 60.0
+        assert moved["completeness"] == moved["code_quality"] == moved["actionability"] == 80.0
+
+    def test_grounded_weights_grounding_like_correctness(self, mock_llm):
+        """With an excerpt to check against, faithfulness to it *is* correctness."""
+        mock_llm.invoke.return_value.content = json.dumps({
+            "correctness": 100, "completeness": 100, "specificity": 0,
+            "code_quality": 100, "actionability": 100,
+            "factual_grounding": 0, "aggregate": 0,
+        })
+        mock_cls = Mock(return_value=mock_llm)
+        with patch('agent_benchmarks.eval.judge.ChatAnthropic', mock_cls, create=True), \
+             patch('agent_benchmarks.eval.judge.LANGCHAIN_AVAILABLE', True):
+            result = Judge()._judge_answer(
+                "oneTBB", "Q?", "A.", "context", ground_truth="excerpt")
+        # (100*2 + 100 + 100 + 100 + 0*2) / 7 — specificity=0 is not in the mean
+        assert result["aggregate"] == 71.4
+        assert result["grounded"] is True
+
+
     def test_invalid_json_raises(self, mock_llm):
         mock_llm.invoke.return_value.content = "Not JSON"
         mock_cls = Mock(return_value=mock_llm)
@@ -177,6 +249,18 @@ class TestJudgeAnswer:
             with pytest.raises(ValueError):
                 judge._judge_answer("oneTBB", "Q?", "A.", "context")
     
+    def test_non_numeric_dimension_is_retried(self, mock_llm, mock_judge_response):
+        bad = Mock(content=mock_judge_response.replace('"code_quality": 85', '"code_quality": "N/A"'))
+        good = Mock(content=mock_judge_response)
+        mock_llm.invoke.side_effect = [bad, good]
+        mock_cls = Mock(return_value=mock_llm)
+
+        with patch('agent_benchmarks.eval.judge.ChatAnthropic', mock_cls, create=True), \
+             patch('agent_benchmarks.eval.judge.LANGCHAIN_AVAILABLE', True):
+            scores = Judge()._judge_answer("oneTBB", "Q?", "A.", "context")
+        assert mock_llm.invoke.call_count == 2
+        assert scores["code_quality"] == 85
+
     def test_missing_keys_raises(self, mock_llm):
         mock_llm.invoke.return_value.content = json.dumps({"correctness": 85})  # Missing other keys
         mock_cls = Mock(return_value=mock_llm)

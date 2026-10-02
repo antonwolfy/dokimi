@@ -123,13 +123,13 @@ The standard judge scores five dimensions from 0 to 100:
 
 - **Correctness**: factual accuracy.
 - **Completeness**: whether the answer covers the full question.
-- **Specificity**: whether the answer is product-specific rather than generic.
+- **Specificity**: whether the identifiers the answer names belong to the product and fit the question. Reported, but not weighted.
 - **Code quality**: whether included code is correct, runnable, and idiomatic.
 - **Actionability**: whether the user can apply the answer immediately.
 
 ### Grounded Judging
 
-When a question carries ground truth, the judge scores a sixth dimension, **factual grounding**, against it. Python computes the grounded aggregate with extra weight on correctness and factual grounding.
+When a question carries ground truth, the judge scores a sixth dimension, **factual grounding**, against it. Python computes the aggregate on both paths: correctness carries double weight, and in grounded runs factual grounding does too.
 
 Two kinds of question supply ground truth:
 

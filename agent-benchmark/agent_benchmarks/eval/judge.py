@@ -41,14 +41,17 @@ __CONTEXT__
 
 1. **Correctness (0-100):** Is the answer factually accurate?
 2. **Completeness (0-100):** Does it fully address the question?
-3. **Specificity (0-100):** Is it specific to __LIBRARY_NAME__ (not generic)?
+3. **Specificity (0-100):** Do the identifiers it names — APIs, functions,
+   flags, tools — actually belong to __LIBRARY_NAME__ and fit this question?
+   Naming __LIBRARY_NAME__ often is not specificity; a plausible-looking
+   identifier that is wrong for __LIBRARY_NAME__ scores low.
 4. **Code Quality (0-100):** If code is included, is it correct and runnable?
 5. **Actionability (0-100):** Can the user apply this immediately?
 """ + SCORE_ANCHORS + """
 **Instructions:**
 """ + _NO_EXAMPLE_SCORES + """
 - Use the full range: an answer with a real defect must land well below 90
-- Aggregate score is the average of all 5 dimensions
+- Python computes the aggregate — do NOT compute it yourself, set aggregate=0
 - Provide brief reasoning for each score
 
 **Output format (JSON only, no other text):**
@@ -58,7 +61,7 @@ __CONTEXT__
   "specificity": N,
   "code_quality": N,
   "actionability": N,
-  "aggregate": N,
+  "aggregate": 0,
   "reasoning": {
     "correctness": "<one sentence>",
     "completeness": "<one sentence>",
@@ -89,7 +92,10 @@ __CONTEXT__
 
 1. **Correctness (0-100):** Is the answer factually accurate compared to the ground-truth excerpt?
 2. **Completeness (0-100):** Does it fully address the question using information from the excerpt?
-3. **Specificity (0-100):** Is it specific to __LIBRARY_NAME__ (not generic)?
+3. **Specificity (0-100):** Do the identifiers it names — APIs, functions,
+   flags, tools — actually belong to __LIBRARY_NAME__ and fit this question?
+   Naming __LIBRARY_NAME__ often is not specificity; a plausible-looking
+   identifier that is wrong for __LIBRARY_NAME__ scores low.
 4. **Code Quality (0-100):** If code is included, is it correct and consistent with the excerpt?
 5. **Actionability (0-100):** Can the user apply this immediately?
 6. **Factual Grounding (0-100):** Does the answer stay faithful to the ground-truth excerpt?
@@ -102,7 +108,6 @@ __CONTEXT__
 **Instructions:**
 """ + _NO_EXAMPLE_SCORES + """
 - Use the full range: an answer with a real defect must land well below 90
-- Aggregate = weighted mean: (correctness×2 + completeness + specificity + code_quality + actionability + factual_grounding×2) / 8
 - Python computes the aggregate — do NOT compute it yourself, set aggregate=0
 - Provide brief reasoning per dimension
 
@@ -348,6 +353,34 @@ class Judge:
     # Dimensions for grounded evaluation (adds factual_grounding)
     _GROUNDED_DIMS = _STANDARD_DIMS | {"factual_grounding"}
 
+    #: Aggregate weights. `specificity` is asked for and reported but carries no
+    #: weight, because it does not measure what the aggregate is for. Over 239
+    #: scored answers the five dimensions behave as one factor wearing five
+    #: labels (inter-dimension r = 0.47-0.93, corr(aggregate, actionability) =
+    #: +0.97), so an equal-weight mean dilutes `correctness` — the only dimension
+    #: that punishes a wrong answer — to a fifth of the score. Specificity is the
+    #: worst offender to average in: it originated as a check for whether doc
+    #: injection made answers mention Intel APIs, so it rewards dense,
+    #: correctly-shaped identifiers even when every one of them is wrong, which
+    #: is exactly the `wrong_tools` degradation. Dropping it and doubling
+    #: correctness is what the judge-validity gate prefers on both judge models
+    #: (see the PR for the measured numbers and their confidence interval).
+    _STANDARD_WEIGHTS = {
+        "correctness": 2.0, "completeness": 1.0, "code_quality": 1.0, "actionability": 1.0,
+    }
+    #: Grounded runs keep `factual_grounding` at the same weight as correctness —
+    #: with an excerpt to check against, faithfulness to it *is* correctness.
+    _GROUNDED_WEIGHTS = {**_STANDARD_WEIGHTS, "factual_grounding": 2.0}
+
+    @staticmethod
+    def _compute_aggregate(scores: Dict[str, Any], weights: Dict[str, float]) -> float:
+        """Weighted mean of the scored dimensions — never trust the LLM to do math."""
+        return round(
+            sum(float(scores.get(dim, 0.0)) * w for dim, w in weights.items())
+            / sum(weights.values()),
+            1,
+        )
+
     def _judge_answer(
         self,
         library_name: str,
@@ -380,6 +413,7 @@ class Judge:
             )
 
         required = self._GROUNDED_DIMS if grounded else self._STANDARD_DIMS
+        weights = self._GROUNDED_WEIGHTS if grounded else self._STANDARD_WEIGHTS
 
         # A malformed or truncated reply is a formatting failure, not a verdict:
         # without a retry the question loses its score for good and the report
@@ -398,6 +432,8 @@ class Judge:
                 missing = required - scores.keys()
                 if missing:
                     raise ValueError(f"Missing keys in judge response: {missing}")
+                # A non-numeric dimension ("N/A") is a formatting failure too.
+                aggregate = self._compute_aggregate(scores, weights)
                 break
             except Exception as exc:
                 last_exc = exc
@@ -407,19 +443,17 @@ class Judge:
         else:
             raise last_exc
 
-        # Python computes aggregate for grounded eval
-        # (LLM sets aggregate=0 per instructions)
+        # Python computes the aggregate on BOTH paths (the LLM sets aggregate=0
+        # per instructions). Previously only the grounded path recomputed it and
+        # the standard path shipped whatever number the model wrote, so the
+        # headline metric was the judge's own arithmetic. It happened to match
+        # the mean of its own dimensions on 239 scored answers (1 mismatch), so
+        # this is a latent failure rather than a live one — but nothing enforced
+        # it, and `panel.py` already holds the line the other way.
+        scores["aggregate"] = aggregate
         if grounded:
-            c = float(scores.get("correctness", 0))
-            comp = float(scores.get("completeness", 0))
-            sp = float(scores.get("specificity", 0))
-            cq = float(scores.get("code_quality", 0))
-            ac = float(scores.get("actionability", 0))
-            fg = float(scores.get("factual_grounding", 0))
-            # Weighted: correctness×2, factual_grounding×2, others×1 → /8
-            scores["aggregate"] = round((c * 2 + comp + sp + cq + ac + fg * 2) / 8, 1)
             scores["grounded"] = True
-        
+
         return scores
     
     def score_answer(
