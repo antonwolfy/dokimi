@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for agent_benchmarks.caching — prompt breakpoints and response reuse."""
 
 from __future__ import annotations

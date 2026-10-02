@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for scripts/check_treatment_batch.py — the acceptance gate for an arms.v1 batch.
 
 The gate exists because the batch it replaced was accepted by eye and turned out to be

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Export benchmark artifacts to shareable, versioned dataset files.
 
 Converts the JSON artifacts (questions/answers/eval/arms/task_runs) into tabular

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Discriminative validity of the judge: can it order pairs we already know?
 
 The judge produces 0-100 scores that decide whether a skill ships. Nothing in

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for the executable task-run Markdown report renderer."""
 
 from agent_benchmarks.report.task_runs_report import _md_cell, render_task_runs_report

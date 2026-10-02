@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Reproducibility manifest for a benchmark run.
 
 Captures enough provenance to replay a run: the git commit, Python/platform,

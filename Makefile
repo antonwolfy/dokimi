@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 # Top-level Makefile for the agent measurement framework.
 #
 # The whole runnable project lives in agent-benchmark/; every target here

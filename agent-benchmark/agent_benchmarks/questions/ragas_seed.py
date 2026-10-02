@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Extract seed topics from library docs using RAGAS knowledge graph approach."""
 
 import logging

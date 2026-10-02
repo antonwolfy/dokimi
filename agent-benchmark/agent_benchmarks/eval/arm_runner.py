@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Run an N-arm treatment comparison: generate (and optionally judge) answers.
 
 Generalizes the binary ``with_docs``/``without_docs`` answerer to an arbitrary

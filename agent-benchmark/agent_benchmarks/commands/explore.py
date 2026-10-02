@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """explore subcommand group: run the ExploreBench localization track."""
 
 from __future__ import annotations

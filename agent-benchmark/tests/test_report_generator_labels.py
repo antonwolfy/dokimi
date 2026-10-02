@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Regression coverage for user-facing report terminology."""
 
 from agent_benchmarks.report.generator import ReportGenerator

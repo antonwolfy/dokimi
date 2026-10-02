@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for products config loading and cross-registry drift detection."""
 
 from __future__ import annotations

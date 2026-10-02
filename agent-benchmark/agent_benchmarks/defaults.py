@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Central defaults for benchmark runs.
 
 Keep user-facing CLI defaults in one place so docs, commands, and tests do not

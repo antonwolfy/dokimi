@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Runtime plugins for treatment-arm runs.
 
 Plugins are behavior modifiers applied inside a fixed model/harness cell.  Two

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """ExploreBench task discovery.
 
 An exploration task poses a localization question over a repository/doc tree and

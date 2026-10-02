@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Example extraction and validation with explicit execution policy.
 
 Documentation can contain fenced code blocks. Executing them measures whether

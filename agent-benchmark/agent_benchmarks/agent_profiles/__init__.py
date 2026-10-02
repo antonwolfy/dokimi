@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Agent persona prompts: load system prompts that shape the answering agent.
 
 These are deliberately *not* called "personas" — in this codebase ``persona``

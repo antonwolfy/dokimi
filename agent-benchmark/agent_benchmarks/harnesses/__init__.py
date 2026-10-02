@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Coding harness adapters for executable task evaluation."""
 
 from .docker_solver import DockerSolverHarness

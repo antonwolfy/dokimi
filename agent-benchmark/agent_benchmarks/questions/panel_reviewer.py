@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Multi-agent panel review of generated questions.
 
 Three reviewers with distinct perspectives evaluate each question:

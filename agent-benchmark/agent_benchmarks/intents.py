@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Intent registry — load and query the problem/intent space from intents.yaml.
 
 ``products.yaml`` answers "what products exist"; ``intents.yaml`` answers

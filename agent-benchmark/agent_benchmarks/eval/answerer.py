@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Generate context-arm and baseline answers to questions using an LLM."""
 
 import logging

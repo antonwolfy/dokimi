@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Known coding harness aliases and command-template resolution."""
 
 from __future__ import annotations

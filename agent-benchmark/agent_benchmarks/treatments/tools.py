@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tools offered to the model during agentic treatment arms.
 
 These let the model *decide* to use a capability rather than receiving

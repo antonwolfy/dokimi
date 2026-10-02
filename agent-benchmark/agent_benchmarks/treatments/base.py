@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Core treatment-arm abstraction."""
 
 from abc import ABC, abstractmethod

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Deterministic answer degradations — ground truth for judging the judge.
 
 A judge that reports 0-100 quality scores is only useful if its ordering is

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Agentic tool-calling loop for treatment arms that offer tools.
 
 Given an :class:`~agent_benchmarks.treatments.base.AgentConfig` whose ``tools``

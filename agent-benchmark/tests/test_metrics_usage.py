@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for the run-telemetry layer (UsageRecord + llm.py extraction).
 
 Covers the required guarantees: defensive token/cache/reasoning

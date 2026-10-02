@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Chunk-based question generator: fetches doc text and generates grounded questions.
 
 This produces 40% of the total question budget. Questions are anchored to actual

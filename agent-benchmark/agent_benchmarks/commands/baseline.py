@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """baseline subcommand group: save, list, compare."""
 
 from __future__ import annotations

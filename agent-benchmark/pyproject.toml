@@ -29,9 +29,9 @@ dependencies = [
   "scipy>=1.11.0",
   "beautifulsoup4>=4.12.0",
   "PyGithub>=2.1.0",
-  "ragas~=0.2.0",
-  "datasets~=2.20",
-  "openai~=1.51",
+  "ragas>=0.2.0,<0.4",
+  "datasets>=2.20,<6",
+  "openai>=1.51,<3",
   "anthropic~=0.34",
   "tomli>=2.0.0; python_version < '3.11'",
 ]

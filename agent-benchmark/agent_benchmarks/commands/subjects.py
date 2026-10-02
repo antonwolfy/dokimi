@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """subjects subcommand group: Phase D scorecards."""
 
 from __future__ import annotations

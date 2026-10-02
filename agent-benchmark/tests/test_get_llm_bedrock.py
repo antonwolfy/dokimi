@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """get_llm maps only bare model names to ANTHROPIC_DEFAULT_SONNET_MODEL on Bedrock."""
 
 from __future__ import annotations

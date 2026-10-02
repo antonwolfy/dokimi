@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """RAGAS meta-evaluation layer for agent-benchmark.
 
 Computes reference-free metrics on top of existing answer pairs:

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for output-shaper plugins.
 
 Output shapers post-process the model answer, so ``raw_answer_chars`` and

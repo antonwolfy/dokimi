@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """ExploreBench: the standalone exploration-quality track.
 
 Scores whether an agent can *locate* the right files and line ranges for a task

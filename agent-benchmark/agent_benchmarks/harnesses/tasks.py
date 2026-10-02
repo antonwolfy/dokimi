@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Terminal-bench task discovery and metadata loading."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """library subcommand group: list, show, intents.
 
 `library` is the historical group name; `product` is accepted as an alias.

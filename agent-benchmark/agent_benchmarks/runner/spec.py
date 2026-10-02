@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Benchmark spec loading, JSON Schema validation, and golden-manifest selection.
 
 The runtime contract for a benchmark spec is declared in

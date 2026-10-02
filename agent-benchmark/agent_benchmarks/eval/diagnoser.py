@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Failure diagnosis for documentation benchmark evaluations.
 
 For each evaluated question, determines *why* the context-arm answer

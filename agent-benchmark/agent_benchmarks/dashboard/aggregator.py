@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Aggregate evaluation results from results/ directory into dashboard data."""
 
 from __future__ import annotations

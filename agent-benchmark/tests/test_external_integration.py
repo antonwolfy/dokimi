@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """End-to-end wiring: catalog-discovered external skills/tasks feed real CLI
 commands (`tasks run`, `docker-claude-skill:<path>`) with no Docker required.
 

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Versioned, schema-validated I/O for produced artifacts.
 
 The benchmark produces long-lived JSON artifact kinds: ``questions``,

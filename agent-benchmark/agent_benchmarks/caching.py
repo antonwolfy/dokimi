@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Prompt and response caching for the LLM chokepoints.
 
 Two unrelated mechanisms live here because both are cache-shaped and both hang

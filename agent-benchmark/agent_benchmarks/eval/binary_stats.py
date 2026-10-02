@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Paired statistics for **binary** outcomes (the execution-verified track).
 
 The judged Q&A track produces 0–100 scores, so

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Products config loading + cross-registry drift detection.
 
 The repo has two config files: ``products.yaml`` (the canonical

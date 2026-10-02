@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Hard gate checking — fails CI on violation."""
 
 from __future__ import annotations

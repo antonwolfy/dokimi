@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Roll up explicit matrix-cell arms artifacts."""
 
 from __future__ import annotations

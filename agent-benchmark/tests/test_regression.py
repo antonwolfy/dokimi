@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for regression detection."""
 
 from agent_benchmarks.gate.regression import detect_regressions

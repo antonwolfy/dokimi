@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Reference-free grounding / citation metrics for answer pairs.
 
 These are cheap, deterministic, LLM-free signals that complement the RAGAS

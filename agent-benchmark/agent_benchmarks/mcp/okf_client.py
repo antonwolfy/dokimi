@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """OKF (Open Knowledge Format) documentation source client.
 
 OKF is Google Cloud's vendor-neutral open specification (v0.1, 2026) for

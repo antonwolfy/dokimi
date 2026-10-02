@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Render matrix-rollup artifacts as Markdown."""
 
 from __future__ import annotations

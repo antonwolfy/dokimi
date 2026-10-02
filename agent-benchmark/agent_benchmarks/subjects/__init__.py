@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Evaluation subject descriptors and scorecards."""
 
 from .loader import load_subject

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Per-arm rollups over answer records: agentic tool use, cost, and latency.
 
 Split out of :mod:`agent_benchmarks.eval.arm_runner` to keep that module under

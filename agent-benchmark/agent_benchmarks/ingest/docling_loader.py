@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Optional Docling-based ingestion for non-Markdown documents.
 
 Docling parses PDF, Office (docx/pptx/xlsx), HTML, and scanned/image documents

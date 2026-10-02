@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Compare paired plugin/no-plugin treatment-arm artifacts.
 
 Plugin effects must be computed only between paired

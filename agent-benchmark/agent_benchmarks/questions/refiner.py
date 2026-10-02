@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Question set refinement pipeline.
 
 Applies post-generation quality improvements to an existing question set:

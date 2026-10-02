@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Load agent skills from ``SKILL.md`` packages.
 
 A skill follows the Claude Code / Agent Skills convention: a ``SKILL.md`` file

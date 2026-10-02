@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Render an N-arm treatment comparison as Markdown."""
 
 from typing import Any, Dict, List

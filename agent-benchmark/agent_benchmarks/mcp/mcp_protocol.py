@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Documentation retrieval through a real MCP server (tool-call protocol).
 
 Unlike :mod:`agent_benchmarks.mcp.context7` (which talks plain HTTP), this client

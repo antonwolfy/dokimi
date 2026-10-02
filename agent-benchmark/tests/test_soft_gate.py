@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for soft gate logic."""
 
 from agent_benchmarks.gate.soft_gate import check_soft_gate

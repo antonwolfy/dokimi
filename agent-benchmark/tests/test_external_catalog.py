@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for scanning external skill/task catalogs (uxlfoundation/skills shape)."""
 
 from __future__ import annotations

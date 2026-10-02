@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 # Base snapshot for `benchmark-compare`. The repository ships no committed
 # baseline: take your own with `make benchmark-run` (writes the git-ignored
 # baselines/current.json), copy it once as the base you want to track against,

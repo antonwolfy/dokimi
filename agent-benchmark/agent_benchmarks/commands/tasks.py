@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """tasks subcommand group: run executable coding tasks through harnesses."""
 
 from __future__ import annotations

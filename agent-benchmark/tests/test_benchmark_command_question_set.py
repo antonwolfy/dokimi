@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Command-level tests for fixed question-set benchmark runs."""
 
 from __future__ import annotations

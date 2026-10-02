@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """ExploreBench suite runner.
 
 Runs each exploration task through one or more *arms* (explorers), parses the

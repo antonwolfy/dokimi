@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Standalone Docker harness — solve a terminal-bench task and verify it.
 
 It runs an executable task end to end against local Docker with **no Harbor

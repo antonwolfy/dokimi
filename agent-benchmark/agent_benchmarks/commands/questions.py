@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """questions subcommand group: generate, analyze, refine, panel-review."""
 
 from __future__ import annotations

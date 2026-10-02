@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for eval/panel.py — multi-judge panel with role-diverse judges."""
 
 from __future__ import annotations

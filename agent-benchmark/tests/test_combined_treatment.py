@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for combined treatment feature."""
 
 from agent_benchmarks.treatments.factory import create_treatment, _parse_combined_spec

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for the standalone Docker solver harness and its telemetry rollup.
 
 Docker itself is never invoked here: the pipeline steps are monkeypatched so the

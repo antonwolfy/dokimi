@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Read external skill/task catalogs (e.g. uxlfoundation/skills) for reuse.
 
 An "external catalog" is any local checkout of a repo that ships skills

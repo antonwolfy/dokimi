@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Soft gate checking — report-only, no CI failure."""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Coverage scoring heuristic for markdown docs."""
 
 from __future__ import annotations

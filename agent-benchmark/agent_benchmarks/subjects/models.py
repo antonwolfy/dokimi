@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Data models for Phase D evaluation subjects."""
 
 from __future__ import annotations

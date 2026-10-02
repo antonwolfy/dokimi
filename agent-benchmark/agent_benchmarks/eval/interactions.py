@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Factorial (2x2) interaction contrasts between arms.
 
 Split out of :mod:`agent_benchmarks.eval.stats` to keep that module under the

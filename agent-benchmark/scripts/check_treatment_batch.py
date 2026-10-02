@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Acceptance gate + paired deltas for an arms.v1 batch directory.
 
 A "batch" is one treatment measured over models x question sets: 2 arms per file,

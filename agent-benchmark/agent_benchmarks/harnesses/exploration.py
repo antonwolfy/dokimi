@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Derive exploration-quality metrics from a harness operation stream.
 
 Companion to ``agent_benchmarks/metrics/exploration.py`` (citation scoring),

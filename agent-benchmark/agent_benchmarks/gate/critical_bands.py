@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Critical bands enforcement — fails CI on condition violations."""
 
 from __future__ import annotations

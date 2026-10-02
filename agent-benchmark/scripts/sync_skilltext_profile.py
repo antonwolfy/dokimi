@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Mirror a skill's body into an agent profile, so a channel comparison holds content constant.
 
 A channel-control profile exists to change the *channel* while keeping the *content* fixed:

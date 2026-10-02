@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Load agent persona prompts (answering-agent system prompts).
 
 An agent profile is a Markdown file with optional YAML frontmatter::

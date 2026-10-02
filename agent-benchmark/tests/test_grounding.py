@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for grounding/citation metrics and bootstrap CIs."""
 
 from __future__ import annotations

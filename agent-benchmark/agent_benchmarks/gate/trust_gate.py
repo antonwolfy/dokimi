@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Trust gate — answers the question "Can we trust this run?"
 
 Checks a set of quality signals from eval output and emits

@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for the judge-validity gate and the degradations it relies on.
 
 These run offline. What is covered here is the harness — that degradations

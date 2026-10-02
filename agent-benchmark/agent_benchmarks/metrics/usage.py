@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Normalized per-run telemetry record.
 
 One shape for tokens, cache, cost, and latency returned by every LLM call. The ``llm.py``

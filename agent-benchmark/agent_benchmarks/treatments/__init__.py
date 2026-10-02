@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Treatment arms: pluggable context-augmentation strategies under test.
 
 A *treatment* is anything that modifies the answering agent's setup before it

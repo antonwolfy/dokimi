@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Agent persona prompts: arm naming, provenance, and the committed profile fixtures."""
 
 import logging

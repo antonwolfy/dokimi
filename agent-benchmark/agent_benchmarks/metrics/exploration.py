@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Exploration-quality metrics: citation parsing and localization scoring.
 
 Scores whether an agent (or an exploration subagent) located the *right* files

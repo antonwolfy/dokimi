@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for the arms-comparison Markdown report."""
 
 from agent_benchmarks.report.arms_report import render_arms_report, _md_cell

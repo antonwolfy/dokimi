@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Explorers: produce a ``<final_answer>`` citation block for a task.
 
 An *explorer* takes an exploration query over a repo/doc tree and returns a

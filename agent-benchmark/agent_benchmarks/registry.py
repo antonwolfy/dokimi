@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Product registry — load and query known products from products.yaml."""
 
 from __future__ import annotations

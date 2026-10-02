@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """catalog subcommand group: scan external skill/task catalogs before use.
 
 Points at a local checkout the caller already produced (e.g.

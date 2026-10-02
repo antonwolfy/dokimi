@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """ingest subcommand group: materialize Markdown from other document formats."""
 
 from __future__ import annotations

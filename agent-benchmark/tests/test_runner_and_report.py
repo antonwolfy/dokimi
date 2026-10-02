@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Tests for runner/compare.py, report/markdown_report.py, report/json_report.py."""
 
 from __future__ import annotations

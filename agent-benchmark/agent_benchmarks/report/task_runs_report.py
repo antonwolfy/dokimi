@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Render an executable-task run (``task_runs.v1``) as Markdown.
 
 Mirrors :mod:`agent_benchmarks.report.arms_report` for the Q&A track: takes the

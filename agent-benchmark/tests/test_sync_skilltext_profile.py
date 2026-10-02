@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """The channel-control sync script: `scripts/sync_skilltext_profile.py`.
 
 `--check` is what fails when a skill and the profile mirroring it drift apart, and it names

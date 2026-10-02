@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 """Extra tests for questions/llm_gen.py — uncovered branches (generate_hybrid, save_questions)."""
 
 from __future__ import annotations
