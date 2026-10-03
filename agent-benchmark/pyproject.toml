@@ -92,6 +92,10 @@ files = [
   "agent_benchmarks/artifacts.py",
   "agent_benchmarks/schema_check.py",
   "agent_benchmarks/metrics/example_runner.py",
+  "agent_benchmarks/repos/manifest.py",
+  "agent_benchmarks/repos/source.py",
+  "agent_benchmarks/repos/bases.py",
+  "agent_benchmarks/repos/static.py",
 ]
 
 [tool.pytest.ini_options]

@@ -44,6 +44,18 @@ def cmd_subjects_show(args: argparse.Namespace) -> None:
         print(f"Error loading subject: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    if descriptor.subject.kind == "repo":
+        print(json.dumps({
+            "id": descriptor.id,
+            "subject": {
+                "kind": "repo",
+                "ref": descriptor.subject.ref,
+                "manifest": descriptor.subject.manifest,
+            },
+            "baseline": descriptor.baseline,
+        }, indent=2))
+        return
+
     print(json.dumps({
         "id": descriptor.id,
         "subject": {
@@ -80,6 +92,10 @@ def cmd_subjects_run(args: argparse.Namespace) -> None:
         descriptor = load_subject(args.subject)
     except (ValueError, FileNotFoundError) as exc:
         print(f"Error loading subject: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if descriptor.subject.kind == "repo":
+        print("Error: repo subjects are not run by `subjects run` yet; "
+              "check them with `repo validate`", file=sys.stderr)
         sys.exit(1)
     # Attached, not produced: a novelty run costs atoms x probes x arms x (answer + grade), so it is
     # produced by `novelty analyze` and named here by path. A bad path fails now, before any cell

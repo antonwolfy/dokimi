@@ -24,6 +24,7 @@ from agent_benchmarks.commands import (
     orchestrate,
     personas,
     questions,
+    repo,
     report,
     run,
     subjects,
@@ -69,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     dataset.register(sub, positive_int)         # dataset
     ingest.register(sub, positive_int)          # ingest
     novelty.register(sub, positive_int)         # novelty (content novelty, Phase E)
+    repo.register(sub, positive_int)            # repo (repositories as subjects)
 
     return p
 

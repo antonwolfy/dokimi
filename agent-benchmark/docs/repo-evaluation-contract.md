@@ -2,10 +2,22 @@
 
 > **Status: PROPOSED.** This is the interface proposed for evaluating a whole
 > code repository as a subject; the rationale behind it is recorded in the pull
-> request that introduces this document.
-> None of it is implemented yet, and no command below exists yet. It is
-> published so repository owners can align their evaluation content before the
-> framework side lands.
+> requests that build it out.
+> Implemented so far (slice S1): the `repo_manifest.v1` schema, validation of
+> the manifest and of every `task.json` against one repository snapshot
+> (with git history, every task base must resolve and the guidance globs are
+> evaluated at each base), the `repo_static.v1` schema (§4.4), and the `repo`
+> subject kind:
+>
+> ```bash
+> python cli.py repo validate <dir | dir@rev | url@rev> --manifest <path> [--json]
+> python cli.py repo fetch <url@rev>     # bare, blob-less clone cached per URL
+> ```
+>
+> Everything else below (workspace preparation, entry points, `grade.json`,
+> harness profiles, reach probe) is not implemented yet. It is published so
+> repository owners can align their evaluation content before the framework
+> side lands.
 
 A repository that wants to be evaluated keeps its evaluation content in its own
 tree: a manifest, tasks, graders and a build image. agent-benchmark reads that
@@ -102,6 +114,8 @@ build_systems: [bazel, make]              # selects L0 claim-check adapters
 Rules:
 
 - Every path is relative to the repository root.
+- `eval_dir` is a proper subdirectory, and `tasks` and `explore_tasks` sit inside it: it is the
+  one directory deleted from every workspace (§3).
 - `{eval_dir}`, `{source_dir}`, `{run_dir}`, `{out}` and `{task}` are the only
   placeholders. `{eval_dir}` is the read-only copy from the eval tree (§1.1),
   not a path inside the workspace.
@@ -185,7 +199,10 @@ harness profile; a repository supplies no arm content:
   bridge arm would mean different things on different versions.
 
 `meta.json` records the base (`base_rev`, `base_sha`, `base_date`), the arm,
-and the SHA of every applied patch (§4).
+the SHA of every applied patch, and `start_sha`: the workspace `HEAD` after
+step 7, the commit the agent starts from (§4). `base_sha` names the upstream
+commit and is not in the workspace, because step 3 starts a new history; a
+grader diffs the agent's changes from `start_sha`.
 
 Step 3 removes history only. A fix that landed upstream before a model's
 training cutoff may still be known to the model, so reports split results by
@@ -201,12 +218,12 @@ base commit date against the model's cutoff where the cutoff is known.
 | `task.json` | copy of the task |
 | `answer.txt` | the agent's final message |
 | `events.jsonl` | normalized trace, one JSON object per line, harness-independent (§4.1) |
-| `meta.json` | `arm`, `harness`, `harness_version`, `model`, `rep`; `base_rev` (as written in `task.json`), `base_sha` (resolved, 40 characters), `base_date` (committer date, ISO 8601); `patches` (SHA of each applied patch) |
+| `meta.json` | `arm`, `harness`, `harness_version`, `model`, `rep`; `base_rev` (as written in `task.json`), `base_sha` (resolved, 40 characters), `base_date` (committer date, ISO 8601); `patches` (SHA of each applied patch); `start_sha` (workspace `HEAD` the agent started from, §3) |
 
 Graders must not parse a harness-specific trace. A grader that needs "did the
 agent run `bazel`?" reads the `command` events in `events.jsonl`. A grader
-should read the base from `meta.json` and not derive it from the workspace,
-whose history is gone (§3 step 3).
+reads the upstream base (`base_sha`) and the workspace start commit
+(`start_sha`) from `meta.json` and does not derive either from the workspace.
 
 ### 4.1 `events.jsonl`
 
@@ -304,7 +321,7 @@ the same content runnable by the framework.
 | `prep()` in `common.py` | unchanged for standalone use; under the framework the same steps run framework-side (§3) |
 | arms `none` / `main-raw` | become `guidance:none` / `guidance:raw`. `guidance:bridge` is framework-only (§3); oneDAL keeps no bridge arm |
 | graders read history from `ONEDAL_EVAL_SRC` | read `{source_dir}` under the framework; the variable stays for standalone runs |
-| `contract.py` derives the base when `meta.json` has none | read `meta.json` `base_sha` / `base_rev` (§4); derive only standalone |
+| `contract.py` derives the base when `meta.json` has none | diff from `meta.json` `start_sha`, and read `base_sha` / `base_rev` for the upstream commit (§4); derive only standalone |
 | `build_make_gnu` pip-installs MKL and TBB | install them in the image, or give the task `egress: [pypi.org, files.pythonhosted.org]` |
 | Bazel install base in the container's `HOME` | put it on a declared cache (`bin/bazel --output_user_root`) |
 | `static_check.py --out` writes `files` / `counts` / `claims` | add `"schema": "repo_static.v1"`; the claim fields already fit §4.4 |

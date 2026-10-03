@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .models import SUBJECT_KINDS, SubjectArtifact, SubjectDescriptor, SubjectMember, SubjectSuite
+from .models import NON_ARM_KINDS, SUBJECT_KINDS, SubjectArtifact, SubjectDescriptor, SubjectMember, SubjectSuite
 
 try:  # pragma: no cover - exercised via whichever parser the interpreter has
     import tomllib
@@ -22,7 +22,8 @@ def load_subject(path: str | Path) -> SubjectDescriptor:
     path = Path(path)
     raw = _load_mapping(path)
     subject_raw = _mapping(raw.get("subject"), "subject")
-    suite_raw = _mapping(raw.get("suite"), "suite")
+    repo_kind = str(subject_raw.get("kind") or "").strip() == "repo"
+    suite_raw = _mapping(raw.get("suite", {} if repo_kind else None), "suite")
     matrix_declared = "matrix" in raw
     matrix_raw = raw.get("matrix", {})
     if matrix_declared and not matrix_raw:
@@ -31,7 +32,7 @@ def load_subject(path: str | Path) -> SubjectDescriptor:
     if "baseline" in subject_raw:
         raise ValueError("baseline must be top-level, not under [subject]")
     subject = _parse_subject(subject_raw)
-    suite = _parse_suite(suite_raw)
+    suite = _parse_suite(suite_raw, repo=subject.kind == "repo")
     if "baseline" in suite_raw:
         raise ValueError("baseline must be top-level, not under [suite]")
     baseline = str(raw["baseline"] if "baseline" in raw else "baseline").strip()
@@ -117,26 +118,36 @@ def _parse_subject(raw: dict[str, Any]) -> SubjectArtifact:
             item_raw = _mapping(item, f"subject.members[{idx}]")
             member_kind = str(item_raw.get("kind") or "").strip()
             member_ref = str(item_raw.get("ref") or "").strip()
-            if member_kind not in SUBJECT_KINDS - {"bundle"}:
+            if member_kind not in SUBJECT_KINDS - NON_ARM_KINDS:
                 raise ValueError(f"subject.members[{idx}].kind is invalid: {member_kind!r}")
             if not member_ref:
                 raise ValueError(f"subject.members[{idx}].ref is required")
             members.append(SubjectMember(kind=member_kind, ref=member_ref))
 
     ref_s = None if ref is None else str(ref).strip()
+    manifest = raw.get("manifest")
+    if manifest is not None and kind != "repo":
+        raise ValueError("subject.manifest is only valid for kind='repo'")
+    manifest_s = None if manifest is None else str(manifest).strip() or None
     if kind != "bundle" and not ref_s:
         raise ValueError(f"subject.ref is required for kind={kind!r}")
     if kind == "bundle" and not members:
         raise ValueError("bundle subjects require subject.members")
     if kind == "bundle" and all(member.kind == "mcp" for member in members):
         raise ValueError("all-MCP bundles are not supported until MCP arm names can be made unique")
-    return SubjectArtifact(id=subject_id, kind=kind, ref=ref_s, members=tuple(members))
+    return SubjectArtifact(
+        id=subject_id, kind=kind, ref=ref_s, members=tuple(members), manifest=manifest_s
+    )
 
 
-def _parse_suite(raw: dict[str, Any]) -> SubjectSuite:
-    products = _string_list(raw.get("products"), "suite.products")
-    questions = _string_list(raw.get("questions"), "suite.questions")
+def _parse_suite(raw: dict[str, Any], *, repo: bool = False) -> SubjectSuite:
+    # A repository brings its own tasks through its manifest, so a repo subject
+    # needs no product or question set.
+    products = _string_list(raw.get("products", [] if repo else None), "suite.products")
+    questions = _string_list(raw.get("questions", [] if repo else None), "suite.questions")
     tasks = _string_list(raw.get("tasks", []), "suite.tasks")
+    if repo:
+        return SubjectSuite(products=tuple(products), questions=tuple(questions), tasks=tuple(tasks))
     if not products:
         raise ValueError("suite.products must contain at least one product")
     if not questions:
@@ -193,6 +204,11 @@ def _member_specs(kind: str, ref: str, *, agentic: bool) -> list[str]:
         return [f"agent:mcp:{normalized}" if agentic else f"mcp:{normalized}"]
     if kind == "doc-source":
         return [f"agent:{ref}" if agentic else f"docs:{ref}"]
+    if kind == "repo":
+        raise ValueError(
+            "repo subjects have no prompt arm; validate them with `repo validate` "
+            "(repository-mode runs are not implemented yet)"
+        )
     raise ValueError(f"unsupported subject kind {kind!r}")
 
 

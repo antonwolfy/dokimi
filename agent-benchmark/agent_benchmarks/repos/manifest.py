@@ -1,0 +1,444 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Load and validate a repository's ``repo-eval.yaml`` (``repo_manifest.v1``).
+
+The manifest and the tasks it points at belong to the scanned repository
+(docs/repo-evaluation-contract.md). This module checks them in two passes:
+
+- :func:`load_manifest` — the manifest on its own: JSON Schema shape, then the
+  rules a schema cannot express (root-relative paths, allowed placeholders).
+  Any failure raises :class:`ManifestError`.
+- :func:`check_repo` — the manifest against one snapshot of the repository:
+  declared paths exist, guidance globs match something, and every task
+  directory carries a ``task.json`` whose core keys follow the contract (§3).
+  Problems are collected into a :class:`RepoCheckReport`, not raised.
+
+Keys in ``task.json`` beyond the core and workspace keys belong to the
+repository's grader and are not read.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from pathlib import Path, PurePosixPath
+from typing import Any, Callable
+
+import yaml
+
+from .source import RepoTree
+
+SCHEMA_VERSION = "repo_manifest.v1"
+DEFAULT_MANIFEST_PATH = ".agent-eval/repo-eval.yaml"
+PLACEHOLDERS = frozenset({"eval_dir", "source_dir", "run_dir", "out", "task"})
+# {source_dir} is a full-history clone, so it holds every fix: only the grading
+# container gets it (contract §2).
+_SOURCE_DIR_ENTRY_POINTS = frozenset({"entry_points/grade", "entry_points/oracle"})
+# Same host form as harness_profile.v1 `egress`: host or *.domain, optional :port.
+_HOST_RE = re.compile(r"^[A-Za-z0-9*.-]+(:[0-9]+)?$")
+# A commit SHA, optionally its parent. Branches, tags and HEAD move between
+# repetitions, so they are refused (contract §3).
+_BASE_RE = re.compile(r"^([0-9a-f]{7,40})(\^?)$")
+TASK_REQUIRED = ("id", "family", "base", "prompt", "grader")
+_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
+_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / f"{SCHEMA_VERSION}.json"
+
+
+class ManifestError(ValueError):
+    """The manifest is malformed; ``errors`` lists every problem found."""
+
+    def __init__(self, path: str, errors: list[str]):
+        self.path = path
+        self.errors = errors
+        super().__init__(f"{path}: invalid {SCHEMA_VERSION}:\n" + "\n".join(f"  - {e}" for e in errors))
+
+
+@dataclass(frozen=True)
+class CacheSpec:
+    name: str
+    path: str
+
+
+@dataclass(frozen=True)
+class ImageSpec:
+    dockerfile: str
+    caches: tuple[CacheSpec, ...] = ()
+    env: dict[str, str] = field(default_factory=dict)
+    network: str = "none"
+
+
+@dataclass(frozen=True)
+class RepoManifest:
+    """A validated ``repo-eval.yaml``. Every path is relative to the repository root."""
+
+    path: str
+    id: str
+    eval_dir: str
+    guidance_globs: tuple[str, ...]
+    entry_points: dict[str, str]
+    tasks: str
+    also_scan: tuple[str, ...] = ()
+    source_url: str | None = None
+    image: ImageSpec | None = None
+    explore_tasks: str | None = None
+    build_systems: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": SCHEMA_VERSION,
+            "id": self.id,
+            "manifest": self.path,
+            "source_url": self.source_url,
+            "eval_dir": self.eval_dir,
+            "guidance": {"globs": list(self.guidance_globs), "also_scan": list(self.also_scan)},
+            "image": None if self.image is None else {
+                "dockerfile": self.image.dockerfile,
+                "caches": [c.__dict__ for c in self.image.caches],
+                "env": dict(self.image.env),
+                "network": self.image.network,
+            },
+            "entry_points": dict(self.entry_points),
+            "tasks": self.tasks,
+            "explore_tasks": self.explore_tasks,
+            "build_systems": list(self.build_systems),
+        }
+
+
+@dataclass
+class TaskSummary:
+    id: str
+    family: str
+    base: str
+    grader: str
+    gate: tuple[str, ...]
+    score: dict[str, Any] | None = None
+    egress: tuple[str, ...] = ()
+
+
+@dataclass
+class RepoCheckReport:
+    """Outcome of :func:`check_repo`. ``ok`` means no errors; warnings do not fail."""
+
+    tree: str
+    manifest: RepoManifest
+    tasks: list[TaskSummary] = field(default_factory=list)
+    guidance_files: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    # guidance file count per task base, filled when the bases were readable
+    guidance_by_base: dict[str, int] | None = None
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+    def to_dict(self) -> dict[str, Any]:
+        families: dict[str, int] = {}
+        for task in self.tasks:
+            families[task.family] = families.get(task.family, 0) + 1
+        return {
+            "tree": self.tree,
+            "ok": self.ok,
+            "manifest": self.manifest.to_dict(),
+            "guidance_files": self.guidance_files,
+            "guidance_by_base": self.guidance_by_base,
+            "tasks": {"count": len(self.tasks), "by_family": dict(sorted(families.items()))},
+            "errors": self.errors,
+            "warnings": self.warnings,
+            "notes": self.notes,
+        }
+
+
+def load_manifest(tree: RepoTree, path: str = DEFAULT_MANIFEST_PATH) -> RepoManifest:
+    """Read and validate the manifest at ``path`` inside ``tree``."""
+    if not tree.is_file(path):
+        raise ManifestError(path, [f"manifest not found in {tree.label}"])
+    try:
+        raw = yaml.safe_load(tree.read_text(path))
+    except yaml.YAMLError as exc:
+        raise ManifestError(path, [f"not valid YAML: {exc}"]) from exc
+    return parse_manifest(raw, path)
+
+
+def parse_manifest(raw: Any, path: str = "<manifest>") -> RepoManifest:
+    """Validate an already-parsed manifest mapping."""
+    from jsonschema import Draft202012Validator
+
+    schema = json.loads(_SCHEMA_PATH.read_text(encoding="utf-8"))
+    errors = [
+        f"{'/'.join(map(str, e.path)) or '<root>'}: {e.message}"
+        for e in sorted(Draft202012Validator(schema).iter_errors(raw), key=lambda e: list(e.path))
+    ]
+    if errors:
+        raise ManifestError(path, errors)
+
+    for key, value in _path_fields(raw):
+        problem = _path_problem(value)
+        if problem:
+            errors.append(f"{key}: {problem}: {value!r}")
+    if _norm(raw["eval_dir"]) == ".":
+        errors.append("eval_dir: must be a subdirectory; it is deleted from every workspace")
+    image = raw.get("image") or {}
+    templates = [(f"entry_points/{k}", v) for k, v in raw["entry_points"].items()]
+    templates += [(f"image/env/{k}", v) for k, v in (image.get("env") or {}).items()]
+    for key, value in templates:
+        found = set(_PLACEHOLDER_RE.findall(value))
+        unknown = sorted(found - PLACEHOLDERS)
+        if unknown:
+            errors.append(f"{key}: unknown placeholder(s) {unknown}; allowed: {sorted(PLACEHOLDERS)}")
+        if "source_dir" in found and key not in _SOURCE_DIR_ENTRY_POINTS:
+            errors.append(f"{key}: {{source_dir}} holds the full history and is only for grade and oracle")
+    if any("{source_dir}" in v for _, v in templates) and not (raw.get("source") or {}).get("url"):
+        errors.append("source/url: required when an entry point uses {source_dir}, which clones it")
+    cache_names = [c["name"] for c in image.get("caches") or []]
+    duplicates = sorted({n for n in cache_names if cache_names.count(n) > 1})
+    if duplicates:
+        errors.append(f"image/caches: duplicate cache name(s) {duplicates}")
+    if errors:
+        raise ManifestError(path, errors)
+
+    return RepoManifest(
+        path=path,
+        id=raw["id"],
+        eval_dir=_norm(raw["eval_dir"]),
+        guidance_globs=tuple(raw["guidance"]["globs"]),
+        also_scan=tuple(raw["guidance"].get("also_scan") or ()),
+        entry_points=dict(raw["entry_points"]),
+        tasks=_norm(raw["tasks"]),
+        source_url=(raw.get("source") or {}).get("url"),
+        image=None if not image else ImageSpec(
+            dockerfile=_norm(image["dockerfile"]),
+            caches=tuple(CacheSpec(c["name"], c["path"]) for c in image.get("caches") or ()),
+            env=dict(image.get("env") or {}),
+            network=image.get("network", "none"),
+        ),
+        explore_tasks=_norm(raw["explore_tasks"]) if raw.get("explore_tasks") else None,
+        build_systems=tuple(raw.get("build_systems") or ()),
+    )
+
+
+def check_repo(tree: RepoTree, manifest: RepoManifest,
+               open_base: Callable[[str], RepoTree] | None = None) -> RepoCheckReport:
+    """Check ``manifest`` against the snapshot in ``tree``.
+
+    With ``open_base`` (a task ``base`` to its tree), every base must resolve,
+    and guidance globs are evaluated at each base too (contract §2).
+    """
+    report = RepoCheckReport(tree=tree.label, manifest=manifest)
+    if not tree.is_dir(manifest.eval_dir):
+        report.errors.append(f"eval_dir does not exist: {manifest.eval_dir}")
+    elif not _is_within(manifest.path, manifest.eval_dir):
+        report.warnings.append(
+            f"manifest {manifest.path} is outside eval_dir {manifest.eval_dir}, "
+            "so it stays visible to the agent"
+        )
+    if manifest.image is not None and not tree.is_file(manifest.image.dockerfile):
+        report.errors.append(f"image/dockerfile does not exist: {manifest.image.dockerfile}")
+    if manifest.explore_tasks and not tree.is_dir(manifest.explore_tasks):
+        report.errors.append(f"explore_tasks does not exist: {manifest.explore_tasks}")
+    elif manifest.explore_tasks and not _is_within(manifest.explore_tasks, manifest.eval_dir):
+        report.errors.append(
+            f"explore_tasks {manifest.explore_tasks} is outside eval_dir {manifest.eval_dir}; "
+            "its reference answers would be visible to the agent"
+        )
+
+    files = tree.files()
+    unmatched = []
+    for pattern in manifest.guidance_globs:
+        matched = [f for f in files if match_glob(pattern, f)]
+        if not matched:
+            unmatched.append(pattern)
+        report.guidance_files.extend(m for m in matched if m not in report.guidance_files)
+    for pattern in manifest.also_scan:
+        if not any(match_glob(pattern, f) for f in files):
+            report.warnings.append(f"guidance/also_scan matches no file: {pattern}")
+    inside_eval = [f for f in report.guidance_files if _is_within(f, manifest.eval_dir)]
+    if inside_eval:
+        report.warnings.append(
+            f"guidance files inside eval_dir are removed from every workspace: {inside_eval}"
+        )
+
+    if tree.is_dir(manifest.tasks):
+        _check_tasks(tree, manifest, files, report)
+    else:
+        report.errors.append(f"tasks directory does not exist: {manifest.tasks}")
+    if open_base is None:
+        report.warnings.extend(f"guidance glob matches no file: {p}" for p in unmatched)
+    else:
+        from .bases import check_bases
+
+        check_bases(report, open_base, unmatched)
+    return report
+
+
+def _check_tasks(tree: RepoTree, manifest: RepoManifest, files: list[str], report: RepoCheckReport) -> None:
+    if not _is_within(manifest.tasks, manifest.eval_dir):
+        report.errors.append(
+            f"tasks {manifest.tasks} is outside eval_dir {manifest.eval_dir}; "
+            "task content would be visible to the agent"
+        )
+    task_dirs = sorted({
+        PurePosixPath(f).parent.as_posix() for f in files
+        if PurePosixPath(f).name == "task.json"
+        and PurePosixPath(f).parent.parent.as_posix() == manifest.tasks
+    })
+    if not task_dirs:
+        report.errors.append(f"no <task>/task.json found under {manifest.tasks}")
+    for task_dir in task_dirs:
+        _check_task(tree, task_dir, report)
+
+
+def match_glob(pattern: str, path: str) -> bool:
+    """Match a root-relative POSIX path against a ``**``-aware glob.
+
+    ``*`` and ``?`` stay inside one path segment; ``**/`` matches zero or more
+    directories, so ``**/AGENTS.md`` also matches a root ``AGENTS.md``.
+    """
+    return _glob_regex(pattern).fullmatch(path) is not None
+
+
+def _glob_regex(pattern: str) -> re.Pattern[str]:
+    out, i = [], 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out))
+
+
+def _check_task(tree: RepoTree, task_dir: str, report: RepoCheckReport) -> None:
+    name = PurePosixPath(task_dir).name
+    where = f"{task_dir}/task.json"
+    try:
+        raw = json.loads(tree.read_text(where))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        report.errors.append(f"{where}: not valid JSON: {exc}")
+        return
+    if not isinstance(raw, dict):
+        report.errors.append(f"{where}: must be a JSON object")
+        return
+    problems = [f"missing or empty required key '{k}'" for k in TASK_REQUIRED
+                if not isinstance(raw.get(k), str) or not raw[k].strip()]
+    if isinstance(raw.get("id"), str) and raw["id"] != name:
+        problems.append(f"id {raw['id']!r} does not equal the directory name {name!r}")
+
+    if "setup_patch" in raw and "setup_patches" in raw:
+        problems.append("give setup_patch or setup_patches, not both")
+    patches = raw.get("setup_patches", [raw["setup_patch"]] if "setup_patch" in raw else [])
+    if not isinstance(patches, list) or not all(isinstance(p, str) for p in patches):
+        problems.append("setup_patches must be a list of paths")
+        patches = []
+    if "review_patch" in raw:
+        if isinstance(raw["review_patch"], str):
+            patches = [*patches, raw["review_patch"]]
+        else:
+            problems.append("review_patch must be a path")
+    for patch in patches:
+        problem = _path_problem(patch)
+        if problem:
+            problems.append(f"patch {patch!r}: {problem}")
+        elif not tree.is_file(f"{task_dir}/{patch}"):
+            problems.append(f"patch file does not exist: {patch}")
+
+    base = raw.get("base")
+    if isinstance(base, str) and base.strip():
+        match = _BASE_RE.match(base)
+        if not match:
+            problems.append(f"base {base!r} must be a commit SHA, optionally followed by '^'; "
+                            "branches, tags and HEAD are refused")
+        elif len(match.group(1)) < 40:
+            sha, parent = match.groups()
+            report.warnings.append(f"{where}: base {base!r}: SHA {sha!r} has {len(sha)} characters; use all 40"
+                                   + (" (the trailing '^' is fine)" if parent else ""))
+
+    gate, gate_problem = _parse_gate(raw.get("gate", ["pass"]))
+    if gate_problem:
+        problems.append(gate_problem)
+    score = raw.get("score")
+    if score is not None and not (
+        isinstance(score, dict) and set(score) == {"metric", "max"}
+        and isinstance(score["metric"], str) and score["metric"]
+        and _is_number(score["max"])
+    ):
+        problems.append("score must be {\"metric\": <name>, \"max\": <number>}")
+    egress = raw.get("egress", [])
+    if not (isinstance(egress, list) and all(isinstance(h, str) and _HOST_RE.match(h) for h in egress)):
+        problems.append("egress must be a list of hosts (host or *.domain, optional :port)")
+        egress = []
+    for key in ("timeout_s", "max_turns", "budget_usd"):
+        value = raw.get(key)
+        if value is not None and (not _is_number(value) or value <= 0):
+            problems.append(f"{key} must be a positive number")
+
+    report.errors.extend(f"{where}: {p}" for p in problems)
+    if not problems:
+        report.tasks.append(TaskSummary(
+            id=raw["id"], family=raw["family"], base=raw["base"], grader=raw["grader"],
+            gate=gate, score=score, egress=tuple(egress),
+        ))
+
+
+def _parse_gate(gate: Any) -> tuple[tuple[str, ...], str | None]:
+    """Gate entries as display strings: ``name`` for a boolean metric, ``name>=min`` for a numeric one."""
+    problem = "gate must be a non-empty list of metric names or {\"metric\": <name>, \"min\": <number>}"
+    if not isinstance(gate, list) or not gate:
+        return ("pass",), problem
+    out = []
+    for entry in gate:
+        if isinstance(entry, str) and entry:
+            out.append(entry)
+        elif (isinstance(entry, dict) and set(entry) == {"metric", "min"}
+              and isinstance(entry["metric"], str) and entry["metric"] and _is_number(entry["min"])):
+            out.append(f"{entry['metric']}>={entry['min']}")
+        else:
+            return ("pass",), problem
+    return tuple(out), None
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _path_fields(raw: dict[str, Any]) -> list[tuple[str, str]]:
+    fields = [("eval_dir", raw["eval_dir"]), ("tasks", raw["tasks"])]
+    if raw.get("explore_tasks"):
+        fields.append(("explore_tasks", raw["explore_tasks"]))
+    if raw.get("image"):
+        fields.append(("image/dockerfile", raw["image"]["dockerfile"]))
+    guidance = raw["guidance"]
+    fields += [(f"guidance/globs/{i}", g) for i, g in enumerate(guidance["globs"])]
+    fields += [(f"guidance/also_scan/{i}", g) for i, g in enumerate(guidance.get("also_scan") or [])]
+    return fields
+
+
+def _path_problem(value: str) -> str | None:
+    if value.startswith(("/", "\\")) or re.match(r"^[A-Za-z]:", value):
+        return "must be relative to the repository root"
+    if "\\" in value:
+        return "must use '/' separators"
+    if ".." in PurePosixPath(value).parts:
+        return "must not contain '..'"
+    return None
+
+
+def _norm(path: str) -> str:
+    return PurePosixPath(path).as_posix().removeprefix("./").rstrip("/") or "."
+
+
+def _is_within(path: str, directory: str) -> bool:
+    return directory == "." or path == directory or path.startswith(directory.rstrip("/") + "/")
