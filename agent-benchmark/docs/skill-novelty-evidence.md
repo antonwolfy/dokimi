@@ -9,9 +9,9 @@ clean tree, 33 skills. The repo's own checks passed at that commit (`validate_sk
 structurally valid corpus, not a broken one.
 
 **Provenance:** run with a prototype outside this repository, against a LiteLLM proxy in front of
-Bedrock. Nothing in the subject repository was modified. Phase E.1 of this layer reimplements the
-pipeline inside `agent_benchmarks/novelty/` so the measurement becomes reproducible from this repo;
-until then, treat the tables below as evidence for the design, not as a regression baseline.
+Bedrock. Nothing in the subject repository was modified. Reimplementing that pipeline inside
+`agent_benchmarks/novelty/` is what makes the measurement reproducible from this repo; until it
+lands, treat the tables below as evidence for the design, not as a regression baseline.
 
 **Model scope:** current-generation models only. Two previous-generation models were measured early
 and are excluded from every table here, because "what does this artifact add" is only interesting for
@@ -328,7 +328,7 @@ cheaper instrument would win. It does not track it:
 | corr(path-weighted relevance, top retrieval similarity) | **0.368** | the two rankings measure different things |
 | top-quartile overlap | 261/605 | they disagree on **57%** of the atoms each calls most relevant |
 | atoms whose best match is `out_of_scope` | **32 (1.3%)** | a category similarity cannot express at all |
-| author ↔ independent critic on path labels | 925/1076 (**86%**) | the 14% is the noise floor on relevance-weighted `value` (open question O6) |
+| author ↔ independent critic on path labels | 925/1076 (**86%**) | the 14% is the noise floor on relevance-weighted `value` |
 
 The 1.3% is the point, not the size. Similarity ranking answers *how close is this text to the
 topic*; it has no way to return "this sentence answers a question this artifact is not responsible
@@ -381,6 +381,10 @@ graded probes and task runs to answer questions the headline tables raise but ca
 they add no new model calls, they add no new judge noise — they can only redistribute the noise
 already present. §10.7, §10.9 and §10.11–§10.14 make new model calls (extraction, relabelling, the
 retention oracle, graded task runs) and carry their own noise.
+
+The `O`-numbers from here on are this layer's working labels for its open questions; each
+heading states its question in words, and the label only ties a subsection to its follow-ups and to
+the `agent_benchmarks/novelty/` comments that cite it.
 
 Two definitional differences apply to every table in §10 and must not be read across §2/§3:
 

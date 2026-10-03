@@ -16,7 +16,7 @@ Two properties are enforced here rather than hoped for:
 * **Faithfulness, separately from recall.** :func:`verify_atoms` re-reads each atom
   against its own spans and labels it ``supported`` / ``distorted`` / ``unsupported``.
   That check says nothing about what the extractor *missed*; extractor recall is
-  unmeasured and is open question O1.
+  measured across extractors in skill-novelty-evidence.md §10.7, not by this module.
 """
 
 from __future__ import annotations

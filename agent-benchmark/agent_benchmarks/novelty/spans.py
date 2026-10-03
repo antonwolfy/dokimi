@@ -242,8 +242,8 @@ def span_summary(spans: list[Span], atoms: list | None = None, *, atom_cap: int 
     artifact. A sampling cap that is honest for one metric silently corrupts another.
 
     Extractor recall is the other limit, and it is now measured rather than assumed
-    (open question O1): three extractors over the same artifacts cited the same spans (Jaccard
-    0.87–0.99, each one's blind spot ≤2.4% of union tokens), so dead tokens are not
+    (skill-novelty-evidence.md §10.7): three extractors over the same artifacts cited the same
+    spans (Jaccard 0.87–0.99, each one's blind spot ≤2.4% of union tokens), so dead tokens are not
     mostly knowledge one model failed to formalize.
 
     Args:

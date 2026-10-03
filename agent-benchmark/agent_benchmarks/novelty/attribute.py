@@ -15,9 +15,9 @@ Two derived listings do most of the work in practice:
 * **sole carriers** — spans that are the only source of some atom. These are what a
   careless edit silently deletes, so the shortener pins them.
 
-`frac_carrying_nothing` is an upper bound on waste, not a measurement of it: extractor
-recall is unmeasured (open question O1), so some of those tokens may be knowledge the extractor
-could not formalize.
+`frac_carrying_nothing` is an upper bound on waste, not a measurement of it: some of those
+tokens may be knowledge the extractor could not formalize. How many is measured across
+extractors in skill-novelty-evidence.md §10.7.
 
 A span citation is a claim, so :func:`carrier_confirmation` checks it. Measured on 257
 atoms: the oracle recovers 0.833 of them from the cited span alone, 0.907 once the
@@ -283,9 +283,10 @@ def topic_rollup(attributions: list[SpanAttribution], *, depth: int = 2) -> list
     """Aggregate spans by heading path — the coarse end of the attribution axis.
 
     Section-level rollup is available now because headings are an authoring structure
-    that already exists. Clustering atoms into *derived* topics is deferred until open question O7
-    fixes a granularity: too coarse says "the whole file is redundant", too fine repeats
-    the atom table.
+    that already exists. It reports label counts, not one label, because no topic in
+    skill-novelty-evidence.md §10.4 was unanimous enough to carry one. Clustering atoms into
+    *derived* topics would need a granularity of its own: too coarse says "the whole file is
+    redundant", too fine repeats the atom table.
     """
     groups: dict[tuple[str, ...], list[SpanAttribution]] = {}
     for row in attributions:

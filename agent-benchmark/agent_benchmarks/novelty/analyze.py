@@ -163,8 +163,8 @@ def analyze(
             "judge and answerer are the same model (--allow-self-judge): scores are inflated"
         )
     outcomes = measure.atom_outcomes(measure_result.runs, with_arm=measure_result.with_arm)
-    # What *kind* of knowledge the model lacked, not just how much (open question O8). The slices
-    # are the actionable cut for an author; the caveats ride along in the report.
+    # What *kind* of knowledge the model lacked, not just how much (skill-novelty-evidence.md
+    # §10.1). The slices are the actionable cut for an author; the caveats ride along in the report.
     by_knowledge_kind = {
         scoring: measure.outcomes_by_atom_kind(
             measure_result.runs, atom_list,
