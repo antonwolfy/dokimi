@@ -428,9 +428,32 @@ AGENT_BENCHMARK_RESPONSE_CACHE=.cache/responses python cli.py arms run ...
 ```
 
 A byte-identical request (same model, message text, streaming flag, and
-`max_tokens`) replays the stored completion instead of calling the provider. It
+`max_tokens`) replays the stored completion instead of calling the provider.
+The `utils.get_llm` path (Bedrock, Vertex, OpenRouter) keys on model, text and
+`max_tokens` only, so its entries never collide with `llm_call`'s; a given judge
+always goes down one path, so this costs nothing. It
 pays off mainly for the `baseline` arm, which is identical across treatment runs,
-and for re-running a pipeline after changing only the reporting code.
+and for re-running a pipeline after changing only the reporting code. The judge
+is covered on every provider, including Bedrock, Vertex and OpenRouter, which
+reach the model through a separate wrapper.
+
+A request can also carry a **draw** index, for when a caller wants a second,
+independent sample of the same prompt: the judge's retry after an unparseable
+reply asks for a new draw, so the retry is a real second attempt rather than the
+same cached reply read again. Draw 0 adds nothing to the key, so entries written
+before draws existed still hit. A judge reply that does not parse is neither
+stored nor, if an older run stored it, replayed; otherwise a question whose three
+attempts all failed once would fail on every later run without calling the
+model. A cold cache is therefore not needed for the retry to be real.
+
+The cache is not judge-only. It applies to every caller of `llm_call` and
+`utils.get_llm`, which includes question generation (`questions/llm_gen.py`),
+persona generation (`personas/generator.py`) and the question validator
+(`questions/validator.py`), on every provider; for `openai` and `anthropic`
+those already went through the cached `llm_call` path before the judge was
+covered. With the variable set, regenerating questions or personas from the
+same inputs returns the previous set. Unset it (or point it at an empty
+directory) when you want new ones.
 
 The key is computed over the message **text**, not the request structure, which
 is what keeps the two caches independent: a prompt-cache breakpoint splits one

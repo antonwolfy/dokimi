@@ -435,8 +435,13 @@ class Judge:
         answer: str,
         context: str,
         ground_truth: Optional[str] = None,
+        draw: int = 0,
     ) -> Dict[str, Any]:
-        """Judge a single answer, optionally using a ground-truth doc chunk."""
+        """Judge a single answer, optionally using a ground-truth doc chunk.
+
+        ``draw`` selects an independent sample of the same judgement (see
+        :func:`agent_benchmarks.llm.llm_call_with_usage`); 0 is the ordinary call.
+        """
         from agent_benchmarks.llm import extract_json_object
 
         grounded = bool(ground_truth)
@@ -468,19 +473,34 @@ class Judge:
         #
         # Retrying only helps because no sampling parameters are pinned on this
         # path, so each attempt is an independent draw; pinning temperature=0 or a
-        # fixed seed would make these three identical calls.
+        # fixed seed would make these three identical calls. Each attempt is also
+        # its own response-cache draw: with the cache on, retrying under one key
+        # replayed the same unparseable reply three times.
+        def parse(raw: str) -> "tuple[Dict[str, Any], float]":
+            scores = extract_json_object(raw)
+            missing = required - scores.keys()
+            if missing:
+                raise ValueError(f"Missing keys in judge response: {missing}")
+            # A non-numeric dimension ("N/A") is a formatting failure too.
+            return scores, self._compute_aggregate(scores, weights)
+
+        def parses(raw: str) -> bool:
+            # Only a reply the judge can use is cached. A stored unparseable one
+            # is replayed on every later run, and once all three attempts are
+            # stored the question has lost its score for good, without a call.
+            try:
+                parse(raw)
+            except Exception:
+                return False
+            return True
+
         last_exc: Exception = ValueError("judge retry loop did not execute")
         for attempt in range(3):
-            response = self.llm.invoke(prompt)
+            response = self.llm.invoke(prompt, draw=draw * 3 + attempt, cache_if=parses)
             raw = response.content if hasattr(response, "content") else str(response)
             self._accumulate_usage(getattr(response, "usage", None))
             try:
-                scores = extract_json_object(raw)
-                missing = required - scores.keys()
-                if missing:
-                    raise ValueError(f"Missing keys in judge response: {missing}")
-                # A non-numeric dimension ("N/A") is a formatting failure too.
-                aggregate = self._compute_aggregate(scores, weights)
+                scores, aggregate = parse(raw)
                 break
             except Exception as exc:
                 last_exc = exc
@@ -510,6 +530,7 @@ class Judge:
         answer: str,
         context: str = "(No documentation retrieved)",
         ground_truth: Optional[str] = None,
+        draw: int = 0,
     ) -> Dict[str, Any]:
         """Public single-answer scorer — reused by the treatment-arm runner."""
         return self._judge_answer(
@@ -518,6 +539,7 @@ class Judge:
             answer=answer,
             context=context,
             ground_truth=ground_truth,
+            draw=draw,
         )
 
     @staticmethod

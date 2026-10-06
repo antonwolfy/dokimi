@@ -50,7 +50,7 @@ import logging
 import os
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from agent_benchmarks.metrics.usage import UsageRecord
 
@@ -259,6 +259,30 @@ def _canonical_content(content: Any) -> Any:
         {k: v for k, v in b.items() if k != "cache_control"} if isinstance(b, dict) else b
         for b in content
     ]
+
+
+def draw_extra(extra: Dict[str, Any], draw: int) -> Dict[str, Any]:
+    """Add a sample index to a cache key's ``extra``, leaving draw 0 unchanged.
+
+    Without this a repeated request can never be a new sample once the cache is
+    on: the judge's retry after an unparseable reply replays the same
+    unparseable reply, and two "independent" judgements of one answer are the
+    same completion read twice. Draw 0 adds nothing, so every entry written
+    before draws existed still hits.
+    """
+    return {**extra, "draw": draw} if draw else extra
+
+
+def keeps(cache_if: Optional[Callable[[str], bool]], text: str) -> bool:
+    """Whether a completion may be stored, or a stored one replayed.
+
+    *cache_if* is the caller's own acceptance test. The judge passes "this reply
+    parses": without it an unparseable reply is stored like any other, and once
+    all three of the judge's attempts are stored that way, every later run
+    replays the failure without calling the model. Checking on replay too means
+    entries stored before the check existed stop poisoning the run.
+    """
+    return cache_if is None or cache_if(text)
 
 
 def response_cache_key(

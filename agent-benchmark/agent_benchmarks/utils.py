@@ -97,25 +97,46 @@ def get_llm(provider: str, model: str, api_key: str = None):
             self.key = key
             self.default_max_tokens = default_max_tokens
 
-        def invoke(self, prompt: str):
+        def invoke(self, prompt: str, draw: int = 0, cache_if=None):
             import time as _time
-            from agent_benchmarks.llm import _extract_usage
+            from agent_benchmarks import caching
+            from agent_benchmarks.llm import _extract_usage, _is_retryable
             kwargs = {}
             if self.default_max_tokens:
                 kwargs["max_tokens"] = self.default_max_tokens
-            t0 = _time.time()
-            res = completion(
-                model=self.litellm_model,
-                messages=[{"role": "user", "content": prompt}],
-                api_key=self.key,
-                **kwargs,
+            messages = [{"role": "user", "content": prompt}]
+            # The judge reaches Bedrock, Vertex and OpenRouter through here, not
+            # through llm_call, so this path needs the response cache too.
+            key = caching.response_cache_key(
+                litellm_model=self.litellm_model, messages=messages,
+                extra=caching.draw_extra({"max_tokens": self.default_max_tokens}, draw),
             )
+            hit = caching.load_response(key)
+            if hit is not None and caching.keeps(cache_if, hit[0]):
+                return _Resp(hit[0], usage=hit[1])
+            delay = 2.0
+            for attempt in range(4):
+                t0 = _time.time()
+                try:
+                    res = completion(
+                        model=self.litellm_model, messages=messages, api_key=self.key, **kwargs,
+                    )
+                    break
+                except Exception as exc:
+                    # Throttling is routine at judge concurrency; a lost pair is not.
+                    if attempt == 3 or not _is_retryable(exc):
+                        raise
+                    _time.sleep(delay)
+                    delay *= 2
             latency = _time.time() - t0
             # Pass the provider-prefixed litellm_model so cost resolves for
             # Vertex/Bedrock (their response.model is bare → null cost otherwise).
             usage = _extract_usage(res, self.litellm_model, "litellm",
                                    latency_sec=latency, litellm_model=self.litellm_model)
-            return _Resp(res.choices[0].message.content, usage=usage)
+            text = res.choices[0].message.content
+            if caching.keeps(cache_if, text):
+                caching.store_response(key, text, usage)
+            return _Resp(text, usage=usage)
 
     api_key = _read_key(api_key)
 

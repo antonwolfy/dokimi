@@ -10,7 +10,7 @@ Usage:
 import os
 import time
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 from agent_benchmarks import caching
 from agent_benchmarks.metrics.usage import UsageRecord
@@ -29,6 +29,12 @@ _RETRYABLE_SUBSTRINGS = (
     "timeout", "timed out",
     "connection", "server error", "503", "502", "529",
     "overloaded",
+    # Bedrock's transient 5xx arrives as ServiceUnavailableError with no status
+    # code in the message ("The system encountered an unexpected error during
+    # processing. Try your request again."). Matched on the exception class
+    # name litellm puts in the message, not the bare word "unavailable", which
+    # also appears in permanent errors ("model is unavailable in this region").
+    "serviceunavailable", "try your request again",
 )
 
 
@@ -45,9 +51,11 @@ class ChatOpenAI:
         self.model = model
         self.api_key = api_key
 
-    def invoke(self, prompt: str):
+    def invoke(self, prompt: str, draw: int = 0,
+               cache_if: Optional[Callable[[str], bool]] = None):
         """Invoke the model with a prompt; response carries a UsageRecord."""
-        text, usage = llm_call_with_usage(prompt, self.model, provider="openai", api_key=self.api_key)
+        text, usage = llm_call_with_usage(prompt, self.model, provider="openai", api_key=self.api_key,
+                                          draw=draw, cache_if=cache_if)
         return _Resp(text, usage=usage)
 
 
@@ -58,9 +66,11 @@ class ChatAnthropic:
         self.model = model
         self.api_key = api_key
 
-    def invoke(self, prompt: str):
+    def invoke(self, prompt: str, draw: int = 0,
+               cache_if: Optional[Callable[[str], bool]] = None):
         """Invoke the model with a prompt; response carries a UsageRecord."""
-        text, usage = llm_call_with_usage(prompt, self.model, provider="anthropic", api_key=self.api_key)
+        text, usage = llm_call_with_usage(prompt, self.model, provider="anthropic", api_key=self.api_key,
+                                          draw=draw, cache_if=cache_if)
         return _Resp(text, usage=usage)
 
 
@@ -245,6 +255,8 @@ def llm_call_with_usage(
     stream: bool = False,
     max_tokens: Optional[int] = None,
     cache_prefix: Optional[str] = None,
+    draw: int = 0,
+    cache_if: Optional[Callable[[str], bool]] = None,
 ) -> "tuple[str, UsageRecord]":
     """Like llm_call, but returns ``(text, UsageRecord)``.
 
@@ -268,6 +280,13 @@ def llm_call_with_usage(
             explicit cache breakpoint when long enough to be worth one — see
             :mod:`agent_benchmarks.caching`. Passing the whole prompt as
             ``prompt`` still works and simply never caches.
+        draw: Index of an independent sample of the same request. Draw 0 is
+            the ordinary call; a caller that wants a *second opinion* on a
+            byte-identical prompt (a judge retry after an unparseable reply, a
+            repeated measurement) passes a new index, which gets its own
+            response-cache entry instead of replaying the first one.
+        cache_if: Optional acceptance test for the response cache: a reply it
+            rejects is neither stored nor replayed (see :func:`caching.keeps`).
 
     Returns:
         (response_text: str, usage: UsageRecord)
@@ -288,10 +307,10 @@ def llm_call_with_usage(
     cache_key = caching.response_cache_key(
         litellm_model=litellm_model,
         messages=messages,
-        extra={"stream": stream, "max_tokens": max_tokens},
+        extra=caching.draw_extra({"stream": stream, "max_tokens": max_tokens}, draw),
     )
     hit = caching.load_response(cache_key)
-    if hit is not None:
+    if hit is not None and caching.keeps(cache_if, hit[0]):
         return hit
 
     last_exc: Optional[Exception] = None
@@ -302,7 +321,8 @@ def llm_call_with_usage(
             if stream:
                 text, usage = _stream_call(completion, litellm_model, messages, api_key,
                                            model, provider, max_tokens=max_tokens)
-                caching.store_response(cache_key, text, usage)
+                if caching.keeps(cache_if, text):
+                    caching.store_response(cache_key, text, usage)
                 return text, usage
 
             t0 = time.time()
@@ -317,7 +337,8 @@ def llm_call_with_usage(
             text = resp.choices[0].message.content
             usage = _extract_usage(resp, model, provider, latency_sec=latency,
                                    litellm_model=litellm_model)
-            caching.store_response(cache_key, text, usage)
+            if caching.keeps(cache_if, text):
+                caching.store_response(cache_key, text, usage)
             return text, usage
 
         except Exception as exc:
