@@ -59,6 +59,34 @@ class Skill:
             body = body[:max_chars].rstrip() + "\n…"
         return f"# Skill: {self.name}\n{self.description}\n\n{body}"
 
+    def resource_manifest(self, max_files: int = 200) -> str:
+        """List the skill's bundled files, as paths relative to ``SKILL.md``.
+
+        This is the skill's *inventory*, not its content: a judge shown only the
+        answer cannot tell a real bundled path from an invented one, and scores a
+        correctly-cited `patterns/simd.md` down as a fabrication. Measured on the
+        81-question perf set: 17 of 81 skill-arm answers were marked
+        "fabricated"/"non-existent" for citing files that all exist, costing the
+        arm 22.5 aggregate points on those questions — enough to invert the
+        arm comparison. Paths only; the bodies would not fit the judge's budget,
+        and existence is what the judge cannot otherwise check.
+        """
+        root = self.path.parent
+        rels = []
+        for p in self.resources[:max_files]:
+            try:
+                rels.append(p.relative_to(root).as_posix())
+            except ValueError:  # pragma: no cover - resources are collected under root
+                rels.append(p.name)
+        if not rels:
+            return ""
+        more = len(self.resources) - len(rels)
+        lines = [f"Files bundled with skill '{self.name}' (these all exist):"]
+        lines += [f"  {r}" for r in rels]
+        if more > 0:
+            lines.append(f"  … and {more} more")
+        return "\n".join(lines)
+
 
 def _resolve_skill_file(path: Path) -> Path:
     """Resolve a skill reference (file or directory) to its ``SKILL.md`` file."""

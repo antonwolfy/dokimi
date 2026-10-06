@@ -91,6 +91,14 @@ def _validate_pair(control: Dict[str, Any], plugin: Dict[str, Any]) -> None:
                     f"cannot compute judged plugin delta across different {field}: "
                     f"{control.get(field)!r} vs {plugin.get(field)!r}"
                 )
+        # What the judge was shown. Unstamped runs predate the stamp and were all
+        # judged on report snippets, so two of them pair; a stamped and an
+        # unstamped one used different judge protocols and do not.
+        if control.get("judge_context") != plugin.get("judge_context"):
+            raise PluginDeltaError(
+                "cannot compute judged plugin delta across different judge_context: "
+                f"{control.get('judge_context')!r} vs {plugin.get('judge_context')!r}"
+            )
 
 
 def _warnings(control: Dict[str, Any], plugin: Dict[str, Any]) -> list[str]:

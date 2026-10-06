@@ -273,6 +273,20 @@ def check_run_consistency(
             "will still be used but results may not be directly comparable."
         )
 
+    # 4b. one judge protocol. `judge_context` names what the judge was shown about
+    # each arm's material; runs predating the stamp were all judged on 200-char
+    # report snippets, so two unstamped runs pool, but a stamped and an unstamped
+    # run (or two different stamps) scored the same answers on different evidence.
+    # Unjudged runs carry no stamp by construction and are left out.
+    stamps = {rid: data.get("judge_context") for rid, data in runs if "evaluations" in data}
+    if len(set(stamps.values())) > 1:
+        detail = ", ".join(f"{rid}={s or '<unstamped>'}" for rid, s in stamps.items())
+        raise SystemExit(
+            f"Error [{group_name}]: runs were judged under different judge_context "
+            f"protocols ({detail}). The judge saw different evidence for the same "
+            "answers, so the scores cannot be pooled. Re-judge the older runs."
+        )
+
     # 5. identical model+provider across all runs likely means duplicate runs
     models = [(data.get("model", ""), data.get("provider", "")) for _, data in runs]
     if len(set(models)) == 1:

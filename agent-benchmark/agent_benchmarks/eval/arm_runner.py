@@ -22,6 +22,10 @@ from agent_benchmarks.llm import llm_call_with_usage
 from agent_benchmarks.eval import stats as arm_stats
 from agent_benchmarks.eval.arm_summary import cost_summary, summarize_agentic_usage
 from agent_benchmarks.eval.cells import Cell
+from agent_benchmarks.eval.judge_context import PROTOCOL as JUDGE_CONTEXT_PROTOCOL
+from agent_benchmarks.eval.judge_context import JudgeContextStore
+from agent_benchmarks.eval.judge_context import build as build_judge_context
+from agent_benchmarks.eval.judge_context import join_injected
 from agent_benchmarks.metrics.usage import to_record
 from agent_benchmarks.treatments.base import Treatment
 
@@ -127,6 +131,10 @@ class ArmRunner:
         self.grounded_from_topics = grounded_from_topics
         self.harness = harness
         self.matrix_cell = matrix_cell
+        # Treatment material per (question, arm), handed from answering to
+        # judging without going through the persisted record. See
+        # :mod:`agent_benchmarks.eval.judge_context`.
+        self.judge_context = JudgeContextStore()
         self.plugin_set = plugin_set or {
             "plugin_set": "none",
             "plugin_set_id": "sha256:e3b0c44298fc1c149afbf4c8996fb924",
@@ -190,7 +198,7 @@ class ArmRunner:
         arms: Dict[str, Any] = {}
         for treatment in self.treatments:
             arms[treatment.name] = self._answer_one_arm(
-                treatment, question_text, library_name, library_id
+                treatment, question_text, library_name, library_id, qid
             )
 
         rec = {
@@ -215,6 +223,7 @@ class ArmRunner:
         question_text: str,
         library_name: str,
         library_id: Optional[str],
+        question_id: str = "unknown_q",
     ) -> Dict[str, Any]:
         t0 = time.time()
         try:
@@ -222,6 +231,21 @@ class ArmRunner:
         except Exception as exc:
             logger.exception("Arm %s prepare() failed", treatment.name)
             return {"error": f"prepare_failed: {exc}", "answer": None}
+
+        # Record the treatment material before the answer exists: this is what
+        # the arm was given, and the judge needs all of it, not the 200-char
+        # report snippets built further down. An agentic arm's answering path
+        # does not put `injected_context` in the prompt (only question, tools
+        # and system prompt reach the loop), so the judge gets none of it
+        # either — a combined `skill:x+skill_agent:y` arm would otherwise show
+        # the judge a skill body the answerer never received.
+        self.judge_context.put(
+            question_id,
+            treatment.name,
+            build_judge_context([] if cfg.is_agentic else cfg.injected_context,
+                                cfg.judge_reference,
+                                injected_chars=MAX_CONTEXT_CHARS),
+        )
 
         from agent_benchmarks.plugins import take_output_shapers
         shapers, cfg_metadata = take_output_shapers(cfg)
@@ -231,7 +255,7 @@ class ArmRunner:
 
         cache_prefix = None
         if cfg.has_context:
-            context = "\n\n---\n\n".join(c["content"] for c in cfg.injected_context)
+            context = join_injected(cfg.injected_context)
             prefix = CONTEXT_PROMPT_PREFIX.format(context=context[:MAX_CONTEXT_CHARS])
             prompt = CONTEXT_PROMPT_SUFFIX.format(question=question_text)
             if cfg.context_is_static:
@@ -369,11 +393,11 @@ class ArmRunner:
                 if not arm or not arm.get("answer"):
                     scores[arm_name] = None
                     continue
-                context = "\n".join(
-                    c.get("snippet", "") for c in arm.get("context_chunks", [])
-                ) or "(No documentation retrieved)"
+                context, source = self.judge_context.resolve_with_source(
+                    rec["question_id"], arm_name, arm
+                )
                 try:
-                    scores[arm_name] = judge.score_answer(
+                    score = judge.score_answer(
                         library_name=library_name,
                         question=rec["question_text"],
                         answer=arm["answer"],
@@ -382,7 +406,10 @@ class ArmRunner:
                     )
                 except Exception as exc:
                     logger.exception("Judging arm %s failed", arm_name)
-                    scores[arm_name] = {"error": str(exc)}
+                    score = {"error": str(exc)}
+                if isinstance(score, dict):
+                    score = {**score, "judge_context_source": source}
+                scores[arm_name] = score
 
             deltas = {}
             base = scores.get(baseline_arm)
@@ -447,6 +474,7 @@ class ArmRunner:
         if evaluations is not None:
             out["evaluations"] = evaluations
             out["summary"] = self._summarize(evaluations, baseline_arm)
+            out["judge_context"] = JUDGE_CONTEXT_PROTOCOL
             if judge is not None:
                 out["judge_model"] = getattr(judge, "model", None)
                 out["judge_provider"] = getattr(judge, "provider", None)

@@ -68,6 +68,15 @@ class AgentConfig:
             breakpoint (see :mod:`agent_benchmarks.caching`); marking volatile
             context static would pay the cache-write surcharge on every call and
             never hit.
+        judge_reference: Material about the treatment that the *judge* needs but
+            the answering model does not get in its prompt — currently a skill's
+            bundled-file manifest. A judge shown only the answer cannot tell a
+            real bundled path from an invented one and penalises correct
+            citations as fabrications, which is an arm-comparison defect rather
+            than a scoring preference (see ``Skill.resource_manifest``). This
+            holds only what is *not* already in ``injected_context``; the runner
+            concatenates the two. Empty for treatments whose material is
+            query-driven and unknown until the agent asks for it.
     """
 
     system_prompt: Optional[str] = None
@@ -75,6 +84,7 @@ class AgentConfig:
     tools: List[Tool] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
     context_is_static: bool = False
+    judge_reference: str = ""
 
     @property
     def has_context(self) -> bool:

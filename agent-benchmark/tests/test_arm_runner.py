@@ -369,3 +369,388 @@ def test_baseline_arm_sends_no_prefix(monkeypatch):
     _patch_llm(monkeypatch, captured)
     ArmRunner([BaselineTreatment()]).run("oneTBB", QUESTIONS[:1], concurrency=1)
     assert captured[0]["cache_prefix"] is None
+
+
+# ── What the judge is shown about an arm's material ──────────────────────
+#
+# A judge that cannot see the treatment material scores an arm *down* for
+# citing it ("fabricated path"), which inverts arm comparisons. These tests
+# pin what reaches the judge, not how it scores.
+
+class _ContextCapturingJudge:
+    model = "ctx-judge"
+    provider = "fake-provider"
+
+    def __init__(self):
+        self.seen = {}
+
+    def score_answer(self, library_name, question, answer, context="", ground_truth=None):
+        self.seen[(question, len(self.seen))] = context
+        self.last = context
+        return {"aggregate": 70, "correctness": 70}
+
+
+@pytest.fixture
+def skill_with_files(tmp_path):
+    """A skill whose detail lives in bundled files, like real skills."""
+    root = tmp_path / "bundled-demo"
+    (root / "patterns").mkdir(parents=True)
+    (root / "SKILL.md").write_text(
+        "---\nname: bundled-demo\ndescription: Bundled-file skill fixture.\n---\n"
+        "# bundled-demo\n\nSee patterns/simd.md for the details.\n",
+        encoding="utf-8",
+    )
+    (root / "patterns" / "simd.md").write_text("# SIMD detail", encoding="utf-8")
+    return root
+
+
+def test_judge_sees_the_whole_injected_context_not_the_report_snippet(
+    monkeypatch, skill_with_files
+):
+    _patch_llm(monkeypatch, [])
+    skill = load_skill(skill_with_files)
+    runner = ArmRunner([SkillTreatment(skill)])
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+
+    judge = _ContextCapturingJudge()
+    runner.judge(judge, "oneTBB", records)
+
+    # The snippet kept in the record is a 200-char preview; the judge gets the body.
+    snippet = records[0]["arms"]["skill:bundled-demo"]["context_chunks"][0]["snippet"]
+    assert "See patterns/simd.md" in judge.last
+    assert len(judge.last) > len(snippet)
+
+
+def test_judge_sees_the_bundled_file_manifest(monkeypatch, skill_with_files):
+    """The measured defect: a cited bundled path read as a fabrication."""
+    _patch_llm(monkeypatch, [])
+    runner = ArmRunner([SkillTreatment(load_skill(skill_with_files))])
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+
+    judge = _ContextCapturingJudge()
+    runner.judge(judge, "oneTBB", records)
+    assert "patterns/simd.md" in judge.last
+
+
+def test_oversized_context_keeps_the_manifest():
+    """A combined doc+skill arm can exceed the cap; the manifest must survive it."""
+    from agent_benchmarks.eval.judge_context import build
+
+    manifest = "Files bundled with skill 'x' (these all exist):\n  patterns/simd.md"
+    out = build([{"content": "d" * 9_000}, {"content": "s" * 12_000}], manifest)
+    assert out.endswith(manifest)
+
+
+def test_an_oversized_reference_is_cut_and_marked():
+    from agent_benchmarks.eval.judge_context import MAX_JUDGE_REFERENCE_CHARS, build
+
+    out = build([], "r" * (MAX_JUDGE_REFERENCE_CHARS + 500))
+    assert out == "r" * MAX_JUDGE_REFERENCE_CHARS + "\n…"
+
+
+class _StaticDocs:
+    """A non-agentic treatment that injects fixed chunks, incl. an empty one."""
+
+    name = "docs-fixture"
+
+    def __init__(self, chunks, reference=""):
+        self.chunks = chunks
+        self.reference = reference
+
+    def prepare(self, question_text, library_name, library_id=None):
+        from agent_benchmarks.treatments.base import AgentConfig
+
+        return AgentConfig(injected_context=[dict(c) for c in self.chunks],
+                           judge_reference=self.reference, context_is_static=False)
+
+
+def _answer_prompt_context(prompt, question):
+    """Pull the injected material back out of the prompt the answerer was sent:
+    everything between the prefix's head and the known prefix tail + suffix."""
+    from agent_benchmarks.eval.arm_runner import CONTEXT_PROMPT_PREFIX, CONTEXT_PROMPT_SUFFIX
+
+    head, _, tail = CONTEXT_PROMPT_PREFIX.partition("{context}")
+    end = tail + CONTEXT_PROMPT_SUFFIX.format(question=question)
+    assert prompt.startswith(head) and prompt.endswith(end)
+    return prompt[len(head):len(prompt) - len(end)]
+
+
+def test_judge_sees_exactly_the_injected_text_the_answerer_was_sent(monkeypatch):
+    """No less (the defect being fixed) and no more: compared against the prompt
+    actually handed to the model, not a copy of its join. An empty chunk is in
+    the set because it still contributes a separator to the answering prompt."""
+    from agent_benchmarks.eval.arm_runner import MAX_CONTEXT_CHARS
+
+    captured = []
+    _patch_llm(monkeypatch, captured)
+    chunks = [{"content": "d" * 9_000}, {"content": ""}, {"content": "s" * 12_000 + "TAIL"}]
+    manifest = "Files bundled with skill 'x' (these all exist):\n  a.md"
+    runner = ArmRunner([_StaticDocs(chunks, manifest)])
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+
+    sent = _answer_prompt_context(captured[0]["prompt"], QUESTIONS[0]["question"])
+    assert len(sent) == MAX_CONTEXT_CHARS
+    judge = _ContextCapturingJudge()
+    runner.judge(judge, "oneTBB", records)
+    assert judge.last == sent + "\n\n---\n\n" + manifest
+    assert "TAIL" not in judge.last
+
+
+def test_combined_arm_with_an_agentic_part_does_not_show_the_judge_unsent_material(
+    monkeypatch, skill_with_files
+):
+    """The agentic path hands the loop only question, tools and system prompt,
+    so a combined skill + skill_agent arm's injected skill body never reaches the
+    answerer — the judge must not get it either. The reference still does."""
+    from agent_benchmarks.treatments.arms import CombinedTreatment
+
+    sent = {}
+
+    def fake_loop(question, tools, model, provider, system_prompt=None, api_key=None,
+                  max_iterations=6, max_tokens=None):
+        sent.update(question=question, system_prompt=system_prompt or "")
+        return {"answer": "see patterns/simd.md", "transcript": [], "tool_call_count": 0,
+                "tool_usage": {}, "iterations": 1, "stopped_reason": "answered",
+                "token_usage": {"prompt_tokens": 1, "completion_tokens": 1,
+                                "total_tokens": 2}}
+
+    import agent_benchmarks.eval.agent_runner as agent_runner_mod
+    monkeypatch.setattr(agent_runner_mod, "run_agent_loop", fake_loop)
+
+    skill = load_skill(skill_with_files)
+    combined = CombinedTreatment([SkillTreatment(skill), SkillAgentTreatment(skill)])
+    runner = ArmRunner([combined])
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+    body_marker = "See patterns/simd.md for the details."
+    assert body_marker not in sent["question"] + sent["system_prompt"]
+
+    judge = _ContextCapturingJudge()
+    runner.judge(judge, "oneTBB", records)
+    reference = combined.prepare("q", "oneTBB").judge_reference
+    assert judge.last == reference
+    assert "patterns/simd.md" in judge.last
+
+
+def test_agentic_combined_arm_drops_the_non_agentic_skills_manifest(tmp_path):
+    """In `skill:x+skill_agent:y` the agent can open y's files through its tools
+    but has no way to reach x's; x's manifest must not tell the judge they exist."""
+    from agent_benchmarks.treatments.arms import CombinedTreatment
+
+    def make(name):
+        root = tmp_path / name
+        (root / "ref").mkdir(parents=True)
+        (root / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: fixture {name}.\n---\n# {name}\n",
+            encoding="utf-8")
+        (root / "ref" / f"{name}-only.md").write_text("detail", encoding="utf-8")
+        return load_skill(root)
+
+    x, y = make("skill-x"), make("skill-y")
+    agentic = CombinedTreatment([SkillTreatment(x), SkillAgentTreatment(y)]).prepare("q", "lib")
+    assert agentic.is_agentic
+    assert "skill-y-only.md" in agentic.judge_reference
+    assert "skill-x-only.md" not in agentic.judge_reference
+
+    plain = CombinedTreatment([SkillTreatment(x), SkillTreatment(y)]).prepare("q", "lib")
+    assert not plain.is_agentic
+    assert "skill-x-only.md" in plain.judge_reference
+    assert "skill-y-only.md" in plain.judge_reference
+
+
+def test_all_empty_chunks_are_no_material():
+    from agent_benchmarks.eval.judge_context import build
+
+    assert build([{"content": ""}, {"content": ""}]) == ""
+    assert build([{"content": ""}, {"content": " "}], "REF") == "REF"
+
+
+def test_id_less_questions_are_not_cross_judged_through_the_runner(monkeypatch):
+    """End to end: two id-less questions get different docs; each is judged
+    against its own record, not the other question's retrieval."""
+    _patch_llm(monkeypatch, [])
+
+    class _PerQuestionDocs(_StaticDocs):
+        def prepare(self, question_text, library_name, library_id=None):
+            from agent_benchmarks.treatments.base import AgentConfig
+
+            return AgentConfig(injected_context=[{"content": f"docs for {question_text}",
+                                                  "snippet": f"snip {question_text}"}],
+                               context_is_static=False)
+
+    runner = ArmRunner([_PerQuestionDocs([])])
+    qs = [{"question": "first?"}, {"question": "second?"}]
+    records = runner.run("oneTBB", qs, concurrency=1)
+    judge = _ContextCapturingJudge()
+    runner.judge(judge, "oneTBB", records)
+    by_question = {q: ctx for (q, _), ctx in judge.seen.items()}
+    # Each falls back to its own record's snippet; neither sees the other's docs.
+    assert "docs for first?" in by_question["first?"]
+    assert "second?" not in by_question["first?"]
+    assert "docs for second?" in by_question["second?"]
+    assert "first?" not in by_question["second?"]
+
+
+def test_runner_passes_its_own_cap_to_the_judge_context(monkeypatch):
+    """The cap is passed, not duplicated, so the two cannot drift."""
+    import agent_benchmarks.eval.arm_runner as ar
+
+    seen = {}
+    real = ar.build_judge_context
+
+    def spy(injected, reference="", **kw):
+        seen.update(kw)
+        return real(injected, reference, **kw)
+
+    monkeypatch.setattr(ar, "build_judge_context", spy)
+    _patch_llm(monkeypatch, [])
+    ArmRunner([BaselineTreatment()]).run("oneTBB", QUESTIONS[:1], concurrency=1)
+    assert seen["injected_chars"] == ar.MAX_CONTEXT_CHARS
+
+
+def test_questions_without_ids_are_not_judged_against_each_others_context(caplog):
+    """Every id-less question maps to ``unknown_q``. A shared key must not hand
+    one question's retrieved docs to another; fall back to the record's own
+    snippets, which cannot mix questions."""
+    from agent_benchmarks.eval.judge_context import JudgeContextStore
+
+    store = JudgeContextStore()
+    with caplog.at_level("WARNING"):
+        store.put("unknown_q", "docs", "docs retrieved for question A")
+        store.put("unknown_q", "docs", "docs retrieved for question B")
+        store.put("unknown_q", "docs", "docs retrieved for question C")
+    assert store.get("unknown_q", "docs") is None
+    assert "more than one question" in caplog.text
+    arm = {"context_chunks": [{"snippet": "own snippet"}]}
+    assert store.resolve("unknown_q", "docs", arm) == "own snippet"
+
+
+def test_identical_context_under_a_shared_key_is_not_ambiguous():
+    """A skill arm injects the same body for every question; sharing a key is harmless then."""
+    from agent_benchmarks.eval.judge_context import JudgeContextStore
+
+    store = JudgeContextStore()
+    store.put("unknown_q", "skill:x", "same skill body")
+    store.put("unknown_q", "skill:x", "same skill body")
+    assert store.get("unknown_q", "skill:x") == "same skill body"
+
+
+def test_agentic_skill_arm_is_not_judged_against_an_empty_context(
+    monkeypatch, skill_with_files
+):
+    """``context_chunks`` is empty by construction for an agentic arm."""
+    def fake_loop(question, tools, model, provider, system_prompt=None, api_key=None,
+                  max_iterations=6, max_tokens=None):
+        return {"answer": "see patterns/simd.md", "transcript": [], "tool_call_count": 0,
+                "tool_usage": {}, "iterations": 1, "stopped_reason": "answered",
+                "token_usage": {"prompt_tokens": 1, "completion_tokens": 1,
+                                "total_tokens": 2}}
+
+    import agent_benchmarks.eval.agent_runner as agent_runner_mod
+    monkeypatch.setattr(agent_runner_mod, "run_agent_loop", fake_loop)
+
+    runner = ArmRunner([SkillAgentTreatment(load_skill(skill_with_files))])
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+    assert records[0]["arms"]["skill_agent:bundled-demo"]["context_chunks"] == []
+
+    judge = _ContextCapturingJudge()
+    runner.judge(judge, "oneTBB", records)
+    # Both the skill itself and its manifest, since nothing was injected. The
+    # name and the path appear in the manifest too; only the body has the prose.
+    assert "for the details" in judge.last
+    assert "Files bundled with skill" in judge.last
+
+
+def test_baseline_arm_still_declares_that_it_had_no_context(monkeypatch):
+    _patch_llm(monkeypatch, [])
+    runner = ArmRunner([BaselineTreatment()])
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+
+    judge = _ContextCapturingJudge()
+    runner.judge(judge, "oneTBB", records)
+    assert judge.last == "(No documentation retrieved)"
+
+
+def test_judging_records_from_disk_falls_back_to_snippets_and_warns(monkeypatch, caplog):
+    """A fresh runner has no store, so judging a loaded run must degrade visibly."""
+    runner = ArmRunner([BaselineTreatment()])
+    records = [{
+        "question_id": "q1", "question_text": "How do I parallelize a loop?",
+        "arms": {"docs": {"answer": "use parallel_for",
+                          "context_chunks": [{"snippet": "parallel_for docs…"}]}},
+    }]
+    judge = _ContextCapturingJudge()
+    with caplog.at_level("WARNING"):
+        runner.judge(judge, "oneTBB", records, baseline_arm="docs")
+
+    assert judge.last == "parallel_for docs…"
+    assert "No stored judge context" in caplog.text
+
+
+def test_build_output_stamps_the_judge_context_protocol(monkeypatch, demo_skill):
+    """The stamp is what lets plugin_delta / model_compare refuse a pre-#51 pairing."""
+    _patch_llm(monkeypatch, [])
+    runner = ArmRunner([BaselineTreatment(), SkillTreatment(load_skill(demo_skill))])
+    records = runner.run("oneTBB", QUESTIONS, concurrency=1)
+    evaluations = runner.judge(_FakeJudge(), "oneTBB", records)
+    output = runner.build_output("oneTBB", records, evaluations, judge=_FakeJudge())
+    assert output["judge_context"] == "treatment_material.v1"
+    # Unjudged output has nothing judged to stamp.
+    assert "judge_context" not in runner.build_output("oneTBB", records)
+
+    from agent_benchmarks.artifacts import validate_artifact
+
+    validate_artifact("arms", output)
+
+
+def test_each_score_records_that_it_was_judged_against_the_stored_context(
+    monkeypatch, demo_skill
+):
+    _patch_llm(monkeypatch, [])
+    runner = ArmRunner([BaselineTreatment(), SkillTreatment(load_skill(demo_skill))])
+    records = runner.run("oneTBB", QUESTIONS, concurrency=1)
+    evaluations = runner.judge(_FakeJudge(), "oneTBB", records)
+    sources = [s["judge_context_source"] for ev in evaluations for s in ev["scores"].values()]
+    assert sources == ["stored"] * 4
+
+
+def test_a_fallback_to_report_snippets_is_recorded_per_score():
+    """One warning per run cannot say which scores fell back; the score must."""
+
+    class _FailingOnSecond(_FakeJudge):
+        def score_answer(self, library_name, question, answer, context="", ground_truth=None):
+            if question == "second?":
+                raise RuntimeError("judge down")
+            return super().score_answer(library_name, question, answer, context, ground_truth)
+
+    runner = ArmRunner([BaselineTreatment()])
+    records = [
+        {"question_id": qid, "question_text": text,
+         "arms": {"docs": {"answer": "use parallel_for",
+                           "context_chunks": [{"snippet": "parallel_for docs…"}]}}}
+        for qid, text in (("q1", "first?"), ("q2", "second?"))
+    ]
+    evaluations = runner.judge(_FailingOnSecond(), "oneTBB", records, baseline_arm="docs")
+    assert evaluations[0]["scores"]["docs"]["judge_context_source"] == "snippet_fallback"
+    # The error dict carries it too, so a re-judge knows what the failed call was shown.
+    assert evaluations[1]["scores"]["docs"]["error"] == "judge down"
+    assert evaluations[1]["scores"]["docs"]["judge_context_source"] == "snippet_fallback"
+
+
+def test_an_ambiguous_key_is_recorded_as_a_snippet_fallback(monkeypatch):
+    _patch_llm(monkeypatch, [])
+
+    class _PerQuestionDocs(_StaticDocs):
+        def prepare(self, question_text, library_name, library_id=None):
+            from agent_benchmarks.treatments.base import AgentConfig
+
+            return AgentConfig(injected_context=[{"content": f"docs for {question_text}",
+                                                  "snippet": f"snip {question_text}"}],
+                               context_is_static=False)
+
+    runner = ArmRunner([_PerQuestionDocs([])])
+    records = runner.run("oneTBB", [{"question": "first?"}, {"question": "second?"}],
+                         concurrency=1)
+    assert {r["question_id"] for r in records} == {"unknown_q"}
+    evaluations = runner.judge(_ContextCapturingJudge(), "oneTBB", records)
+    sources = [s["judge_context_source"] for ev in evaluations for s in ev["scores"].values()]
+    assert sources == ["snippet_fallback"] * 2

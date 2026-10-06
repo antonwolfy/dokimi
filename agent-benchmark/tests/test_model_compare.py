@@ -746,3 +746,37 @@ def test_cli_exposes_stats_correction_for_model_compare():
             ["report", "model-compare", "--regular-runs", "a.json",
              "--run-ids", "a", "--out", "out.md", "--stats-correction", "bonferroni"]
         )
+
+
+_V1 = "treatment_material.v1"
+
+
+def _stamped(run_id, stamp):
+    rid, data = _scored_run(run_id, "skill:demo-skill")
+    if stamp is not None:
+        data["judge_context"] = stamp
+    return rid, data
+
+
+@pytest.mark.parametrize(
+    "stamp_a, stamp_b",
+    [(None, _V1), (_V1, None), (_V1, "treatment_material.v2")],
+)
+def test_consistency_refuses_judge_context_that_differs(stamp_a, stamp_b):
+    """Unstamped runs were judged on report snippets; pooling them with stamped runs
+    puts two judge protocols in one comparison."""
+    runs = [_stamped("a", stamp_a), _stamped("b", stamp_b)]
+    with pytest.raises(SystemExit, match="judge_context"):
+        check_run_consistency(runs, "regular")
+
+
+@pytest.mark.parametrize("stamp", [None, _V1])
+def test_consistency_allows_judge_context_that_matches(stamp):
+    runs = [_stamped("a", stamp), _stamped("b", stamp)]
+    assert check_run_consistency(runs, "regular") == []
+
+
+def test_consistency_ignores_the_stamp_on_unjudged_runs():
+    """Only judged runs are stamped, so an unjudged one cannot disagree."""
+    runs = [_stamped("a", _V1), _run_pair("b", model="other")]
+    check_run_consistency(runs, "regular")

@@ -27,6 +27,13 @@ an `AgentConfig` (system prompt + injected context) per question. The answers
 are scored by the same LLM-as-judge used elsewhere, and the report shows each
 arm's average score and its delta vs the baseline arm.
 
+The judge scores each answer against the material its arm was given: the full
+injected chunks for `docs`, the skill body plus its bundled-file list for
+`skill:`, and the same body and list for `skill_agent:`, whose agent reads them
+only through a tool. `baseline`, `mcp_agent:` and `profile:` arms give it none.
+The output records this as `judge_context: treatment_material.v1`; runs judged
+before it saw 200-character snippets, so re-judge them before comparing.
+
 Runtime plugins are a separate run dimension, not arms. They modify every arm
 inside the same `(model, harness, plugin_set)` cell, and the JSON/Markdown
 outputs stamp `harness`, `plugin_set`, `plugin_set_id`, and concrete plugin
@@ -49,7 +56,7 @@ The command writes a `plugin_delta.v1` artifact plus a Markdown report with
 judge-score deltas, token/cost deltas, and answer-length deltas. It refuses
 confounded comparisons where model, provider, harness, arms, baseline arm, or
 question IDs/order differ. For judged artifacts it also requires both runs to
-carry the same stamped judge model and provider.
+carry the same stamped judge model, provider and `judge_context`.
 
 > **Naming:** an *agent profile* (`profile:`) is the answering agent's system
 > prompt. It is **not** a `persona` — in this repo a persona is a synthetic
@@ -476,7 +483,8 @@ Two gates are deliberately statistical rather than absolute:
   value is often procedural. Treat the deltas as a proxy; use the task track for
   behavioral signal.
 - **Fair comparisons** hold the answer model, question set, and judge fixed
-  across arms — only the treatment varies.
+  across arms — only the treatment varies, and the judge's reference material
+  varies with it (see above).
 - **Combined treatments concatenate contexts in the order the arm spec lists them**,
   not in a fixed order by kind. `profile:` arms contribute a system prompt rather than
   injected context, so they never appear in that concatenation. Combining is consistent

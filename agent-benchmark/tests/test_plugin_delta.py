@@ -169,6 +169,36 @@ def test_compare_plugin_runs_requires_judge_identity_for_scored_artifacts():
         compare_plugin_runs(baseline, plugin)
 
 
+_V1 = "treatment_material.v1"
+
+
+@pytest.mark.parametrize(
+    "control_stamp, plugin_stamp",
+    [(None, _V1), (_V1, None), (_V1, "treatment_material.v2")],
+)
+def test_compare_plugin_runs_refuses_judge_context_that_differs(control_stamp, plugin_stamp):
+    """A pre-#51 run was judged on 200-char snippets; its delta against a run judged
+    on the full material would mix two judge protocols."""
+    baseline = _arms_artifact()
+    plugin = _arms_artifact("caveman:full")
+    for art, stamp in ((baseline, control_stamp), (plugin, plugin_stamp)):
+        if stamp is not None:
+            art["judge_context"] = stamp
+
+    with pytest.raises(PluginDeltaError, match="different judge_context"):
+        compare_plugin_runs(baseline, plugin)
+
+
+@pytest.mark.parametrize("stamp", [None, _V1])
+def test_compare_plugin_runs_allows_judge_context_that_matches(stamp):
+    baseline = _arms_artifact()
+    plugin = _arms_artifact("caveman:full")
+    if stamp is not None:
+        baseline["judge_context"] = plugin["judge_context"] = stamp
+
+    compare_plugin_runs(baseline, plugin)
+
+
 def test_plugin_delta_report_renders_key_sections():
     out = compare_plugin_runs(_arms_artifact(), _arms_artifact("caveman:full"))
     md = render_plugin_delta_report(out)

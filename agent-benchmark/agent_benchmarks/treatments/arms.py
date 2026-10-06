@@ -157,6 +157,14 @@ class SkillAgentTreatment(Treatment):
 
         return AgentConfig(
             tools=[ViewSkillTool(self.skill, self.max_chars)],
+            # Nothing is injected, so the judge's reference has to carry the
+            # skill itself as well as its manifest: the transcript keeps only a
+            # 200-char preview of each tool result, so what the agent actually
+            # read is not recoverable at judge time.
+            judge_reference="\n\n".join(
+                p for p in (self.skill.as_context(self.max_chars),
+                            self.skill.resource_manifest()) if p
+            ),
             metadata={
                 "arm_kind": "skill_agent",
                 "skill_name": self.skill.name,
@@ -248,6 +256,9 @@ class SkillTreatment(Treatment):
             # The skill body is the same for every question, so it is a genuine
             # cacheable prefix — unlike DocTreatment's query-driven chunks.
             context_is_static=True,
+            # The body is already injected; only the inventory of bundled files
+            # is missing, and that is exactly what the judge cannot verify.
+            judge_reference=self.skill.resource_manifest(),
             metadata={
                 "arm_kind": "skill",
                 "skill_name": self.skill.name,
@@ -339,5 +350,14 @@ class CombinedTreatment(Treatment):
             injected_context=merged_context,
             tools=merged_tools,
             context_is_static=context_is_static,
+            # The reference is what the judge may treat as available to the
+            # arm. On the plain path every sub-treatment's material is. On the
+            # agentic path only the agentic sub-treatments' is: that path does
+            # not put injected context in front of the agent, so a non-agentic
+            # skill's manifest names files the agent has no tool to reach.
+            judge_reference="\n\n".join(
+                c.judge_reference for c in configs
+                if c.judge_reference and (c.is_agentic or not merged_tools)
+            ),
             metadata=merged_metadata,
         )

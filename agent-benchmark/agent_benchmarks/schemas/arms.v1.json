@@ -47,6 +47,10 @@
         "null"
       ]
     },
+    "judge_context": {
+      "description": "Protocol for what the judge was shown about each arm's treatment material (e.g. treatment_material.v1). Absent on runs judged on 200-char report snippets, before the stamp existed.",
+      "type": "string"
+    },
     "arms": {
       "type": "array",
       "items": {

@@ -45,6 +45,28 @@ def test_nested_file_loads_by_relative_path(nested_skill):
     assert "Topic detail" in out
 
 
+def test_manifest_lists_every_bundled_file_relative_to_skill_md(nested_skill):
+    manifest = load_skill(nested_skill).resource_manifest()
+    assert "references/topic.md" in manifest
+    assert "scripts/probe.py" in manifest
+    # The judge's problem is existence, so the manifest has to assert it.
+    assert "exist" in manifest
+    # Paths only — the bodies would not fit the judge's budget.
+    assert "Topic detail" not in manifest
+
+
+def test_manifest_is_empty_for_a_skill_with_no_bundled_files(tmp_path):
+    root = tmp_path / "flat-demo"
+    root.mkdir()
+    (root / "SKILL.md").write_text(SKILL_BODY, encoding="utf-8")
+    assert load_skill(root).resource_manifest() == ""
+
+
+def test_manifest_caps_the_list_and_says_how_many_it_dropped(nested_skill):
+    manifest = load_skill(nested_skill).resource_manifest(max_files=1)
+    assert "… and 1 more" in manifest
+
+
 def test_path_traversal_is_refused(nested_skill):
     out = ViewSkillTool(load_skill(nested_skill)).call("../../../../etc/passwd")
     assert "outside the skill directory" in out
