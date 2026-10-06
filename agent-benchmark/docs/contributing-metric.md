@@ -98,7 +98,7 @@ def test_unresolved_link_drops_score():
     assert link_validity.score(text, known_anchors={"known"}) == 0.5
 ```
 
-Then add an integration assertion to `tests/test_runner.py` (or equivalent)
+Then add an integration assertion to `tests/test_runner_run.py` (or equivalent)
 covering the metric flowing through `cli.py run`.
 
 ## 5 — Document it
