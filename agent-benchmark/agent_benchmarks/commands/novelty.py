@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""novelty subcommand group: what does this artifact add to this model? (Phase E).
+"""novelty subcommand group: what does this artifact add to this model?
 
 Standalone by design. `novelty analyze` needs an artifact and a model — no question set,
 no task suite, no benchmark run — because the first user is an author editing a skill,
@@ -249,7 +249,7 @@ def register(sub, positive_int) -> None:
     """Add the `novelty` subcommand group."""
     novelty_p = sub.add_parser(
         "novelty",
-        help="Measure what an artifact's content adds to a model (Phase E)",
+        help="Measure what an artifact's content adds to a model",
     )
     novelty_sub = novelty_p.add_subparsers(dest="novelty_cmd", required=True)
 

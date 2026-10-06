@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "agent-benchmark"
 version = "0.1.0"
-description = "Agent context, artifact, and documentation evaluation harness"
+description = "Measures whether a skill, MCP doc source, documentation set or agent profile actually improves AI-agent answers and task outcomes"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }

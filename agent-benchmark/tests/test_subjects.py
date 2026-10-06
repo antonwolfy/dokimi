@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for Phase D subject descriptors and scorecards."""
+"""Tests for subject descriptors and scorecards."""
 
 from __future__ import annotations
 

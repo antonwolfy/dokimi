@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""subjects subcommand group: Phase D scorecards."""
+"""subjects subcommand group: subject descriptors and scorecards."""
 
 from __future__ import annotations
 
@@ -169,7 +169,7 @@ def register(sub, positive_int) -> None:
     """Add the `subjects` subcommand group."""
     subjects_p = sub.add_parser(
         "subjects",
-        help="Run Phase D evaluation subjects and scorecards",
+        help="Run evaluation subjects (artifact + suite) into scorecards",
     )
     subjects_sub = subjects_p.add_subparsers(dest="subjects_cmd", required=True)
 

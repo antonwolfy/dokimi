@@ -39,7 +39,10 @@ Two fine-print notes:
 
 ## Example results
 
-One skill, four models, same golden question set:
+One skill, four models, same golden question set. The numbers are
+illustrative — the skill and question set they come from are evaluation content
+and are not part of this repository; `cli.py arms run` produces the same table
+for your own content (see [evaluating-treatments.md](evaluating-treatments.md)).
 
 | Model | WITH skill | WITHOUT skill | Delta | p-value | Significant? |
 |---|---|---|---|---|---|
@@ -97,7 +100,8 @@ Two more tracks back this up:
 ## Why this matters
 
 Marketplaces rank agent artifacts by popularity, which buries niche expert
-tooling (focus here: Intel performance libraries — oneTBB, oneDAL, oneMKL).
+tooling such as HPC and performance libraries (the bundled examples use
+oneTBB, oneDAL and oneMKL).
 Here, every shipped skill, doc source, or profile carries the **scorecard
 that earned it**, kept alive as models and docs change. See the
 [repository overview](../../README.md) for what this framework is and where the

@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Data models for Phase D evaluation subjects."""
+"""Data models for evaluation subjects."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ class SubjectSuite:
 
 @dataclass(frozen=True)
 class SubjectDescriptor:
-    """A loadable Phase D subject descriptor."""
+    """A loadable evaluation subject descriptor."""
 
     path: Path
     subject: SubjectArtifact

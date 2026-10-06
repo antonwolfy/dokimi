@@ -5,24 +5,56 @@
 > evidence (a scorecard) that decides whether the artifact is worth shipping.
 > See the [repository overview](../README.md) for the short version.
 
-`agent-benchmark` is a toolkit for measuring whether documentation and other agent-facing context improve model performance. It started as a technical documentation benchmark and now supports a broader evaluation pattern: compare a model or coding agent with and without a controlled context layer.
+`agent-benchmark` measures whether a skill, MCP doc source, documentation set or
+agent profile actually improves a model's or coding agent's answers and task
+outcomes. It runs the same question or task set with and without one controlled
+context layer and reports the delta together with its significance.
 
-Current context layers include product documentation, local Markdown/URL sources, Context7-backed docs, curated golden question sets, skills, agent profiles, prompt packs, MCP/doc-source arms, and executable task environments.
+Context layers it can measure: local Markdown/URL documentation, Context7 and
+real MCP servers, skills (`SKILL.md` and bundles), agent profiles (system
+prompts), plugins, and whole code repositories with their own tasks and graders
+(manifest validation and pinned sources today; the task-run contract is proposed).
 
-It exposes one canonical benchmark flow: pick a registered target, preflight the resolved plan, run one fixed question/task set, then compare controlled arms (`without_docs` vs `with_docs` by default). Static docs checks, LLM-as-judge scoring, treatment arms, dashboards, and executable tasks are evidence layers over that same benchmark set, not separate first-time user journeys.
+Evidence tracks:
 
-See [docs/user-flow.md](docs/user-flow.md) for the canonical path.
+| Track | Question it answers | Guide |
+|---|---|---|
+| Context benchmark | Do answers to a fixed question set improve with the artifact? | [user-flow.md](docs/user-flow.md), [quickstart.md](docs/quickstart.md) |
+| Treatment arms | Which of several docs / MCP / skill / profile arms helps, and by how much? | [evaluating-treatments.md](docs/evaluating-treatments.md) |
+| Executable tasks | Does the agent produce code that builds and passes tests in Docker? | [coding-harnesses.md](docs/coding-harnesses.md) |
+| Exploration (ExploreBench) | Can the agent locate the right files and line ranges? | [external-content.md](docs/external-content.md) |
+| Content novelty | What does a skill *add* to a given model, and what can be cut? | [skill-novelty.md](docs/skill-novelty.md) |
+| Repository subjects | How well does an agent work inside a given repository? | [repo-evaluation-contract.md](docs/repo-evaluation-contract.md) |
+| Static docs checks | Are the docs well-structured, fresh, readable, with runnable examples? | [Static benchmark metrics](#static-benchmark-metrics) |
 
-The repository is currently focused on Intel library documentation quality experiments, especially oneTBB, oneDAL, and oneMKL.
+The framework is content-agnostic: question sets, tasks, skills and products are
+passed in by path or registered in `products.yaml`. The bundled registry uses
+oneTBB, oneDAL and oneMKL as worked examples.
 
-## Quick start
+The project is pre-1.0; interfaces and artifact schemas may still change.
 
-Install dependencies:
+## Requirements and setup
+
+- Python 3.10–3.13.
+- API keys for the models you run, read from the environment:
+  `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or any other
+  [LiteLLM](https://docs.litellm.ai/docs/providers) provider (for example
+  `AWS_REGION` + `AWS_BEARER_TOKEN_BEDROCK` for Bedrock). `GITHUB_TOKEN` is
+  optional and raises the persona-discovery rate limit.
+- Docker, only for the executable-task, harness and repository tracks.
+- Optional extras: `ocr` (Docling ingestion) and `mcp` (real MCP servers).
 
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-test.txt
+pip install -e ".[dev]"     # installs the `agent-benchmark` command plus test tooling
+# or, without installing the package:
+pip install -r requirements.txt -r requirements-test.txt
 ```
+
+The examples below use `python cli.py …`; after `pip install -e .` the
+`agent-benchmark …` command is equivalent. For what a run costs in API calls,
+see the [cost estimate](docs/quickstart.md#cost-estimate).
+
+## Quick start
 
 Run the canonical context benchmark:
 
@@ -53,21 +85,37 @@ For the LLM evaluation pipeline (answers, judging, dashboard), see [docs/quickst
 
 ## Main CLI areas
 
-The top-level CLI is `python cli.py`. The main command groups are:
+The top-level CLI is `python cli.py` (or `agent-benchmark` once installed):
 
 ```text
-run                 Run the static agent-quality benchmark
-compare             Compare benchmark snapshots
-report              Render JSON reports to Markdown
-evaluate            Run the full evaluation pipeline
-personas            Discover and approve target user personas
-questions           Generate, analyze, refine, and panel-review questions
-answers             Generate context-arm and baseline answers
-arms                Compare context-augmentation treatments (docs/MCP/skills/profiles)
-eval                Score answers, run RAGAS, or use a multi-judge panel
-library             List/show registered products and intent domains (alias: product)
-benchmark           Run registered library benchmarks
-dashboard           Generate dashboard Markdown/JSON
+Context benchmark
+  benchmark           Preflight and run the benchmark for registered targets
+  evaluate            Run the full pipeline in one command
+  personas            Discover and approve target user personas
+  questions           Generate, analyze, refine, and panel-review questions
+  answers             Generate context-arm and baseline answers
+  eval                Score answers, run RAGAS, or use a multi-judge panel
+  arms                Compare treatment arms (docs / MCP / skills / profiles)
+  subjects            Run a subject descriptor (artifact + suite) into a scorecard
+
+Executable and agentic tracks
+  tasks               Run Docker coding tasks through Codex, Claude Code or Harbor harnesses
+  explore             Run file/line localization tasks (ExploreBench)
+  repo                Validate a repository's repo-eval.yaml, fetch pinned sources, probe guidance reach
+  catalog             Check which skills/tasks in an external checkout load cleanly
+
+Content analysis
+  novelty             Measure what an artifact's content adds to a model
+  run                 Run the static documentation benchmark
+  ingest              Convert PDF/Office/HTML to Markdown via Docling
+
+Results and registries
+  report              Render reports (incl. model-compare)
+  compare             Compare static benchmark snapshots
+  baseline            Save and compare evaluation baselines
+  dashboard           Generate dashboard Markdown/JSON
+  dataset             Export artifacts to JSONL/Parquet/Hugging Face
+  library             List/show registered products and intent domains (alias: product)
 ```
 
 Use `--help` on any command for detailed options, for example:
@@ -168,26 +216,41 @@ products.yaml            Product registry: identity + doc sources per product
 intents.yaml             Intent registry: problem/task domains mapped to products
 agent_benchmarks/        Main Python package
   agent_profiles/        Agent persona prompt loader
+  commands/              CLI subcommand definitions
   dashboard/             Dashboard aggregation/rendering
   eval/                  Answer generation, judges, panels, RAGAS, arm runner
+  explore/               ExploreBench localization track
+  external/              External skill/task catalog scanning
   gate/                  Soft/hard gates and regression classification
+  harnesses/             Coding-agent harness adapters (Codex, Claude Code, Harbor)
   ingest/                Markdown loading and chunking
   mcp/                   Documentation source clients (incl. MCP protocol)
   metrics/               Static documentation metrics
+  novelty/               Content-novelty engine (atoms, probes, shortening)
   orchestrator/          Pipeline orchestration
   personas/              Persona generation/analysis (synthetic users)
   questions/             Question generation, validation, refinement
+  repos/                 Repository subjects: manifest, sources, validation, harness profiles, reach probe
   report/                JSON/Markdown report generation
   runner/                Benchmark orchestration
+  schemas/               JSON Schemas for every persisted artifact
   skills/                SKILL.md loader
+  subjects/              Subject descriptors and scorecards
   treatments/            Treatment-arm abstraction (docs/MCP/skills/profiles)
 data/                    Curated, version-controlled benchmark inputs (see data/README.md)
   skills/fastcontext/    The SKILL.md fixture the loader tests and examples use
   agent_profiles/        Agent persona (system) prompt fixtures
   explore_tasks/         Localization tasks with known-good references
-docs/                    Documentation
-  README.md              Documentation index
+docs/                    Documentation (full index: docs/README.md)
+  README.md              Concept overview and documentation index
   quickstart.md          End-to-end LLM evaluation pipeline
+  external-content.md    Pointing the framework at your own questions, tasks, skills
+  evaluating-treatments.md
+                         Comparing docs / MCP / skill / profile arms
+  coding-harnesses.md    Executable tasks through coding-agent harnesses
+  skill-novelty.md       What a skill adds to a model
+  repo-evaluation-contract.md
+                         Evaluating a whole repository as a subject
   architecture.md        Module map and data flow
   adding-doc-source.md   Local/URL/custom doc sources
   contributing-metric.md How to add a static documentation metric
