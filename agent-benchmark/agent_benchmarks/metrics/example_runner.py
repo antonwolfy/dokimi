@@ -141,11 +141,13 @@ def _run_subprocess(lang: str, code: str, policy: ExecutionPolicy) -> tuple[bool
     # Minimal environment — do not leak the parent's secrets/API keys. LD_LIBRARY_PATH
     # is preserved (not secret) because relocatable Python builds — e.g. actions/setup-python's
     # hostedtoolcache installs — need it on the child's PATH to find libpython*.so.
-    safe_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": "/tmp"}
+    safe_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
     if "LD_LIBRARY_PATH" in os.environ:
         safe_env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
 
     with tempfile.TemporaryDirectory() as tmp:
+        # HOME points at the per-run temp dir rather than a shared /tmp.
+        safe_env["HOME"] = tmp
         script = Path(tmp) / f"snippet{suffix}"
         script.write_text(code, encoding="utf-8")
         try:

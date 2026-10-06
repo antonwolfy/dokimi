@@ -58,6 +58,16 @@ def test_subprocess_executes_when_opted_in(tmp_path):
     assert res.passed is True
 
 
+def test_subprocess_gets_its_own_home_and_no_parent_secrets(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "x")
+    code = (
+        "import os, sys; "
+        "sys.exit(0 if os.environ.get('HOME') == os.getcwd() and 'OPENAI_API_KEY' not in os.environ else 1)"
+    )
+    res = run_example("python", code, ExecutionPolicy(backend="subprocess", allow_host=True, timeout=10))
+    assert res.status == "passed", res.error
+
+
 def test_subprocess_reports_failure(tmp_path):
     res = run_example(
         "python", "import sys; sys.exit(3)",

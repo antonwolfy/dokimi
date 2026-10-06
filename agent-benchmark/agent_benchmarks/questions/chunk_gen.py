@@ -75,7 +75,9 @@ def _fetch_url(url: str, timeout: int = 20) -> str:
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Unsupported URL scheme '{parsed.scheme}': only http/https allowed")
     req = Request(url, headers={"User-Agent": "agent-benchmark/1.0"})
-    with urlopen(req, timeout=timeout) as resp:
+    # The initial scheme is restricted to http/https above. A redirect can still
+    # reach ftp:, but urllib's redirect handler refuses file:, which is B310's risk.
+    with urlopen(req, timeout=timeout) as resp:  # nosec B310
         raw = resp.read()
         charset = resp.headers.get_content_charset("utf-8")
     return raw.decode(charset, errors="replace")

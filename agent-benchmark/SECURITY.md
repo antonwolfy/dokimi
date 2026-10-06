@@ -36,3 +36,24 @@ properties are worth calling out for anyone running it:
 
 The project is pre-1.0; only the latest `main` is supported. Fixes land on
 `main` and are not backported.
+
+## Known advisories in dependencies
+
+`pip-audit` against `requirements.lock.txt` reports two advisories with no
+upstream fix as of 2026-10-05:
+
+- **diskcache 5.6.3 — PYSEC-2026-2447** (CVE-2025-69872, GHSA-w8v5-vhqr-4h9v;
+  pickle deserialization from a cache directory). Pulled in only by ragas,
+  which imports it inside its opt-in `DiskCacheBackend`; agent-benchmark never
+  constructs one, so no diskcache directory is created or read.
+- **ragas 0.3.9 — PYSEC-2026-3046** (CVE-2026-6587, GHSA-95ww-475f-pr4f; SSRF
+  and file read in the multi-modal faithfulness metric's loader). The
+  advisory's range is 0.2.3–0.4.3, but the vulnerable module
+  (`ragas/metrics/collections/multi_modal_faithfulness/util.py`) first ships
+  in 0.4.2, so the pinned 0.3.9 does not contain it. A fixed release would be
+  0.4.4 or later, which is outside the `ragas<0.4` cap: taking it means lifting
+  the cap and migrating, not a bump, and 0.4.2–0.4.3 must be skipped.
+
+The `ragas>=0.3.0` floor keeps out 0.2.3–0.2.x, which are affected by
+CVE-2025-45691 (GHSA-v2xr-wvrv-p969, file read through `retrieved_contexts`,
+fixed in 0.3.0).
