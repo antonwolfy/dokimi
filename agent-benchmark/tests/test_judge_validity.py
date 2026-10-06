@@ -128,6 +128,8 @@ class TestDegradations:
         "Wrap code in ``` fences. It takes 5 ms.\n\n```bash\nsleep 100 ms\n```",
         "It takes 5 ms.\n\n~~~bash timeout=100ms\nsleep 100 ms\n~~~",
         "It takes 5 ms.\n\n````md\n```bash\nsleep 100 ms\n```\n````",
+        "It takes 5 ms.\n\n```markdown\n1. Run:\n\n    ```bash\n    sleep 100 ms\n    ```\n\nIt waits 100 ms.\n```",
+        "It takes 5 ms.\n\n<pre>\nsleep 100 ms\n</pre>",
     ])
     def test_wrong_numbers_finds_the_code_as_padding_does(self, answer):
         assert wrong_numbers(answer) == answer.replace("5 ms", "50 ms", 1)
@@ -267,6 +269,12 @@ class TestDegradations:
         # fence inside a nested list item (indented 4+ spaces)
         ("1. Step:\n\n    - sub\n\n        ```bash\n        perf record\n\n        perf report\n        ```\n\nDone.",
          "        ```bash\n        perf record\n\n        perf report\n        ```"),
+        # a fence quoted inside a ```markdown block is content, not its closer
+        ("Template:\n\n```markdown\n1. Install:\n\n    ```bash\n    pip install x\n    ```\n\n2. Run.\n```\n\nDone.",
+         "```markdown\n1. Install:\n\n    ```bash\n    pip install x\n    ```\n\n2. Run.\n```"),
+        # an HTML <pre> block
+        ("Code:\n\n<pre>\nline1\n\nline2\n</pre>\n\nDone.",
+         "<pre>\nline1\n\nline2\n</pre>"),
     ])
     def test_padding_respects_every_fence_form(self, answer, block):
         out = padding(answer)

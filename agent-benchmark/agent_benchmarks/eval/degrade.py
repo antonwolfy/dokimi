@@ -289,29 +289,50 @@ PADDING_PARAGRAPHS: Sequence[str] = (
 #: item: a fence inside a nested list item sits 4+ spaces in (9 of 1215 stored
 #: answers have one) and is still a fence.
 _FENCE_LINE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+_PRE = "<pre>"
+_PRE_OPEN = re.compile(r"\s*<pre[\s>]", re.I)
+_PRE_CLOSE = re.compile(r"</pre\s*>", re.I)
 
 
 def _fence_state(lines: Sequence[str], fence: Optional[str]) -> Optional[str]:
     """Advance the open-fence state over ``lines``.
 
-    ``fence`` is the opening run (e.g. "```" or "~~~~") of the block we are
-    inside, or None outside one. A block closes on a line starting with the same
-    character, at least as many times, and nothing else after it.
+    ``fence`` is the opening line's indentation plus its run (e.g. "```" or
+    "    ~~~~") of the block we are inside, or None outside one. A block closes on
+    a line starting with the same character, at least as many times, nothing
+    else after it, and indented at most 3 columns past the opener: deeper, it is
+    content (a fence quoted inside a ```markdown block). A ``<pre>`` element is a
+    block too, closed by ``</pre>``.
     """
     for line in lines:
+        if fence == _PRE:
+            if _PRE_CLOSE.search(line):
+                fence = None
+            continue
+        if fence is None and _PRE_OPEN.match(line) and not _PRE_CLOSE.search(line):
+            fence = _PRE
+            continue
         m = _FENCE_LINE.match(line)
         if not m:
             continue
         run = m.group(1)
+        indent = m.start(1)
         if fence is None:
             # A backtick fence's info string cannot contain a backtick, so a
             # line that merely starts with inline code ("```x``` is ...") does
             # not open a block.
             if run[0] == "`" and "`" in line.lstrip()[len(run):]:
                 continue
-            fence = run
-        elif run[0] == fence[0] and len(run) >= len(fence) and not line.strip()[len(run):].strip():
-            fence = None
+            fence = line[:indent] + run
+        else:
+            opener = fence.lstrip()
+            if (
+                run[0] == opener[0]
+                and len(run) >= len(opener)
+                and indent <= len(fence) - len(opener) + 3
+                and not line.strip()[len(run):].strip()
+            ):
+                fence = None
     return fence
 
 
