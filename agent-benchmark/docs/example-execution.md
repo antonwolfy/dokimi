@@ -26,7 +26,7 @@ metrics:
 | Backend | Isolation | Use when |
 | --- | --- | --- |
 | `none` (default) | Nothing runs; examples reported as `skipped` | Untrusted corpora, or you only want extraction |
-| `subprocess` | Resource-limited host subprocess (CPU/mem/pids caps, minimal env, temp cwd). **No network isolation.** Requires `allow_host: true`. | Trusted, self-owned documentation |
+| `subprocess` | Host subprocess with per-process CPU/memory caps, minimal env, temp cwd; its process group is killed when it exits or times out. **No network isolation and no process-count cap.** Requires `allow_host: true`. | Trusted, self-owned documentation |
 | `docker` | Container with `--network none`, read-only mounts, CPU/memory/pid limits, per-example timeout | Untrusted documentation |
 
 ### Why `none` is the default
@@ -51,7 +51,9 @@ DOC_BENCH_EXAMPLE_BACKEND=none agent-benchmark run --spec benchmarks/spec.v1.yam
 ## Security notes
 
 - The `subprocess` backend strips the parent environment (no API keys leak into
-  examples) and applies POSIX resource limits, but it **cannot** isolate the
-  network. Only use it on documentation you trust.
+  examples) and applies POSIX CPU/memory limits, but it **cannot** isolate the
+  network or cap the number of processes a snippet spawns (POSIX `RLIMIT_NPROC`
+  counts all of the user's processes, not the snippet's). Only use it on
+  documentation you trust.
 - For anything else, use `docker`, which adds `--network none` and a read-only
   filesystem. See also [SECURITY.md](../SECURITY.md).

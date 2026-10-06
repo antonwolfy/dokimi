@@ -26,6 +26,7 @@ click==8.5.0
 colorama==0.4.6 ; sys_platform == 'win32'
 coverage==7.16.2
 cryptography==50.0.2
+dataclasses-json==0.6.7
 datasets==5.0.1
 diff-cover==10.6.0
 dill==0.4.1
@@ -64,8 +65,9 @@ jsonpointer==3.1.1
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 langchain==1.4.3
+langchain-anthropic==1.7.5
 langchain-classic==1.0.8
-langchain-community==0.4.2
+langchain-community==0.4.1
 langchain-core==1.6.6
 langchain-openai==1.6.7
 langchain-protocol==0.0.19
@@ -78,9 +80,11 @@ langsmith==0.14.3
 litellm==1.103.2
 markdown-it-py==4.2.0
 markupsafe==3.0.3
+marshmallow==3.26.2
 mdurl==0.1.2
 multidict==6.9.1
 multiprocess==0.70.19
+mypy-extensions==1.1.0
 nest-asyncio==1.6.0
 networkx==3.4.2 ; python_full_version < '3.11'
 networkx==3.6.1 ; python_full_version >= '3.11'
@@ -139,6 +143,7 @@ tqdm==4.70.1
 truststore==0.10.4 ; sys_platform != 'emscripten'
 typer==0.27.2
 typing-extensions==4.16.0
+typing-inspect==0.9.0
 typing-inspection==0.4.4
 tzdata==2026.5 ; python_full_version < '3.11' or sys_platform == 'emscripten' or sys_platform == 'win32'
 urllib3==2.8.0

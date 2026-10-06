@@ -12,7 +12,8 @@ documentation is dangerous, so execution is governed by an explicit
   Safe for untrusted corpora. Examples are reported as ``skipped``.
 * ``subprocess`` — run on the host in a resource-limited subprocess. Requires
   ``allow_host=True`` (an explicit opt-in). Use only for **trusted, self-owned**
-  documentation. Network is *not* isolated in this mode.
+  documentation. Network is *not* isolated in this mode, and the number of
+  processes a snippet spawns is not capped.
 * ``docker`` — run inside a locked-down container (``--network none``,
   read-only mounts, CPU/memory/time limits). Preferred for untrusted docs.
 
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -108,7 +110,13 @@ def extract_examples(markdown: str) -> list[tuple[str, str]]:
 
 
 def _limit_resources(policy: ExecutionPolicy):
-    """Return a preexec_fn that applies CPU/memory/process limits (POSIX)."""
+    """Return a preexec_fn that applies CPU/memory limits (POSIX).
+
+    No RLIMIT_NPROC: it counts every process and thread of the real UID
+    system-wide (and is not enforced for root), not the snippet's own children,
+    so a small cap makes every fork fail on a busy host. Capping the process
+    count is the docker backend's job (``--pids-limit``).
+    """
     if sys.platform == "win32" or resource is None:  # pragma: no cover - Windows
         return None
 
@@ -121,12 +129,19 @@ def _limit_resources(policy: ExecutionPolicy):
             resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
         except (ValueError, OSError):  # pragma: no cover - platform dependent
             pass
-        try:
-            resource.setrlimit(resource.RLIMIT_NPROC, (64, 64))
-        except (ValueError, OSError):  # pragma: no cover
-            pass
 
     return _apply
+
+
+def _kill_group(proc: subprocess.Popen, own_group: bool) -> None:
+    """Kill the snippet and whatever it left running in its process group."""
+    try:
+        if own_group:
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:  # pragma: no cover - Windows: no session of its own
+            proc.kill()
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def _run_subprocess(lang: str, code: str, policy: ExecutionPolicy) -> tuple[bool, str | None]:
@@ -140,35 +155,45 @@ def _run_subprocess(lang: str, code: str, policy: ExecutionPolicy) -> tuple[bool
     suffix, argv_prefix = EXECUTORS[lang]
     # Minimal environment — do not leak the parent's secrets/API keys. LD_LIBRARY_PATH
     # is preserved (not secret) because relocatable Python builds — e.g. actions/setup-python's
-    # hostedtoolcache installs — need it on the child's PATH to find libpython*.so.
+    # hostedtoolcache installs — need it so the dynamic loader can find libpython*.so.
     safe_env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
     if "LD_LIBRARY_PATH" in os.environ:
         safe_env["LD_LIBRARY_PATH"] = os.environ["LD_LIBRARY_PATH"]
 
-    with tempfile.TemporaryDirectory() as tmp:
+    preexec = _limit_resources(policy)
+    # stderr goes to a file, not a pipe: a background job the snippet leaves running would
+    # hold a pipe open and keep the run waiting until the timeout. stdout is not reported.
+    with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryFile() as stderr:
         # HOME points at the per-run temp dir rather than a shared /tmp.
         safe_env["HOME"] = tmp
         script = Path(tmp) / f"snippet{suffix}"
         script.write_text(code, encoding="utf-8")
         try:
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 argv_prefix + [str(script)],
-                capture_output=True,
-                text=True,
-                timeout=policy.timeout,
-                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=stderr,
                 cwd=tmp,
                 env=safe_env,
-                preexec_fn=_limit_resources(policy),
+                preexec_fn=preexec,
             )
-        except subprocess.TimeoutExpired:
-            return False, f"Timeout after {policy.timeout}s"
         except Exception as exc:  # noqa: BLE001 - report any spawn failure
             return False, f"Execution error: {type(exc).__name__}: {exc}"
+        try:
+            returncode = proc.wait(timeout=policy.timeout)
+        except subprocess.TimeoutExpired:
+            return False, f"Timeout after {policy.timeout}s"
+        finally:
+            # The snippet leads its own session (setsid), so this also removes background
+            # jobs it started, whether it exited or timed out.
+            _kill_group(proc, own_group=preexec is not None)
+            proc.wait()
+        stderr.seek(0)
+        err = stderr.read().decode("utf-8", errors="replace")
 
-    if result.returncode == 0:
+    if returncode == 0:
         return True, None
-    return False, f"Exit code {result.returncode}: {result.stderr[:200]}"
+    return False, f"Exit code {returncode}: {err[:200]}"
 
 
 def _run_docker(lang: str, code: str, policy: ExecutionPolicy) -> tuple[bool, str | None]:

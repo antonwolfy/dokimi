@@ -242,9 +242,11 @@ class RagasEvaluator:
             return LangchainLLMWrapper(lc_llm)
 
         except ImportError as exc:
+            # Name the module that actually failed: ragas itself can fail on a transitive
+            # import (e.g. a langchain_community module that a newer release removed).
             raise ImportError(
-                "RAGAS evaluation requires langchain_openai or langchain_anthropic. "
-                "Install: pip install langchain-openai langchain-anthropic ragas"
+                f"RAGAS evaluation could not import {exc.name or 'a dependency'}: {exc}. "
+                "Install the locked dependencies: pip install -r requirements.lock.txt"
             ) from exc
 
     def _build_metrics(self) -> list:

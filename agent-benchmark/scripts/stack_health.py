@@ -46,7 +46,7 @@ def _api(url: str, token: str) -> list | dict:
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
     })
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed API host
+    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed API host  # nosec B310
         return json.loads(resp.read().decode("utf-8"))
 
 
