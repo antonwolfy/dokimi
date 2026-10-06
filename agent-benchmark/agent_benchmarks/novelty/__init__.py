@@ -17,7 +17,7 @@ from .atoms import Atom, extract_atoms, verify_atoms
 from .client import LLMClient, roll_up_cost
 from .measure import MeasureResult, SelfJudgeError, atom_outcomes, run_measurement
 from .needs import NeedGraph, build_need_graph
-from .probes import Probe, build_probes
+from .probes import Probe, ProbeSet, build_probes, build_probe_set, check_wording
 from .report import build_novelty_artifact, render_annotated_html, render_novelty_markdown
 from .retention import RetentionOracle
 from .spans import Span, segment, span_summary
@@ -30,6 +30,7 @@ __all__ = [
     "MeasureResult",
     "NeedGraph",
     "Probe",
+    "ProbeSet",
     "RetentionOracle",
     "SelfJudgeError",
     "Span",
@@ -37,7 +38,9 @@ __all__ = [
     "atom_outcomes",
     "build_need_graph",
     "build_novelty_artifact",
+    "build_probe_set",
     "build_probes",
+    "check_wording",
     "extract_atoms",
     "load_artifact_text",
     "render_annotated_html",

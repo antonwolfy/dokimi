@@ -121,7 +121,7 @@ def cmd_novelty_probe(args: argparse.Namespace) -> None:
     from agent_benchmarks.novelty.analyze import load_artifact_text
     from agent_benchmarks.novelty.atoms import load_atoms
     from agent_benchmarks.novelty.measure import SelfJudgeError, run_measurement
-    from agent_benchmarks.novelty.probes import build_probes
+    from agent_benchmarks.novelty.probes import build_probe_set
 
     atoms, _spans = load_atoms(args.atoms)
     _kind, _name, _description, _frontmatter, body = load_artifact_text(args.artifact)
@@ -130,10 +130,17 @@ def cmd_novelty_probe(args: argparse.Namespace) -> None:
         print(f"WARNING: {answerer.model} extracted these atoms, so the model under measurement "
               "wrote its own answer key; extract with a different --extract-model",
               file=sys.stderr)
-    probes = build_probes(
+    probe_set = build_probe_set(
         atoms, client=None if args.no_paraphrase and args.no_reversal else extractor,
         paraphrases=0 if args.no_paraphrase else 1, reversals=not args.no_reversal,
     )
+    probes = probe_set.probes
+    for kind, row in sorted(probe_set.fidelity.items()):
+        if row["rejected"]:
+            print(f"WARNING: dropped {row['rejected']} of {row['generated']} generated {kind} "
+                  f"wordings that failed the fidelity check "
+                  f"({', '.join(f'{r}={n}' for r, n in sorted(row['reasons'].items()))})",
+                  file=sys.stderr)
     try:
         result = run_measurement(
             atoms, probes, body, answerer=answerer, judge=judge,
@@ -150,6 +157,7 @@ def cmd_novelty_probe(args: argparse.Namespace) -> None:
         "artifact": args.artifact,
         "model": answerer.model,
         "judge_model": judge.model,
+        "probes": probe_set.as_dict(),
         "paired": {scoring: result.paired(scoring) for scoring in ("lenient", "strict")},
         "arms": {scoring: result.arm_means(scoring) for scoring in ("lenient", "strict")},
         "abstentions": result.abstentions(),

@@ -148,10 +148,23 @@ def analyze(
         )
     relevance = needs.match_atoms(atom_list, graph)
 
-    probe_list = probes.build_probes(
+    probe_set = probes.build_probe_set(
         atom_list, client=extractor,
         paraphrases=config.paraphrases, reversals=config.reversals,
     )
+    probe_list = probe_set.probes
+    # A generated wording that lost the version bound, or a "reversal" that never
+    # reversed, corrupts the answer key the judge grades against. Rejects are dropped,
+    # but a high reject rate also means the kind it hit was measured on a thinner probe
+    # budget than the run claims, so it has to be visible.
+    for kind, row in probe_set.fidelity.items():
+        if row["generated"] and row["rejected"] / row["generated"] > 0.2:
+            warnings.append(
+                f"{row['rejected']} of {row['generated']} generated {kind} wordings failed "
+                f"the fidelity check and were dropped "
+                f"({', '.join(sorted(row['reasons']))}); {kind} probes cover "
+                f"{row['kept']} of {len(atom_list)} atoms"
+            )
     measure_result = measure.run_measurement(
         atom_list, probe_list, text,
         answerer=answerer, judge=judge, arms=config.arms,
@@ -234,6 +247,7 @@ def analyze(
         measure_result=measure_result,
         span_summary=spans.span_summary(span_list, atom_list, atom_cap=config.max_atoms),
         by_knowledge_kind=by_knowledge_kind,
+        probe_fidelity=probe_set.as_dict(),
         attribution_summary=attribute.attribution_summary(
             attributions, confirmation=confirmation
         ),

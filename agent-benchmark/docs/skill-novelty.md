@@ -292,6 +292,52 @@ re-derive under two independent labellers to within 0.08, but the `motif`-vs-`co
 not (κ 0.32–0.38 on the shape vocabulary), so read the shape rows as "ordered/required content" versus
 "standalone claim" rather than as four distinct classes.
 
+## Probe wordings are checked before they are asked
+
+Two of the three probe kinds are written by a model: `paraphrase` rewords the atom's
+question, `reversal` turns the atom's statement into a false leading question whose correct
+answer is a refusal. Both can fail silently — a rewording that drops `driver 2.1`, or a
+"reversal" that restates the rule instead of inverting it — and either one corrupts the
+answer key the judge then grades against. Asking a model to check its own rewording
+re-introduces the same error, so the check is mechanical: anchor tokens (versions, numbers
+with units, CLI flags, env vars, letter-and-digit tokens such as `bf16` or `B60`, underscored
+and dotted names such as `dpnp.asnumpy`, file names — with or without backticks) must survive the rewording, a paraphrase
+must not flip polarity or leak the answer into the question, and a reversal must actually
+reverse — it must not be the statement with interrogative scaffolding bolted on
+(`Is it true that <statement>?` asserts a *true* premise while the answer key still says
+"refuse", which marks a correct model wrong), and it must either move a negation — change
+the count, or put it on a different word of the statement — or widen the claim the way the
+prompt asks for. A negation written as its synonym counts as the negation itself, so
+`X rather than Y` and `non-deterministic` restate `X, not Y` and `not deterministic`
+rather than inverting them. An opening `Doesn't` / `Isn't` is question phrasing and is not counted, so
+`Doesn't X support Y?` restates `X supports Y`, while `Is it true that X supports Y?`
+inverts `X does not support Y`. A reversal may run up to 15 words past the 2.5x length cap,
+the size of a leading frame such as `Isn't it true that ... NOT ..., but rather ...?`.
+
+Known gap: the paraphrase polarity check only asks whether a negation is present, so a
+faithful paraphrase that drops one (`Can you run X without root?` to `Is root required to
+run X?`) is rejected and counted in `malformed_rate`. The error inflates the rate; it never
+lets a corrupted wording through. The reversal check is lexical too: an inversion made by a
+plain antonym (`faster` to `slower`, `off` to `on`) is rejected and inflates the rate, while a
+restatement whose verb carries the negation (`does not support` to `lacks support for`) is
+not detected and is probed with a true premise.
+
+Rejected wordings are dropped, never probed, and the rate ships with the result:
+
+```json
+"probes": {"n_probes": 81, "malformed_rate": 0.12,
+           "by_kind": {"paraphrase": {"generated": 27, "kept": 24, "rejected": 3,
+                                      "reasons": {"anchor_dropped": 3}}}}
+```
+
+Read it as a budget statement, not a quality score. The denominator is **atoms asked for**,
+not rows the generator returned, so a failed or truncated generation counts: a
+`malformed_rate` of 0.12 on paraphrases means that kind probed 24 of 27 atoms, and a
+`redundant` verdict that was supposed to be confirmed under reworded phrasing was not
+confirmed for three of them. Above
+0.2 the run says so in `warnings`. The checks reject on evidence only, so a rate of 0.0 is
+the absence of detectable corruption — not proof that the wordings are faithful.
+
 ## Comparing knowledge: which matcher is allowed to answer
 
 Two steps ask "is this the same knowledge?" — the retention oracle ("does the shortened text still

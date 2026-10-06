@@ -57,6 +57,7 @@ def build_novelty_artifact(
     span_summary: dict,
     attribution_summary: dict,
     by_knowledge_kind: dict | None = None,
+    probe_fidelity: dict | None = None,
     categories: dict[str, int] | None = None,
     faithfulness: dict[str, int] | None = None,
     graph_summary: dict | None = None,
@@ -103,6 +104,7 @@ def build_novelty_artifact(
         },
         "k0": {scoring: row["k0"] for scoring, row in paired.items()},
         "by_knowledge_kind": by_knowledge_kind or {},
+        "probes": probe_fidelity or {},
         "arms": {
             scoring: measure_result.arm_means(scoring) for scoring in ("lenient", "strict")
         },

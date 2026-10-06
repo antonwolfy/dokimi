@@ -110,6 +110,32 @@
       "description": "The model's prior recall over the artifact's own knowledge, with no artifact in context.",
       "additionalProperties": {"type": "number"}
     },
+    "probes": {
+      "type": "object",
+      "description": "Probe budget and the fidelity of generated wordings. Paraphrase and reversal wordings come from a model and are checked mechanically (anchor tokens preserved, polarity actually flipped, answer not leaked into the question) before they are asked; rejects are dropped, never probed. malformed_rate is the share rejected: it bounds how much of the claimed probe budget a kind actually got, and a non-trivial rate means the kind covers fewer atoms than `atoms.n`. Empty when no wording generator ran (direct probes only).",
+      "properties": {
+        "n_probes": {"type": "integer", "minimum": 0},
+        "malformed_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "checks": {"type": "string"},
+        "by_kind": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "generated": {"type": "integer", "minimum": 0},
+              "kept": {"type": "integer", "minimum": 0},
+              "rejected": {"type": "integer", "minimum": 0},
+              "malformed_rate": {"type": "number", "minimum": 0, "maximum": 1},
+              "reasons": {
+                "type": "object",
+                "description": "Rejection reason tally. Mechanical reasons only; a clean result is the absence of detectable corruption, not proof of fidelity.",
+                "additionalProperties": {"type": "integer"}
+              }
+            }
+          }
+        }
+      }
+    },
     "by_knowledge_kind": {
       "type": "object",
       "description": "The same paired 2x2, cut by what each atom IS: its kind, and each of its tags. Keyed by scoring. Tag slices overlap (an atom carries several tags) and must never be summed. Slices below min_probes carry n_paired and underpowered:true and no rates. Both labels are one extractor's opinion: three extractors agreed on which spans carry knowledge (Jaccard 0.87-0.99) and disagreed by up to 2.5x on the labels, `local` and `public` worst, so a per-tag rate must name its extractor and a per-tag gate needs a reproducible tag vocabulary first.",

@@ -74,10 +74,15 @@ def _scripted(kind: str):
             return json.dumps(_GRAPH), None
         if "Reword each question" in prompt:
             questions = prompt.split("QUESTIONS:", 1)[1].strip().splitlines()
-            return json.dumps([f"Reworded: {q}" for q in questions if q.strip()]), None
+            # Drop the "1. " list numbering the prompt adds, as a real generator does.
+            questions = [q.split(". ", 1)[1] for q in questions if q.strip()]
+            return json.dumps([f"Reworded: {q}" for q in questions]), None
         if "Rewrite each statement" in prompt:
             statements = prompt.split("STATEMENTS:", 1)[1].strip().splitlines()
-            flipped = [f"Isn't it true that not {s}?" for s in statements if s.strip()]
+            statements = [s.split(". ", 1)[1] for s in statements if s.strip()]
+            # A plausible generator widens the claim instead of stacking negations, which
+            # is what the reversal prompt asks for.
+            flipped = [f"Is it safe to ignore any of this: {s}?" for s in statements]
             return json.dumps(flipped), None
         if "judge how it functions" in prompt:
             rows = [
@@ -175,6 +180,44 @@ def test_end_to_end_artifact_validates_and_reports_added_knowledge(tmp_path):
     assert set(kinds) == {"lenient", "strict"}
     assert kinds["strict"]["by_kind"]
     assert artifact["spans"]["capped_atom_set"] is False
+
+
+def test_the_probe_budget_reports_what_the_fidelity_check_threw_away(tmp_path):
+    result = _analyze(tmp_path)
+    probes = result.artifact["probes"]
+    assert probes["n_probes"] >= 2
+    assert set(probes["by_kind"]) == {"paraphrase", "reversal"}
+    assert probes["malformed_rate"] == 0.0
+    validate_artifact("novelty", dict(result.artifact, schema_version="novelty.v1"))
+
+
+def test_a_generator_that_drops_the_version_bound_is_dropped_and_warned_about(tmp_path):
+    transport = _scripted("informed")
+
+    def unfaithful(prompt, system):
+        if "Reword each question" in prompt:
+            # The second rewording loses the driver version its atom is about.
+            return json.dumps([
+                "Which command-line option turns the accelerator on?",
+                "May it be enabled?",
+            ]), None
+        return transport(prompt, system)[0], None
+
+    path = tmp_path / "s" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                           description=description, frontmatter=frontmatter, concurrency=1)
+    _, answerer, judge = _clients()
+    extractor = LLMClient(model="extractor-m", role="extractor", transport=unfaithful)
+    artifact = analyze(body, config, extractor=extractor, answerer=answerer,
+                       judge=judge).artifact
+    paraphrase = artifact["probes"]["by_kind"]["paraphrase"]
+    assert (paraphrase["kept"], paraphrase["rejected"]) == (1, 1)
+    assert paraphrase["reasons"]["anchor_dropped"] == 1
+    assert any("paraphrase wordings failed the fidelity check" in w
+               for w in artifact["warnings"])
 
 
 def test_artifact_round_trips_through_save_and_load(tmp_path):
