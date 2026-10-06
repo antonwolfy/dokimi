@@ -104,9 +104,11 @@ jobs:
       - name: Coverage of changed lines
         if: github.event_name == 'pull_request' && matrix.python-version == '3.11'
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
-          diff-cover coverage.xml --compare-branch="$BASE_SHA" \
+          # The base branch's current tip (fetched by the checkout), not base.sha
+          # (the base when the PR was opened).
+          diff-cover coverage.xml --compare-branch="origin/$BASE_REF" \
             --format json:diff-cover.json,markdown:diff-cover.md
           cat diff-cover.md >> "$GITHUB_STEP_SUMMARY"
           python - <<'PY'

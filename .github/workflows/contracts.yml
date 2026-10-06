@@ -44,14 +44,18 @@ jobs:
       # the findings are still printed, the job just does not fail on them.
       # WARNING lines (narrowings no base fixture hits) never fail the job; they
       # go to the step summary and as annotations so a reviewer sees them.
+      # pull_request.base.sha is the base as it stood when the PR was opened. The
+      # merge commit under test sits on the base branch's current tip (fetched by
+      # the checkout above), so diff against that, or main's own later edits get
+      # blamed on the PR.
       - name: schema_compat vs the PR base
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
           OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'schema-break-ok') }}
         run: |
           set -o pipefail
           status=0
-          python -m agent_benchmarks.schema_compat --base "$BASE_SHA" | tee compat.txt || status=$?
+          python -m agent_benchmarks.schema_compat --base "origin/$BASE_REF" | tee compat.txt || status=$?
           if grep -qE '^(BREAKING|WARNING)' compat.txt; then
             { echo '### Schema compatibility'; echo '```'; cat compat.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi
