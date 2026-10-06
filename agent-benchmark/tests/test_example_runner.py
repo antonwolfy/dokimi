@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+import tempfile
+
+import pytest
 
 from agent_benchmarks.metrics.example_runner import (
     ExecutionPolicy,
@@ -58,11 +61,22 @@ def test_subprocess_executes_when_opted_in(tmp_path):
     assert res.passed is True
 
 
-def test_subprocess_gets_its_own_home_and_no_parent_secrets(monkeypatch):
+@pytest.mark.parametrize("linked_tmp", [False, True])
+def test_subprocess_gets_its_own_home_and_no_parent_secrets(monkeypatch, tmp_path, linked_tmp):
+    # The temp dir may sit behind a symlink (macOS /var -> /private/var), and
+    # getcwd() reports the resolved path, so the two are compared resolved.
+    if linked_tmp:
+        (tmp_path / "real").mkdir()
+        try:
+            (tmp_path / "link").symlink_to(tmp_path / "real", target_is_directory=True)
+        except OSError:
+            pytest.skip("this OS refuses an unprivileged symlink")
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "link"))
     monkeypatch.setenv("OPENAI_API_KEY", "x")
     code = (
         "import os, sys; "
-        "sys.exit(0 if os.environ.get('HOME') == os.getcwd() and 'OPENAI_API_KEY' not in os.environ else 1)"
+        "home = os.path.realpath(os.environ.get('HOME', '')); "
+        "sys.exit(0 if home == os.path.realpath(os.getcwd()) and 'OPENAI_API_KEY' not in os.environ else 1)"
     )
     res = run_example("python", code, ExecutionPolicy(backend="subprocess", allow_host=True, timeout=10))
     assert res.status == "passed", res.error
