@@ -263,7 +263,7 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
 
     judge = Judge(model=args.judge_model, provider=args.judge_provider)
     label = f"{args.judge_provider}/{args.judge_model}"
-    print(f"Judge validity check: {label}, {args.bases} base answers x {len(variants)} degradations")
+    print(f"Judge validity check: {label}, {args.bases} base answers x {len(variants)} variants")
 
     def progress(done: int, total: int) -> None:
         if done % 10 == 0 or done == total:
@@ -292,8 +292,26 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
     if args.output:
         print(f"\n✅ Validity report saved to {out}")
 
-    if not report.summary()["passed"]:
+    summary = report.summary()
+    if not summary["passed"]:
         sys.exit(1)
+    # A pass whose interval straddles the gate is not reproducible. Warn by
+    # default so this stays usable as a check; --strict makes it a failure.
+    if not summary["conclusive"]:
+        if summary["inconclusive_variants"]:
+            print(
+                "\n⚠️  Pass is inconclusive at this sample size: "
+                f"{', '.join(summary['inconclusive_variants'])}. Re-run with more --bases.",
+                file=sys.stderr,
+            )
+        if summary["unmeasured_variants"]:
+            print(
+                f"\n⚠️  Pass is inconclusive: no pair was built for {', '.join(summary['unmeasured_variants'])} "
+                "(the degradation left every answer unchanged).",
+                file=sys.stderr,
+            )
+        if args.strict:
+            sys.exit(1)
 
 
 def register(sub, positive_int) -> None:
@@ -347,6 +365,9 @@ def register(sub, positive_int) -> None:
     validity_p.add_argument("--seed", type=int, default=0, help="Seed for the degradations (default: 0)")
     validity_p.add_argument("--min-accuracy", type=float, default=DEFAULT_MIN_ACCURACY, dest="min_accuracy",
                             help=f"Pairwise accuracy gate, per degradation (default: {DEFAULT_MIN_ACCURACY})")
+    validity_p.add_argument("--strict", action="store_true",
+                            help="Also exit 1 when a PASS is inconclusive — its 95%% CI "
+                                 "straddles the gate, so the run cannot tell it from a FAIL")
     validity_p.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="LLM model for judging")
     validity_p.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=JUDGE_PROVIDERS)
     validity_p.add_argument("--output", default=None, help="Output JSON report path")

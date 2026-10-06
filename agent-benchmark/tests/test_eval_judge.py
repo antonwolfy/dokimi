@@ -343,6 +343,47 @@ class TestPromptTemplate:
         assert '"correctness": N' in template
 
     @pytest.mark.parametrize("prompt", [JUDGE_PROMPT, JUDGE_PROMPT_GROUNDED])
+    def test_asks_the_judge_to_check_the_answer_s_numbers(self, prompt):
+        """Wrong magnitudes were invisible to every judge measured.
+
+        The `wrong_numbers` degradation scales figures by 10x and swaps units,
+        leaving the prose and the length untouched; the judge scored 0.60 on it
+        (four seeds, 156 pairs) and barely moved the score at all. The criterion
+        alone did not lift it; criterion plus enumeration did, to 0.71 on those same
+        pairs, though the two were not compared head-to-head. Both halves live on
+        `correctness`, which already carries double weight, and state one cap.
+        """
+        criteria = " ".join(prompt[:prompt.index("**Output format")].split())
+        assert "Check the answer's *numbers*" in criteria   # the criterion
+        assert "copy out every figure" in criteria          # the enumeration step
+        assert re.findall(r"\bcaps (?:correctness|it) at (\d+)", criteria) == ["40", "40"]
+
+    @pytest.mark.parametrize("prompt", [JUDGE_PROMPT, JUDGE_PROMPT_GROUNDED])
+    def test_the_enumeration_is_written_out_before_any_score(self, prompt):
+        """`numeric_claims` comes first in the output, so the figures are on
+        the page before correctness is scored, and every stored judgement shows
+        whether the enumeration happened."""
+        out = prompt[prompt.index("**Output format"):]
+        assert '"numeric_claims"' in out
+        assert out.index('"numeric_claims"') < out.index('"correctness": N')
+
+    @pytest.mark.parametrize("prompt", [JUDGE_PROMPT, JUDGE_PROMPT_GROUNDED])
+    def test_the_criterion_does_not_describe_the_gates_own_generator(self, prompt):
+        """The first wording listed the exact substitutions and the 10x scaling
+        `degrade.wrong_numbers` applies, so its gain was measured on the
+        perturbations it described. The prompt names the class of error only.
+        Measured since (fresh replication, all prompts re-drawn on the same
+        pairs): the generic wording beats the listed one on the gate's own
+        generator and on held-out perturbations it never describes (x3 scaling,
+        unlisted unit swaps)."""
+        import re
+
+        criteria = prompt[:prompt.index("**Output format")]
+        # Whitespace-normalised: the old wording wrapped "order of\n   magnitude".
+        assert "order of magnitude" not in " ".join(criteria.lower().split())
+        assert not re.search(r"\b10\s*[x×]", criteria)  # wrong_numbers' only edit since its named swaps went
+
+    @pytest.mark.parametrize("prompt", [JUDGE_PROMPT, JUDGE_PROMPT_GROUNDED])
     def test_carries_the_shared_calibration_scale(self, prompt):
         """Without anchors the judge has no scale, and everything lands near 100."""
         from agent_benchmarks.eval.panel import SCORE_ANCHORS

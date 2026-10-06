@@ -31,7 +31,19 @@ logger = logging.getLogger(__name__)
 
 SCORE_FIELDS = ("correctness", "completeness", "specificity", "code_quality", "actionability")
 
-# Weights per role — Python computes aggregate, not LLM
+# Weights per role — Python computes aggregate, not LLM.
+#
+# `specificity` is weighted here but not in the single judge (see
+# `judge.Judge._STANDARD_WEIGHTS`). That is deliberate and follows from the
+# wording: in both prompts the dimension now asks whether the identifiers the
+# answer names are CORRECT for the library, not whether the library's name
+# appears often. Under the old "is it specific to <library>" wording it was a
+# vocabulary counter that rewarded the `wrong_tools` degradation for the
+# polished names it kept, which is why the single judge zero-weights it; under
+# the new wording it is a sub-measure of correctness, which these roles are
+# meant to weigh differently. The panel has no degradation measurement behind
+# its weights either way — they have never been validated the way the single
+# judge's were.
 ROLE_WEIGHTS: Dict[str, Dict[str, float]] = {
     "technical_expert":   {"correctness": 2.0, "completeness": 1.0, "specificity": 1.5, "code_quality": 1.0, "actionability": 1.0},
     "developer_advocate": {"correctness": 1.0, "completeness": 1.0, "specificity": 1.0, "code_quality": 1.5, "actionability": 2.0},
@@ -63,7 +75,8 @@ _ROLE_INTROS: Dict[str, str] = {
         "PRIMARY CONCERN: FACTUAL ACCURACY and TECHNICAL DEPTH.\n"
         "- Penalize vague, hand-wavy, or technically incorrect details heavily.\n"
         "- A wrong answer scores ≤ 40 on correctness even if well-written.\n"
-        "- Judge 'specificity' harshly: generic advice not tied to __LIBRARY__ scores ≤ 30.\n"
+        "- Judge 'specificity' harshly: an answer naming identifiers that do not exist in\n"
+        "  __LIBRARY__, or belong to a different technology, scores ≤ 30.\n"
         "- For 'completeness': does it address ALL parts of the question?\n"
         "- For 'actionability': as a technical expert, would YOU use this answer?"
     ),
@@ -81,7 +94,7 @@ _ROLE_INTROS: Dict[str, str] = {
         "- An answer ignoring key aspects of the question scores ≤ 40 on completeness.\n"
         "- Check: does the answer stay within the scope of the provided documentation context?\n"
         "- Penalize answers that introduce information NOT present in the context.\n"
-        "- For 'specificity': does it reference __LIBRARY__-specific APIs, not generic patterns?"
+        "- For 'specificity': are the __LIBRARY__ APIs it names real and used correctly?"
     ),
 }
 
@@ -99,7 +112,10 @@ __ANCHORS__
 Dimensions to rate:
 1. correctness   — Is the answer factually accurate for __LIBRARY__?
 2. completeness  — Does it address ALL parts of the question?
-3. specificity   — Is it specific to __LIBRARY__ (not generic)?
+3. specificity   — Do the identifiers it names — APIs, functions, flags, tools —
+                   actually belong to __LIBRARY__ and fit this question? Naming
+                   __LIBRARY__ often is not specificity; a plausible-looking
+                   identifier that is wrong for __LIBRARY__ scores low.
 4. code_quality  — Is the code correct, runnable, idiomatic __LIBRARY__ code?
                    IF NO CODE IN THE ANSWER: set code_quality = 100 (not applicable).
 5. actionability — Can the user directly apply this to their problem right now?
