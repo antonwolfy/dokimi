@@ -8,9 +8,19 @@ on:
     branches: [ main ]
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Weekly: the unpinned-dependency canary (test-latest) runs only here.
+    - cron: '17 5 * * 1'
 
 permissions:
   contents: read
+
+# A new push to a PR supersedes the run in flight. Every other run gets a group of its
+# own (run_id): in a shared group a third queued run cancels the pending second one
+# even with cancel-in-progress false, so pushes to main would be dropped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -18,7 +28,9 @@ defaults:
 
 jobs:
   lint:
-    name: Ruff (lint + format)
+    # Lint only: most of the tree predates the formatter (205 of 276 files would
+    # be rewritten), so a format gate would mean a repo-wide reformat first.
+    name: Ruff (lint)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -27,7 +39,7 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: '3.11'
-      - run: pip install ruff>=0.6
+      - run: pip install 'ruff>=0.6'
       - name: ruff check
         run: ruff check .
 
@@ -41,8 +53,8 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: '3.11'
-      - run: pip install -r requirements.txt
-      - run: pip install mypy>=1.8 types-PyYAML types-jsonschema
+      - run: pip install -r requirements.lock.txt
+      - run: pip install 'mypy>=1.8' types-PyYAML types-jsonschema
       - name: mypy
         run: mypy
 
@@ -73,21 +85,87 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: ${{ matrix.python-version }}
+      # The lock, not the ranges: a PR's result should not depend on what was
+      # released upstream that morning. test-latest below watches the ranges.
       - name: Install deps
-        run: pip install -r requirements-test.txt
+        run: pip install -r requirements.lock.txt
+      # Offline by construction: pytest-socket (addopts in pyproject.toml) fails
+      # any test that opens a network socket.
       - name: Run tests
-        run: pytest --cov=agent_benchmarks --cov-report=term --cov-report=xml
+        run: pytest --cov=agent_benchmarks --cov-branch --cov-report=term --cov-report=xml
+      # Coverage of the lines this PR changes, not of the whole tree: the total
+      # moves too little per PR to gate on, an untested new function does not.
+      # Below 20 measurable changed lines one missed line swings the percentage
+      # by 5+ points, so small PRs get the report without the gate.
+      - name: Coverage of changed lines
+        if: github.event_name == 'pull_request' && matrix.python-version == '3.11'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          diff-cover coverage.xml --compare-branch="$BASE_SHA" \
+            --format json:diff-cover.json,markdown:diff-cover.md
+          cat diff-cover.md >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY'
+          import json, sys
+          r = json.load(open("diff-cover.json", encoding="utf-8"))
+          lines, pct = r.get("total_num_lines", 0), r.get("total_percent_covered", 100)
+          print(f"changed lines measured: {lines}, covered: {pct}%")
+          if lines >= 20 and pct < 80:
+              sys.exit(f"coverage of changed lines {pct}% < 80% (see the step summary)")
+          PY
       - name: Upload coverage
-        if: ${{ always() && matrix.python-version == '3.11' }}
-        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac  # v5
+        if: always() && matrix.python-version == '3.11'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
-          files: ./agent-benchmark/coverage.xml
-          flags: unittests
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          name: coverage
+          path: |
+            agent-benchmark/coverage.xml
+            agent-benchmark/diff-cover.json
+            agent-benchmark/diff-cover.md
+          if-no-files-found: ignore
+
+  # Canary for the dependency ranges in requirements*.txt: installs the newest
+  # releases they allow and runs the suite. It fails when an upstream release
+  # breaks the framework -- the signal to fix the code or the range and then
+  # regenerate requirements.lock.txt -- without failing anyone's PR.
+  test-latest:
+    name: Tests (latest deps, py3.12)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.12'
+      - name: Install newest allowed deps
+        run: pip install --upgrade -r requirements.txt -r requirements-test.txt
+      - name: Run tests
+        run: pytest -q
+
+  # Static audit of the workflow files: unpinned actions, template injection,
+  # credential persistence, over-broad token permissions.
+  workflow-lint:
+    name: Workflow lint (zizmor)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.11'
+      - run: pip install zizmor==1.30.1
+      - name: zizmor
+        run: zizmor --offline --min-severity medium .github/workflows
 
   package-smoke:
     name: Package install smoke test

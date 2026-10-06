@@ -34,8 +34,21 @@ ruff check .                              # lint
 mypy                                      # type check (config in pyproject.toml)
 python -m agent_benchmarks.schema_check benchmarks/spec.v1.yaml   # validate the benchmark spec
 python -m agent_benchmarks.config_check   # registry drift check
-pytest                                    # tests
+pytest                                    # tests (offline: connecting off loopback fails the test)
 ```
+
+CI additionally holds a PR to:
+
+- **Coverage of changed lines ≥ 80%** (when 20+ lines are measurable) —
+  `diff-cover coverage.xml --compare-branch=origin/main` after
+  `pytest --cov=agent_benchmarks --cov-branch --cov-report=xml`.
+- **mypy on the whole package.** Modules listed under `[[tool.mypy.overrides]]` in
+  `pyproject.toml` are exempt until fixed; do not add to that list.
+- **Workflow lint** — `zizmor --offline --min-severity medium .github/workflows` when you
+  edit a workflow.
+
+Dependencies install from `requirements.lock.txt`. When you change a range in
+`requirements*.txt`, regenerate the lock (command in its header).
 
 Guidelines:
 

@@ -41,6 +41,8 @@ dev = [
   "pytest>=7.4.0",
   "pytest-cov>=4.1.0",
   "pytest-mock>=3.12.0",
+  "pytest-socket>=0.7",
+  "diff-cover>=10.0",
   "ruff>=0.6",
   "mypy>=1.8",
   "types-PyYAML",
@@ -78,25 +80,53 @@ extend-exclude = ["benchmarks", "data"]
 select = ["F", "B", "E9"]
 ignore = ["B008"]
 
-# Type checking is enforced on newly-typed modules to start; broadening
-# coverage across the legacy code is tracked as a follow-up.
+# Type checking covers the whole package. The modules listed in the override
+# below carried type errors when the gate was widened from a hand-picked file
+# list; they are exempt until fixed. Do not add to that list: a new module is
+# checked from its first commit. Removing an entry is the way to shrink it.
 [tool.mypy]
 python_version = "3.10"
 ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 warn_unused_ignores = false
 no_implicit_optional = true
-files = [
-  "agent_benchmarks/runner/spec.py",
-  "agent_benchmarks/runner/manifest.py",
-  "agent_benchmarks/artifacts.py",
-  "agent_benchmarks/schema_check.py",
-  "agent_benchmarks/metrics/example_runner.py",
-  "agent_benchmarks/repos/manifest.py",
-  "agent_benchmarks/repos/source.py",
-  "agent_benchmarks/repos/bases.py",
-  "agent_benchmarks/repos/static.py",
+files = ["agent_benchmarks"]
+
+[[tool.mypy.overrides]]
+module = [
+  "agent_benchmarks.commands.catalog",
+  "agent_benchmarks.eval.agent_runner",
+  "agent_benchmarks.eval.answerer",
+  "agent_benchmarks.eval.arm_runner",
+  "agent_benchmarks.eval.judge",
+  "agent_benchmarks.eval.panel",
+  "agent_benchmarks.llm",
+  "agent_benchmarks.mcp.context7",
+  "agent_benchmarks.mcp.factory",
+  "agent_benchmarks.novelty.attribute",
+  "agent_benchmarks.novelty.needs",
+  "agent_benchmarks.novelty.spans",
+  "agent_benchmarks.orchestrator.pipeline",
+  "agent_benchmarks.personas.analyzer",
+  "agent_benchmarks.personas.generator",
+  "agent_benchmarks.questions.llm_gen",
+  "agent_benchmarks.questions.panel_reviewer",
+  "agent_benchmarks.questions.quality_analyzer",
+  "agent_benchmarks.questions.validator",
+  "agent_benchmarks.report.eval_report",
+  "agent_benchmarks.report.model_compare",
+  "agent_benchmarks.report.task_runs_report",
+  "agent_benchmarks.treatments.arms",
+  "agent_benchmarks.treatments.factory",
+  "agent_benchmarks.treatments.tools",
+  "agent_benchmarks.utils",
 ]
+ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The suite runs offline: a test that connects to anything but loopback fails
+# instead of quietly depending on a live service. Loopback stays open for tests
+# that run a local server (the egress proxy). Needs pytest-socket
+# (requirements-test.txt).
+addopts = ["--allow-hosts=127.0.0.1,::1"]

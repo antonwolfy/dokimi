@@ -3,8 +3,14 @@
 
 """Pytest configuration."""
 
+import os
 import sys
 from pathlib import Path
+
+# litellm downloads its model price map from GitHub on import unless told to use the copy
+# it ships. With the download, cost assertions depend on upstream pricing edits and every
+# test run needs the network. Set before anything imports litellm.
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 import pytest
 
