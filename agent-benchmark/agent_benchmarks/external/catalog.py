@@ -8,10 +8,11 @@ An "external catalog" is any local checkout of a repo that ships skills
 this repo did not author. Callers are expected to have already cloned the
 repo themselves -- nothing here fetches anything over the network.
 
-Two manifest conventions are understood, both from uxlfoundation/skills:
+Two manifest conventions are understood:
 
-- ``<root>/skills.yaml`` -- a flat list of skill entries with a
-  ``catalog_path`` relative to *root*.
+- ``<root>/skills.yaml`` -- skill entries, either under a ``skills:`` key with
+  a ``catalog_path`` relative to *root* (uxlfoundation/skills), or as a
+  top-level list whose skill lives at ``skills/<name>`` (intel/skills).
 - ``<root>/evaluation/harbor/suites.json`` -- suites of task entries, some
   of which are declared but not yet implemented (``status: "planned"``) or
   are not executable Harbor tasks at all (``track: "answer-quality"``).
@@ -116,34 +117,80 @@ def read_skill_manifest(root: Path) -> list[SkillCatalogEntry]:
     except yaml.YAMLError as exc:
         raise ValueError(f"invalid skills.yaml at {manifest_path}: {exc}") from exc
 
-    entries: list[SkillCatalogEntry] = []
-    for item in data.get("skills") or []:
-        name = str(item.get("name") or "").strip()
-        status = item.get("status")
-        catalog_path = item.get("catalog_path")
-        path = (root / catalog_path) if catalog_path else None
-        skill: Optional[Skill] = None
-        error: Optional[str] = None
-        if path is None:
-            error = "manifest entry is missing catalog_path"
-        elif not _within(path, root):
-            error = f"catalog_path escapes root: {catalog_path!r}"
-        else:
-            try:
-                skill = load_skill(path)
-            except (FileNotFoundError, ValueError) as exc:
-                error = str(exc)
-        entries.append(
-            SkillCatalogEntry(
-                name=name or (path.name if path else "?"),
-                status=status,
-                path=path,
-                source_root=root,
-                skill=skill,
-                error=error,
-            )
+    # uxlfoundation/skills nests the entries under ``skills:``, each with a
+    # required catalog_path; intel/skills makes the whole file the list and
+    # keeps every skill at skills/<name>.
+    if isinstance(data, dict):
+        items = data.get("skills")
+        if items is None:
+            items = []
+        list_shape = False
+    elif isinstance(data, list):
+        items = data
+        list_shape = True
+    else:
+        raise ValueError(
+            f"invalid skills.yaml at {manifest_path}: expected a list or a "
+            f"mapping with a 'skills' list, got {type(data).__name__}"
         )
+    if not isinstance(items, list):
+        raise ValueError(
+            f"invalid skills.yaml at {manifest_path}: 'skills' must be a list, "
+            f"got {type(items).__name__}"
+        )
+
+    entries: list[SkillCatalogEntry] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            entries.append(
+                SkillCatalogEntry(
+                    name=f"<entry {index}>",
+                    status=None,
+                    path=None,
+                    source_root=root,
+                    error=f"manifest entry is not a mapping: {item!r}",
+                )
+            )
+            continue
+        name = str(item.get("name") or "").strip()
+        entries.append(_skill_entry(root, item, name, list_shape))
     return entries
+
+
+def _skill_entry(root: Path, item: dict, name: str, list_shape: bool) -> SkillCatalogEntry:
+    """Resolve and load one mapping entry of ``skills.yaml``."""
+
+    def failed(error: str, path: Optional[Path] = None) -> SkillCatalogEntry:
+        return SkillCatalogEntry(name=name or "?", status=item.get("status"), path=path,
+                                 source_root=root, error=error)
+
+    catalog_path = item.get("catalog_path")
+    if catalog_path is not None and not isinstance(catalog_path, str):
+        return failed(f"catalog_path must be a string, got {catalog_path!r}")
+    if catalog_path:
+        source = "catalog_path"
+    elif list_shape and name:
+        # The name becomes a path, so it must be one plain directory name.
+        if "/" in name or "\\" in name or name in (".", ".."):
+            return failed(f"name is not a plain directory name: {name!r}")
+        catalog_path, source = f"skills/{name}", "name"
+    elif list_shape:
+        return failed("manifest entry has no name")
+    else:
+        return failed("manifest entry is missing catalog_path")
+
+    path = root / catalog_path
+    if not _within(path, root):
+        return failed(f"{source} escapes root: {catalog_path!r}")
+    try:
+        skill = load_skill(path)
+    except (FileNotFoundError, ValueError) as exc:
+        return failed(str(exc), path)
+    # The directory is inside the root; a SKILL.md symlinked out of it is not.
+    if not _within(skill.path, root):
+        return failed(f"SKILL.md resolves outside root: {skill.path}", path)
+    return SkillCatalogEntry(name=name or path.name, status=item.get("status"), path=path,
+                             source_root=root, skill=skill)
 
 
 def read_task_manifest(

@@ -39,17 +39,26 @@ way the readers expect. Substitute your own checkout path.
   products.yaml                      # optional: products this repo's registry lacks
 ```
 
-Both manifests are the `uxlfoundation/skills` convention and both are
-optional — with no manifest, the readers fall back to a plain filesystem scan
-of the same directories. Each holds a *list* of entries, not a mapping:
+Both manifests are optional — with no manifest, the readers fall back to a
+plain filesystem scan of the same directories. `skills.yaml` comes in two
+shapes, and both hold a *list* of entries:
 
 ```yaml
-# skills.yaml
+# skills.yaml, uxlfoundation/skills: entries under `skills:`, catalog_path required
 skills:
   - name: demo-skill
     status: published
     catalog_path: skills/demo-skill
 ```
+
+```yaml
+# skills.yaml, intel/skills: the file is the list, the skill is at skills/<name>
+- name: demo-skill
+  maintainer: "github-handle"
+```
+
+In the second shape `name` must be a single directory name. An entry without
+`status` scans with status `-`; intel/skills reads that as `published`.
 
 ```json
 // evaluation/harbor/suites.json

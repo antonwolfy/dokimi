@@ -1,7 +1,7 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Tests for scanning external skill/task catalogs (uxlfoundation/skills shape)."""
+"""Tests for scanning external skill/task catalogs (uxlfoundation/skills and intel/skills shapes)."""
 
 from __future__ import annotations
 
@@ -69,6 +69,113 @@ def test_read_skill_manifest_reports_missing_path_without_raising(tmp_path):
     assert len(entries) == 1
     assert not entries[0].loaded
     assert entries[0].error
+
+
+def test_read_skill_manifest_reads_top_level_list_with_default_paths(tmp_path):
+    # intel/skills: the file is the list, entries carry name + maintainer only,
+    # and the skill lives at skills/<name>.
+    _write_skill(tmp_path, "onetbb-quickstart")
+    _write_skill(tmp_path, "linux-perf")
+    (tmp_path / "skills.yaml").write_text(
+        "# Skill registry\n"
+        "- name: onetbb-quickstart\n"
+        '  maintainer: "someone"\n'
+        "- name: linux-perf\n"
+        '  maintainer: "someone-else"\n'
+        "  status: validated\n",
+        encoding="utf-8",
+    )
+
+    entries = read_skill_manifest(tmp_path)
+    assert [e.name for e in entries] == ["onetbb-quickstart", "linux-perf"]
+    assert all(e.loaded for e in entries)
+    assert entries[0].path == tmp_path / "skills" / "onetbb-quickstart"
+    assert entries[0].status is None
+    assert entries[1].status == "validated"
+
+
+def test_read_skill_manifest_list_entry_without_directory_is_an_error(tmp_path):
+    (tmp_path / "skills.yaml").write_text("- name: ghost\n", encoding="utf-8")
+
+    entries = read_skill_manifest(tmp_path)
+    assert len(entries) == 1
+    assert not entries[0].loaded
+    assert entries[0].error
+
+
+@pytest.mark.parametrize("name", ["../../etc", "..", ".", "../tools", "a/b", "x/SKILL.md", "a\\\\b"])
+def test_read_skill_manifest_list_name_must_be_one_directory(tmp_path, name):
+    # A derived path must not let a name pick another directory inside the root.
+    _write_skill(tmp_path, "a")
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "SKILL.md").write_text("---\nname: t\ndescription: d\n---\n", encoding="utf-8")
+    (tmp_path / "SKILL.md").write_text("---\nname: r\ndescription: d\n---\n", encoding="utf-8")
+    (tmp_path / "skills.yaml").write_text(f"- name: {name!r}\n", encoding="utf-8")
+
+    entries = read_skill_manifest(tmp_path)
+    assert not entries[0].loaded
+    assert "not a plain directory name" in entries[0].error
+
+
+def test_read_skill_manifest_mapping_entry_still_requires_catalog_path(tmp_path):
+    # uxlfoundation's schema requires catalog_path; a missing or misspelled key
+    # must not be papered over by the intel/skills default.
+    _write_skill(tmp_path, "foo")
+    (tmp_path / "skills.yaml").write_text(
+        "skills:\n  - name: foo\n  - name: foo\n    catalogpath: other/foo\n", encoding="utf-8"
+    )
+
+    entries = read_skill_manifest(tmp_path)
+    assert [e.loaded for e in entries] == [False, False]
+    assert all("missing catalog_path" in e.error for e in entries)
+
+
+@pytest.mark.parametrize("value", ["5", "true", "[a, b]"])
+def test_read_skill_manifest_non_string_catalog_path_is_an_error_entry(tmp_path, value):
+    (tmp_path / "skills.yaml").write_text(f"- name: a\n  catalog_path: {value}\n", encoding="utf-8")
+
+    entries = read_skill_manifest(tmp_path)
+    assert not entries[0].loaded
+    assert "catalog_path must be a string" in entries[0].error
+
+
+def test_read_skill_manifest_rejects_skill_md_symlinked_outside_root(tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text("---\nname: outside\ndescription: d\n---\n", encoding="utf-8")
+    root = tmp_path / "root"
+    (root / "skills" / "sf").mkdir(parents=True)
+    try:
+        (root / "skills" / "sf" / "SKILL.md").symlink_to(outside)
+    except OSError:  # Windows without Developer Mode or the symlink privilege
+        pytest.skip("this OS refuses an unprivileged symlink")
+    (root / "skills.yaml").write_text("- name: sf\n", encoding="utf-8")
+
+    entries = read_skill_manifest(root)
+    assert not entries[0].loaded
+    assert entries[0].skill is None
+    assert "resolves outside root" in entries[0].error
+
+
+def test_read_skill_manifest_reports_non_mapping_entry(tmp_path):
+    _write_skill(tmp_path, "real")
+    (tmp_path / "skills.yaml").write_text("- real\n- name: real\n", encoding="utf-8")
+
+    entries = read_skill_manifest(tmp_path)
+    assert not entries[0].loaded
+    assert "not a mapping" in entries[0].error
+    # A bare value is not mistaken for a skill name in the scan output.
+    assert entries[0].name == "<entry 0>"
+    assert entries[1].loaded
+
+
+@pytest.mark.parametrize(
+    "body", ["just a string\n", "skills: not-a-list\n", "skills: ''\n", "skills: false\n", "skills: 0\n"]
+)
+def test_read_skill_manifest_raises_clear_error_on_wrong_shape(tmp_path, body):
+    (tmp_path / "skills.yaml").write_text(body, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid skills.yaml"):
+        read_skill_manifest(tmp_path)
 
 
 def test_read_skill_manifest_falls_back_to_bare_scan_without_manifest(tmp_path):

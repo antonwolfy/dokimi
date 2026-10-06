@@ -4,7 +4,8 @@
 """catalog subcommand group: scan external skill/task catalogs before use.
 
 Points at a local checkout the caller already produced (e.g.
-``git clone https://github.com/uxlfoundation/skills``) -- nothing here
+``git clone https://github.com/uxlfoundation/skills`` or
+``https://github.com/intel/skills``) -- nothing here
 fetches anything over the network. See ``agent_benchmarks.external.catalog``
 for the manifest formats understood.
 """
@@ -65,7 +66,7 @@ def register(sub, positive_int) -> None:
 
     catalog_p = sub.add_parser(
         "catalog",
-        help="Scan an external skill/task catalog (e.g. a local uxlfoundation/skills checkout)",
+        help="Scan an external skill/task catalog (e.g. a local uxlfoundation/skills or intel/skills checkout)",
     )
     catalog_sub = catalog_p.add_subparsers(dest="catalog_cmd", required=True)
 
