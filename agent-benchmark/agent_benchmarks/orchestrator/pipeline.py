@@ -450,9 +450,20 @@ class EvaluationPipeline:
             all_questions.extend(custom_questions)
             logger.info(f"Loaded {len(custom_questions)} custom questions")
 
-        # Deduplicate
-        validator = QuestionValidator(similarity_threshold=0.85)
-        unique_questions, _ = validator._deduplicate(all_questions)
+        # Deduplicate. Curated questions are never the ones dropped: a merge
+        # keeps the longest text, which would otherwise let a generated
+        # paraphrase replace a manual golden question.
+        validator = QuestionValidator()  # threshold follows the embedding backend
+        unique_questions, groups = validator._deduplicate(
+            all_questions, protect=lambda q: q.get("source_type") == "manual"
+        )
+        if groups:
+            logger.info(
+                f"Deduplication merged {len(all_questions) - len(unique_questions)} "
+                f"questions in {len(groups)} groups"
+            )
+            for group in groups:
+                logger.debug("duplicate group: %s", group)
 
         # Save merged questions
         self._save_questions_artifact(unique_questions)

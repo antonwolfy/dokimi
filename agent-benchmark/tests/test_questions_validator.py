@@ -20,7 +20,11 @@ for mod_name in ['langchain_openai', 'langchain_anthropic', 'openai']:
             mock_mod.OpenAI = Mock
         sys.modules[mod_name] = mock_mod
 
-from agent_benchmarks.questions.validator import QuestionValidator, VALIDATION_PROMPT
+from agent_benchmarks.questions.validator import (
+    EMBEDDING_BACKENDS,
+    QuestionValidator,
+    VALIDATION_PROMPT,
+)
 
 
 @pytest.fixture
@@ -83,11 +87,15 @@ class TestQuestionValidatorInit:
         with patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', True), \
              patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
              patch('agent_benchmarks.questions.validator.ChatOpenAI', Mock(), create=True), \
-             patch('agent_benchmarks.questions.validator.OpenAI', Mock(), create=True):
+             patch('agent_benchmarks.questions.validator.OpenAI', Mock(), create=True), \
+             patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy'}):
+            # Pinned to the OpenAI backend: under "auto" the result would
+            # otherwise depend on whether sentence-transformers is installed.
             val = QuestionValidator()
             assert val.threshold == 60
-            assert val.similarity_threshold == 0.85
-    
+            assert val.embedding_provider == "openai"
+            assert val.similarity_threshold == EMBEDDING_BACKENDS["openai"][1]
+
     def test_init_custom(self):
         with patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', True), \
              patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
@@ -223,7 +231,8 @@ class TestValidateAndDedupe:
 
 class TestDeduplicate:
     def test_no_openai_returns_original(self, sample_questions):
-        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', False):
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', False):
             val = QuestionValidator()
             unique, dup_groups = val._deduplicate(sample_questions)
             
@@ -260,8 +269,311 @@ class TestDeduplicate:
             assert set(unique[0]["personas"]) == {"p1", "p2"}
 
 
+class TestEmbeddingBackend:
+    """The backend choice and the similarity threshold travel together."""
+
+    def test_auto_prefers_openai_when_key_present(self):
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.OpenAI', Mock(), create=True), \
+             patch.dict('os.environ', {'OPENAI_API_KEY': 'dummy'}):
+            val = QuestionValidator()
+            assert val.embedding_provider == "openai"
+            assert val.embedding_model == EMBEDDING_BACKENDS["openai"][0]
+
+    def test_auto_falls_back_to_local_without_key(self):
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             patch.dict('os.environ', {}, clear=True):
+            val = QuestionValidator()
+            assert val.embedding_provider == "local"
+            assert val.embedding_model == EMBEDDING_BACKENDS["local"][0]
+            assert val.openai_client is None
+            # Dedupe must be considered available — that is the point of the
+            # fallback: no key no longer means no deduplication.
+            assert val._embeddings_available() is True
+
+    def test_auto_reports_none_when_nothing_available(self):
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', False), \
+             patch.dict('os.environ', {}, clear=True):
+            val = QuestionValidator()
+            assert val.embedding_provider == "none"
+            assert val._embeddings_available() is False
+
+    def test_threshold_defaults_per_backend_and_can_be_overridden(self):
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True):
+            assert (QuestionValidator(embedding_provider="local").similarity_threshold
+                    == EMBEDDING_BACKENDS["local"][1])
+            assert QuestionValidator(embedding_provider="local",
+                                     similarity_threshold=0.42).similarity_threshold == 0.42
+
+    def test_unknown_backend_rejected(self):
+        with pytest.raises(ValueError, match="embedding_provider"):
+            QuestionValidator(embedding_provider="word2vec")
+
+    def test_local_backend_requires_the_optional_package(self):
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', False):
+            with pytest.raises(ImportError, match="sentence-transformers"):
+                QuestionValidator(embedding_provider="local")
+
+    def test_local_embeddings_deduplicate_without_any_api_key(self, sample_questions):
+        """q_001 and q_003 collapse using only the local encoder."""
+        vectors = [[1.0, 0.0], [0.0, 1.0], [0.99, 0.01]]
+        encoder = Mock()
+        encoder.encode.return_value = vectors
+
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.SentenceTransformer',
+                   Mock(return_value=encoder), create=True), \
+             patch.dict('os.environ', {}, clear=True):
+            val = QuestionValidator(embedding_provider="local", similarity_threshold=0.9)
+            unique, dup_groups = val._deduplicate(sample_questions)
+
+            assert len(unique) == 2
+            assert len(dup_groups) == 1
+            encoder.encode.assert_called_once()
+
+
+class TestNoOpVisibility:
+    """A run that scored nothing must not look like a run that scored everything."""
+
+    def test_stats_flag_unvalidated_and_undeduplicated_runs(self, sample_questions):
+        with patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', False):
+            val = QuestionValidator()
+            kept, stats = val.validate_and_dedupe("oneTBB", sample_questions)
+
+            assert len(kept) == len(sample_questions)
+            assert stats["unscored_questions"] == len(sample_questions)
+            assert stats["validation_performed"] is False
+            assert stats["deduplication_performed"] is False
+            assert stats["embedding_provider"] == "none"
+
+    def test_scored_run_reports_performed(self, sample_questions, mock_llm_validator):
+        mock_llm_cls = Mock(return_value=mock_llm_validator)
+        with patch('agent_benchmarks.questions.validator.ChatOpenAI', mock_llm_cls, create=True), \
+             patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', False):
+            val = QuestionValidator()
+            _, stats = val.validate_and_dedupe("oneTBB", sample_questions)
+
+            assert stats["unscored_questions"] == 0
+            assert stats["validation_performed"] is True
+
+
 class TestPromptTemplate:
     def test_has_required_placeholders(self):
         required = ["{library_name}", "{question}"]
         for placeholder in required:
             assert placeholder in VALIDATION_PROMPT
+
+
+class TestCliStatsLines:
+    """The CLI lines must describe what happened, including when nothing did."""
+
+    @staticmethod
+    def _stats(**over):
+        base = {"initial_count": 3, "after_prefilter": 3, "after_validation": 3,
+                "after_deduplication": 3, "removed_low_score": 0,
+                "removed_duplicates": 0, "embedding_provider": "local",
+                "embedding_model": "m", "similarity_threshold": 0.85,
+                "unscored_questions": 0, "validation_performed": True,
+                "deduplication_performed": True}
+        base.update(over)
+        return base
+
+    def test_empty_input_is_not_reported_as_passed_through(self, capsys):
+        from agent_benchmarks.commands.questions import print_validation_stats
+
+        # The real stats for an empty run, not a hand-built dict.
+        with patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', False):
+            val = QuestionValidator()
+            _, stats = val.validate_and_dedupe("lib", [])
+        print_validation_stats(stats)
+        out = capsys.readouterr().out
+        assert "No questions left to validate" in out
+        assert "passed through unvalidated" not in out
+
+    def test_unscored_run_still_warns(self, capsys):
+        from agent_benchmarks.commands.questions import print_validation_stats
+
+        print_validation_stats(self._stats(unscored_questions=3,
+                                           validation_performed=False))
+        assert "NO questions were scored" in capsys.readouterr().out
+
+    def test_partial_failure_reports_the_count(self, capsys):
+        from agent_benchmarks.commands.questions import print_validation_stats
+
+        print_validation_stats(self._stats(unscored_questions=1))
+        assert "1 questions passed through unscored" in capsys.readouterr().out
+
+    def test_clean_run_prints_no_warning(self, capsys):
+        from agent_benchmarks.commands.questions import print_validation_stats
+
+        print_validation_stats(self._stats())
+        assert "⚠" not in capsys.readouterr().out
+
+
+class TestDedupeRobustness:
+    """Round-2 review: a local backend must not turn a skipped step into a crash,
+    and curated questions must survive a merge."""
+
+    @staticmethod
+    def _local(encoder):
+        return patch('agent_benchmarks.questions.validator.SentenceTransformer',
+                     Mock(return_value=encoder), create=True)
+
+    def test_a_backend_failure_skips_dedupe_instead_of_aborting(self, sample_questions):
+        encoder = Mock()
+        encoder.encode.side_effect = OSError("We couldn't connect to 'https://huggingface.co'")
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             self._local(encoder), patch.dict('os.environ', {}, clear=True):
+            val = QuestionValidator(embedding_provider="local")
+            unique, groups = val._deduplicate(sample_questions)
+        assert unique == sample_questions and groups == []
+        assert val.dedupe_ran is False
+        assert "huggingface.co" in val.dedupe_error
+
+    def test_stats_report_the_failed_dedupe_not_the_configured_backend(self, sample_questions):
+        encoder = Mock()
+        encoder.encode.side_effect = OSError("model load failed")
+        with patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             self._local(encoder), patch.dict('os.environ', {}, clear=True):
+            val = QuestionValidator(embedding_provider="local")
+            _, stats = val.validate_and_dedupe("lib", sample_questions)
+        assert stats["deduplication_performed"] is False
+        assert "model load failed" in stats["deduplication_error"]
+
+    def test_a_bug_is_not_mistaken_for_a_backend_failure(self, sample_questions):
+        """Only backend errors skip dedupe; a TypeError from bad input still raises."""
+        encoder = Mock()
+        encoder.encode.side_effect = TypeError("Unsupported input type: int")
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             self._local(encoder):
+            val = QuestionValidator(embedding_provider="local")
+            with pytest.raises(TypeError):
+                val._deduplicate(sample_questions)
+
+    def test_personas_go_to_the_kept_question_when_ids_are_missing(self):
+        """Matching the kept question back by id sent its personas to the first
+        id-less question in the list (None == None)."""
+        questions = [{"text": "What is the capital of France?", "personas": ["d"]},
+                     {"text": "How do I use parallel_for?", "personas": ["b"], "source_type": "manual"},
+                     {"text": "How exactly do I use parallel_for here?", "personas": ["a"]}]
+        encoder = Mock()
+        encoder.encode.return_value = [[0.0, 1.0], [1.0, 0.0], [0.99, 0.01]]
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             self._local(encoder):
+            val = QuestionValidator(embedding_provider="local", similarity_threshold=0.9)
+            kept, _ = val._deduplicate(questions, protect=lambda q: q.get("source_type") == "manual")
+        by_text = {q["text"]: set(q["personas"]) for q in kept}
+        assert by_text["How do I use parallel_for?"] == {"a", "b"}
+        assert by_text["What is the capital of France?"] == {"d"}
+
+    def test_a_protected_question_is_never_the_one_dropped(self):
+        """The merge keeps the longest text; a manual golden question must not be
+        replaced by a longer generated paraphrase of it."""
+        questions = [
+            {"id": "gold", "text": "How do I use parallel_for?", "source_type": "manual"},
+            {"id": "gen", "text": "How exactly do I use parallel_for in my code?",
+             "source_type": "generated"},
+        ]
+        encoder = Mock()
+        encoder.encode.return_value = [[1.0, 0.0], [0.99, 0.01]]
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             self._local(encoder):
+            val = QuestionValidator(embedding_provider="local", similarity_threshold=0.9)
+            unprotected, _ = val._deduplicate([dict(q) for q in questions])
+            protected, groups = val._deduplicate(
+                [dict(q) for q in questions], protect=lambda q: q["source_type"] == "manual")
+        assert [q["id"] for q in unprotected] == ["gen"]   # the old behaviour
+        assert [q["id"] for q in protected] == ["gold"]
+        assert len(groups) == 1
+
+    def test_two_protected_duplicates_are_both_kept(self):
+        questions = [{"id": "a", "text": "Q one", "source_type": "manual"},
+                     {"id": "b", "text": "Q one!", "source_type": "manual"}]
+        encoder = Mock()
+        encoder.encode.return_value = [[1.0, 0.0], [1.0, 0.0]]
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             self._local(encoder):
+            val = QuestionValidator(embedding_provider="local")
+            kept, _ = val._deduplicate(questions, protect=lambda q: True)
+        assert {q["id"] for q in kept} == {"a", "b"}
+
+    def test_the_pipeline_keeps_a_manual_question_over_a_longer_generated_one(self, tmp_path):
+        from agent_benchmarks.orchestrator.pipeline import EvaluationPipeline
+
+        custom = tmp_path / "custom.json"
+        custom.write_text(json.dumps([{"id": "gold", "text": "How do I use parallel_for?"}]))
+        pipe = EvaluationPipeline.__new__(EvaluationPipeline)
+        pipe.custom_questions_path = custom
+        saved = {}
+        pipe._save_questions_artifact = lambda qs, *a, **k: saved.update(qs=qs)
+
+        encoder = Mock()
+        encoder.encode.return_value = [[0.99, 0.01], [1.0, 0.0]]
+        generated = [{"id": "gen", "text": "How exactly do I use parallel_for in my code?"}]
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', False), \
+             patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', False), \
+             self._local(encoder), patch.dict('os.environ', {}, clear=True):
+            merged = pipe._merge_questions(generated)
+        assert [q["id"] for q in merged] == ["gold"]
+        assert saved["qs"] == merged
+
+
+class TestBackendSelectionEdges:
+    def test_a_non_openai_llm_key_does_not_select_openai_embeddings(self):
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', False), \
+             patch.dict('os.environ', {}, clear=True):
+            val = QuestionValidator(llm_provider="anthropic", api_key="sk-ant-xxx")
+        assert val.embedding_provider == "local"
+
+    def test_an_openai_llm_key_does_select_openai_embeddings(self):
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.OpenAI', Mock(), create=True), \
+             patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', False), \
+             patch.dict('os.environ', {}, clear=True):
+            val = QuestionValidator(llm_provider="openai", api_key="sk-xxx")
+        assert val.embedding_provider == "openai"
+
+    def test_a_non_openai_llm_key_is_not_sent_to_openai_embeddings(self):
+        client = Mock()
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.OpenAI', client, create=True), \
+             patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', False), \
+             patch.dict('os.environ', {"OPENAI_API_KEY": "sk-openai"}, clear=True):
+            val = QuestionValidator(llm_provider="anthropic", api_key="sk-ant-xxx")
+        assert val.embedding_provider == "openai"
+        client.assert_called_once_with(api_key=None)
+
+    def test_an_empty_openai_key_is_no_key(self):
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.LANGCHAIN_AVAILABLE', False), \
+             patch.dict('os.environ', {"OPENAI_API_KEY": ""}, clear=True):
+            assert QuestionValidator().embedding_provider == "local"
+
+    def test_an_openai_model_name_on_the_local_backend_fails_at_init(self):
+        with patch('agent_benchmarks.questions.validator.OPENAI_AVAILABLE', True), \
+             patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             patch.dict('os.environ', {}, clear=True):
+            with pytest.raises(ValueError, match="is an OpenAI model"):
+                QuestionValidator(embedding_model="text-embedding-3-small")
+
+    def test_overriding_the_model_without_a_threshold_warns(self, caplog):
+        with patch('agent_benchmarks.questions.validator.SENTENCE_TRANSFORMERS_AVAILABLE', True), \
+             caplog.at_level("WARNING"):
+            val = QuestionValidator(embedding_provider="local",
+                                    embedding_model="all-mpnet-base-v2")
+        assert "calibrated for" in caplog.text
+        assert val.similarity_threshold == EMBEDDING_BACKENDS["local"][1]

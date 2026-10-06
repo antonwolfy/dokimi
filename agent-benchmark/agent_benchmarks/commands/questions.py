@@ -9,6 +9,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any, Dict
 
 
 def _extract_questions(questions_data, source: str) -> list:
@@ -180,6 +181,33 @@ def cmd_questions_analyze(args: argparse.Namespace) -> None:
     print(f"\n✅ Full report saved to {output_path}")
 
 
+def print_validation_stats(stats: Dict[str, Any]) -> None:
+    """Print what `validate_and_dedupe` actually did, including the no-ops."""
+    print("✓ Validation complete:")
+    print(f"  Initial: {stats['initial_count']}")
+    print(f"  After validation: {stats['after_validation']}")
+    print(f"  After deduplication: {stats['after_deduplication']}")
+    print(f"  Removed (low score): {stats['removed_low_score']}")
+    print(f"  Removed (duplicates): {stats['removed_duplicates']}")
+    if stats["embedding_provider"] == "none":
+        print("  Embeddings: none")
+    else:
+        print(f"  Embeddings: {stats['embedding_provider']}"
+              f":{stats['embedding_model']} @ {stats['similarity_threshold']}")
+    if not stats["after_prefilter"]:
+        # Nothing reached the scorer, so nothing "passed through" either.
+        print("  ⚠ No questions left to validate (none generated, or all "
+              "removed by the synthetic-framing pre-filter)")
+    elif not stats["validation_performed"]:
+        print("  ⚠ NO questions were scored — all passed through unvalidated")
+    elif stats["unscored_questions"]:
+        print(f"  ⚠ {stats['unscored_questions']} questions passed through "
+              f"unscored (validation call failed)")
+    if not stats["deduplication_performed"]:
+        reason = f" ({stats['deduplication_error']})" if stats.get("deduplication_error") else ""
+        print(f"  ⚠ Deduplication did NOT run{reason} — duplicates were kept")
+
+
 def cmd_questions_generate(args: argparse.Namespace) -> None:
     """Generate questions from personas and seed topics."""
     import yaml
@@ -254,17 +282,12 @@ def cmd_questions_generate(args: argparse.Namespace) -> None:
             llm_model=args.model,
             llm_provider=args.provider,
             threshold=60,
-            similarity_threshold=0.85
+            embedding_provider=args.embeddings,
         )
 
         questions, stats = validator.validate_and_dedupe(args.product, questions)
 
-        print("✓ Validation complete:")
-        print(f"  Initial: {stats['initial_count']}")
-        print(f"  After validation: {stats['after_validation']}")
-        print(f"  After deduplication: {stats['after_deduplication']}")
-        print(f"  Removed (low score): {stats['removed_low_score']}")
-        print(f"  Removed (duplicates): {stats['removed_duplicates']}")
+        print_validation_stats(stats)
 
     # Save output
     output_path = Path(args.output) if args.output else Path(f"questions/{args.product}.json")
@@ -287,6 +310,10 @@ def register(sub, positive_int) -> None:
     gen_q_p.add_argument("--top-k", type=int, default=None, dest="top_k", help="Docs to retrieve per topic (default from config)")
     gen_q_p.add_argument("--count", type=int, default=2, help="Questions per topic per persona")
     gen_q_p.add_argument("--validate", action="store_true", help="Enable validation and deduplication")
+    gen_q_p.add_argument("--embeddings", default="auto", choices=["auto", "openai", "local"],
+                         help="Embedding backend for deduplication: openai, local "
+                              "(sentence-transformers, no API key), or auto "
+                              "(openai when a key is set, else local)")
     gen_q_p.add_argument("--model", default="gpt-4o-mini", help="LLM model for generation")
     gen_q_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     gen_q_p.add_argument("--doc-source", default="context7",
