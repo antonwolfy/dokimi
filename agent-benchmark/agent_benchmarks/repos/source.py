@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -78,6 +79,12 @@ class RepoTree(Protocol):
 
     def read_text(self, path: str) -> str: ...
 
+    def resolve(self, path: str) -> str:
+        """The file ``path`` names once symlinks are followed, as in a checkout; ``path`` itself
+        if it is not a link. :class:`SourceError` if it escapes the tree, dangles, loops or
+        names a directory."""
+        ...
+
 
 class WorkTree:
     """A directory on disk, read as it is (uncommitted changes included)."""
@@ -99,7 +106,9 @@ class WorkTree:
             for dirpath, dirnames, filenames in os.walk(self.root):
                 dirnames[:] = [d for d in dirnames if d != ".git"]
                 rel = Path(dirpath).relative_to(self.root)
-                out.extend((rel / name).as_posix() for name in filenames)
+                # A link to a directory is an entry, as in git, though walk lists it as a directory.
+                links = [d for d in dirnames if (Path(dirpath) / d).is_symlink()]
+                out.extend((rel / name).as_posix() for name in filenames + links)
             self._files = sorted(p.removeprefix("./") for p in out)
         return self._files
 
@@ -112,6 +121,17 @@ class WorkTree:
     def read_text(self, path: str) -> str:
         return self._resolve(path).read_text(encoding="utf-8")
 
+    def resolve(self, path: str) -> str:
+        try:
+            target = self._resolve(path)
+        except (RuntimeError, OSError) as exc:  # a link loop (RuntimeError before Python 3.13)
+            raise SourceError(f"too many levels of symbolic links: {path}") from exc
+        if target.is_dir():
+            raise SourceError(f"{path} links to a directory: {target.relative_to(self.root).as_posix()}")
+        if not target.is_file():
+            raise SourceError(f"{path} links to nothing: {target.relative_to(self.root).as_posix()}")
+        return target.relative_to(self.root).as_posix()
+
 
 class GitTree:
     """One commit of a git repository, read with ``git ls-tree`` / ``git show``."""
@@ -122,6 +142,7 @@ class GitTree:
         self.label = label or f"{self.git_dir}@{sha[:12]}"
         self._files: list[str] | None = None
         self._dirs: set[str] | None = None
+        self._symlinks: set[str] | None = None
 
     def files(self) -> list[str]:
         if self._files is None:
@@ -143,8 +164,33 @@ class GitTree:
     def is_dir(self, path: str) -> bool:
         return _norm(path) in self._dir_set()
 
+    def _links(self) -> set[str]:
+        if self._symlinks is None:
+            out = _git(self.git_dir, "ls-tree", "-r", "-z", self.sha)
+            self._symlinks = {entry.split("\t", 1)[1] for entry in out.split("\0")
+                              if entry.startswith("120000 ")}
+        return self._symlinks
+
     def read_text(self, path: str) -> str:
-        return _git(self.git_dir, "show", f"{self.sha}:{_norm(path)}")
+        """The file's text; a symlink is followed, as it is in a checkout."""
+        return _git(self.git_dir, "show", f"{self.sha}:{self.resolve(path)}")
+
+    def resolve(self, path: str) -> str:
+        start = path = _norm(path)
+        for _ in range(40):
+            if path not in self._links():
+                if path in self._dir_set():
+                    raise SourceError(f"{start} links to a directory: {path}" if path != start
+                                      else f"{path} is a directory")
+                if path != start and path not in self.files():
+                    raise SourceError(f"{start} links to nothing: {path}")
+                return path
+            text = _git(self.git_dir, "show", f"{self.sha}:{path}")
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(path), text))
+            if posixpath.isabs(text) or target == ".." or target.startswith("../"):
+                raise SourceError(f"path escapes the repository: {path} -> {text}")
+            path = target
+        raise SourceError(f"too many levels of symbolic links: {start}")
 
 
 def default_cache_dir() -> Path:

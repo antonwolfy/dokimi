@@ -66,7 +66,7 @@ py-modules = ["cli"]
 include = ["agent_benchmarks*"]
 
 [tool.setuptools.package-data]
-agent_benchmarks = ["schemas/*.json"]
+agent_benchmarks = ["schemas/*.json", "repos/profiles/*.yaml"]
 
 [tool.ruff]
 line-length = 100

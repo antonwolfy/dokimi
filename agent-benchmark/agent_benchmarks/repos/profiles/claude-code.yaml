@@ -1,0 +1,70 @@
+schema: harness_profile.v1
+name: claude-code
+bin: claude
+version_cmd: ["{bin}", "--version"]
+# The prompt comes right after -p: --tools is variadic and would swallow a
+# positional argument placed after it.
+invoke:
+  - "{bin}"
+  - "-p"
+  - "{prompt}"
+  - "--model"
+  - "{model}"
+  - "--output-format"
+  - "stream-json"
+  - "--verbose"
+  - "--max-turns"
+  - "{max_turns}"
+  - "--max-budget-usd"
+  - "{budget}"
+  - "--no-session-persistence"
+  - "--strict-mcp-config"
+  - "--permission-mode"
+  - "bypassPermissions"
+  - "{tools}"
+tools:
+  none: ["--tools", ""]
+  read: ["--tools", "Read"]
+  all: ["--disallowedTools", "WebFetch", "WebSearch"]
+config_dir_env: CLAUDE_CONFIG_DIR
+env_allow:
+  - PATH
+  - HOME
+  - LANG
+  - SYSTEMROOT  # Windows: claude (Bun) makes no network request without it
+  - AWS_REGION
+  - AWS_BEARER_TOKEN_BEDROCK
+  - ANTHROPIC_API_KEY
+  - ANTHROPIC_BASE_URL
+  - CLAUDE_CODE_USE_BEDROCK
+  - http_proxy
+  - https_proxy
+  - no_proxy
+  - HTTP_PROXY
+  - HTTPS_PROXY
+  - NO_PROXY
+env_set:
+  # A background process that leaves the harness's process group survives a timeout kill.
+  CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+  DISABLE_AUTOUPDATER: "1"
+# Hosts the agent container may reach (contract §2). `repo reach` does not enforce
+# this list: it runs the harness on the host, with the host's network.
+egress:
+  - "bedrock-runtime.*.amazonaws.com"
+  - api.anthropic.com
+endpoint_env: ANTHROPIC_BASE_URL
+trace: claude-stream-json
+guidance:
+  names: [CLAUDE.md, CLAUDE.local.md, AGENTS.md]
+  resolution: ancestors-of-cwd + lazy-on-subtree-access
+  imports: "@path"
+  notes: >-
+    Measured on CLI 2.1.286: it reads AGENTS.md only
+    when no CLAUDE.md is in the directory chain it starts in, and one CLAUDE.md
+    turns AGENTS.md off for the whole session. 2.1.241 and 2.1.250 read no
+    AGENTS.md beside a root CLAUDE.md; without one they were not measured. The
+    reach probe measures this per version.
+bridge:
+  for: AGENTS.md
+  write: CLAUDE.md
+  content: "@AGENTS.md"

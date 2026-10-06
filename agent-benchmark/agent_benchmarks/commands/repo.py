@@ -7,27 +7,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
 
 def cmd_repo_validate(args: argparse.Namespace) -> None:
     """Validate a repository's repo-eval.yaml and its tasks against one snapshot."""
-    from agent_benchmarks.repos import (
-        ManifestError,
-        RepoSource,
-        SourceError,
-        check_repo,
-        load_manifest,
-        open_source,
-    )
-
+    from agent_benchmarks.repos import ManifestError, RepoSource, SourceError, check_repo, open_source
     from agent_benchmarks.repos.source import base_opener
 
     try:
         source = RepoSource.parse(args.source)
         tree = open_source(source, _cache_dir(args))
-        manifest = load_manifest(tree, args.manifest)
+        manifest = _load_manifest(tree, args)
     except (SourceError, ManifestError) as exc:
         print(f"✗ {exc}", file=sys.stderr)
         sys.exit(1)
@@ -75,6 +68,78 @@ def cmd_repo_fetch(args: argparse.Namespace) -> None:
     print(f"{tree.sha}\t{tree.git_dir}")
 
 
+def cmd_repo_reach(args: argparse.Namespace) -> None:
+    """L1 reach probe: which guidance files one harness/version/model loads."""
+    from agent_benchmarks.repos import ManifestError, RepoSource, SourceError, open_source
+    from agent_benchmarks.repos.harness_profile import ProfileError, load_profile
+    from agent_benchmarks.repos.reach import (
+        ReachError,
+        format_matrix,
+        planned,
+        probe_files,
+        run_reach,
+        save_reach,
+        scenarios,
+    )
+
+    kinds = tuple(k.strip() for k in args.scenarios.split(",") if k.strip())
+    only = tuple(args.only or ())
+    try:
+        # A typo would otherwise drop a scenario kind silently and still spend the budget.
+        unknown_kinds = sorted(set(kinds) - {"root", "cwd", "read"})
+        if unknown_kinds:
+            raise ReachError(f"unknown --scenarios kind(s) {', '.join(unknown_kinds)} (known: root, cwd, read)")
+        if not math.isfinite(args.budget) or args.budget <= 0:
+            raise ReachError(f"--budget must be > 0, got {args.budget:g}")
+        profile = load_profile(args.harness)
+        tree = open_source(RepoSource.parse(args.source), _cache_dir(args))
+        manifest = _load_manifest(tree, args)
+        files = probe_files(tree, manifest, profile)
+        available = [s.id for s in scenarios(files, kinds)]
+        missing = [o for o in only if o not in available]
+        if missing:
+            raise ReachError(f"--only {', '.join(missing)} matches no scenario (have: {', '.join(available)})")
+        if args.dry_run:
+            runs = planned(files, profile, args.model, kinds, only, args.bin, args.max_turns, args.budget)
+            print(json.dumps({"files": files, "runs": runs}, indent=2))
+            return
+        planned_count = len(scenarios(files, kinds, only))
+        if not planned_count:
+            raise ReachError("no scenario selected (check --scenarios and --only)")
+        print(f"{len(files)} guidance files, {planned_count} scenarios, "
+              f"at most ${args.budget:g} each", file=sys.stderr)
+        out_dir = Path(args.out)
+        payload = run_reach(
+            tree=tree, manifest=manifest, profile=profile, model=args.model, out_dir=out_dir,
+            bin_path=args.bin, work_dir=Path(args.work_dir) if args.work_dir else None, kinds=kinds,
+            only=only, salt=args.salt, max_turns=args.max_turns, budget_usd=args.budget,
+            timeout_s=args.timeout, keep=args.keep,
+        )
+    except (SourceError, ManifestError, ProfileError, ReachError) as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        sys.exit(1)
+    path = save_reach(payload, out_dir)
+    print(format_matrix(payload))
+    print(f"wrote {path}")
+    if any(s["error"] for s in payload["scenarios"]):
+        sys.exit(1)
+
+
+def _load_manifest(tree, args: argparse.Namespace):
+    """The manifest from the tree, or from --manifest-file for a repository not aligned yet."""
+    import yaml
+
+    from agent_benchmarks.repos import ManifestError, load_manifest, parse_manifest
+
+    if not args.manifest_file:
+        return load_manifest(tree, args.manifest)
+    try:
+        raw = yaml.safe_load(Path(args.manifest_file).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ManifestError(args.manifest_file, [str(exc)]) from exc
+    return parse_manifest(raw, args.manifest)
+
+
 def _cache_dir(args: argparse.Namespace) -> Path | None:
     return Path(args.cache_dir) if args.cache_dir else None
 
@@ -83,7 +148,7 @@ def register(sub, positive_int) -> None:
     """Add the `repo` subcommand group."""
     repo_p = sub.add_parser(
         "repo",
-        help="Repositories as evaluation subjects: validate repo-eval.yaml, fetch sources",
+        help="Repositories as evaluation subjects: validate repo-eval.yaml, fetch sources, reach probe",
     )
     repo_sub = repo_p.add_subparsers(dest="repo_cmd", required=True)
     source_help = (
@@ -101,6 +166,9 @@ def register(sub, positive_int) -> None:
         default=".agent-eval/repo-eval.yaml",
         help="Manifest path relative to the repository root (default: .agent-eval/repo-eval.yaml)",
     )
+    validate_p.add_argument("--manifest-file", default=None, dest="manifest_file",
+                            help="Read the manifest from this local file instead of from the tree, as if it were "
+                            "at --manifest (for a repository that has not added it yet)")
     validate_p.add_argument("--cache-dir", default=None, dest="cache_dir", help=cache_help)
     validate_p.add_argument("--json", action="store_true", help="Print the full report as JSON")
     validate_p.set_defaults(func=cmd_repo_validate)
@@ -109,3 +177,36 @@ def register(sub, positive_int) -> None:
     fetch_p.add_argument("source", help=source_help)
     fetch_p.add_argument("--cache-dir", default=None, dest="cache_dir", help=cache_help)
     fetch_p.set_defaults(func=cmd_repo_fetch)
+
+    reach_p = repo_sub.add_parser(
+        "reach",
+        help="L1 reach probe: run a harness on a token-seeded workspace and report which "
+        "guidance files it loads (guidance_reach.v1). Costs one cheap-model call per scenario.",
+    )
+    reach_p.add_argument("source", help=source_help)
+    reach_p.add_argument("--manifest", default=".agent-eval/repo-eval.yaml",
+                         help="Manifest path relative to the repository root")
+    reach_p.add_argument("--manifest-file", default=None, dest="manifest_file",
+                         help="Read the manifest from this local file instead of from the tree, as if it were "
+                         "at --manifest (for a repository that has not added it yet)")
+    reach_p.add_argument("--harness", default="claude-code",
+                         help="Built-in profile name or a harness_profile.v1 YAML path (default: claude-code)")
+    reach_p.add_argument("--model", required=True, help="Model string passed to the harness as it is")
+    reach_p.add_argument("--bin", default=None, help="Harness executable (default: the profile's `bin`)")
+    reach_p.add_argument("--out", default="reach-out", help="Output directory: reach.json and traces/")
+    reach_p.add_argument("--scenarios", default="root,cwd,read",
+                         help="Comma list of scenario kinds: root, cwd, read (default: all)")
+    reach_p.add_argument("--only", action="append", default=None, metavar="SCENARIO",
+                         help="Run only this scenario id (for example read=cpp); repeatable")
+    reach_p.add_argument("--work-dir", default=None, dest="work_dir",
+                         help="Parent of the temporary workspace (default: the system temp dir). "
+                         "No ancestor may hold guidance files.")
+    reach_p.add_argument("--salt", default=None, help="Token salt (default: random per run)")
+    reach_p.add_argument("--max-turns", type=positive_int, default=4, dest="max_turns")
+    reach_p.add_argument("--budget", type=float, default=0.10, help="Per-scenario USD cap (default: 0.10)")
+    reach_p.add_argument("--timeout", type=positive_int, default=300, help="Per-scenario seconds")
+    reach_p.add_argument("--keep", action="store_true", help="Keep the temporary workspace")
+    reach_p.add_argument("--dry-run", action="store_true", dest="dry_run",
+                         help="Print the files and the exact argv of every scenario; run nothing")
+    reach_p.add_argument("--cache-dir", default=None, dest="cache_dir", help=cache_help)
+    reach_p.set_defaults(func=cmd_repo_reach)

@@ -36,8 +36,11 @@ PLACEHOLDERS = frozenset({"eval_dir", "source_dir", "run_dir", "out", "task"})
 # {source_dir} is a full-history clone, so it holds every fix: only the grading
 # container gets it (contract §2).
 _SOURCE_DIR_ENTRY_POINTS = frozenset({"entry_points/grade", "entry_points/oracle"})
-# Same host form as harness_profile.v1 `egress`: host or *.domain, optional :port.
-_HOST_RE = re.compile(r"^[A-Za-z0-9*.-]+(:[0-9]+)?$")
+# An egress host (contract §2), the same pattern as harness_profile.v1 `egress`: DNS labels
+# (1-63 characters), optional :port (1-65535). `*` stands for exactly one whole label, and the last two labels are literal,
+# so `*.example.com` and `bedrock-runtime.*.amazonaws.com` pass while `*`, `**` and `*.com` do not.
+HOST_PATTERN = r"^(?:(?:\*|[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+_HOST_RE = re.compile(HOST_PATTERN)
 # A commit SHA, optionally its parent. Branches, tags and HEAD move between
 # repetitions, so they are refused (contract §3).
 _BASE_RE = re.compile(r"^([0-9a-f]{7,40})(\^?)$")
@@ -378,7 +381,7 @@ def _check_task(tree: RepoTree, task_dir: str, report: RepoCheckReport) -> None:
         problems.append("score must be {\"metric\": <name>, \"max\": <number>}")
     egress = raw.get("egress", [])
     if not (isinstance(egress, list) and all(isinstance(h, str) and _HOST_RE.match(h) for h in egress)):
-        problems.append("egress must be a list of hosts (host or *.domain, optional :port)")
+        problems.append("egress must be a list of hosts (DNS labels, `*` for one whole label, the last two literal, optional :port)")
         egress = []
     for key in ("timeout_s", "max_turns", "budget_usd"):
         value = raw.get(key)

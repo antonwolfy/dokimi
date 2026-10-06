@@ -14,8 +14,18 @@
 > python cli.py repo fetch <url@rev>     # bare, blob-less clone cached per URL
 > ```
 >
-> Everything else below (workspace preparation, entry points, `grade.json`,
-> harness profiles, reach probe) is not implemented yet. It is published so
+> Slice S3 adds harness profiles (§6) and the reach probe (§7):
+>
+> ```bash
+> python cli.py repo reach <source> --manifest <path> --model <id> [--harness claude-code]
+>     [--bin <cli>] [--scenarios root,cwd,read] [--only <scenario>] [--dry-run]
+> ```
+>
+> `--manifest-file <local.yaml>` on `validate` and `reach` reads the manifest
+> from outside the tree, for a repository that has not added it yet.
+>
+> Everything else below (workspace preparation, entry points, `grade.json`) is
+> not implemented yet. It is published so
 > repository owners can align their evaluation content before the framework
 > side lands.
 
@@ -171,7 +181,7 @@ belongs to the repository's grader and is passed through unread.
 | `gate` | no | framework | what counts as success; default `["pass"]`. Each entry is a boolean metric name, which must be `true`, or `{"metric": <name>, "min": <number>}` for a numeric metric |
 | `score` | for score-only tasks | framework | `{"metric": <name>, "max": <number>}`: the metric that is the result when `pass` is `null`, and the value the oracle must reach (§4.3) |
 | `timeout_s`, `max_turns`, `budget_usd` | no | framework | per-task caps, overriding run defaults |
-| `egress` | no | framework | extra hosts (`host` or `*.domain`, optional `:port`) this task's agent and entry points reach through the proxy (§2), for example `["pypi.org", "files.pythonhosted.org"]` |
+| `egress` | no | framework | extra hosts (DNS names, optional `:port`; `*` stands for one whole label and the last two labels are literal, so `*.pythonhosted.org` passes and `*` or `*.org` does not) this task's agent and entry points reach through the proxy (§2), for example `["pypi.org", "files.pythonhosted.org"]` |
 | anything else | — | repository | for example `hidden_files`, `targets`, `regression_targets`, `manifest` |
 
 `setup_patch` (a single string) is accepted as a synonym for a one-element
@@ -241,7 +251,9 @@ reads the upstream base (`base_sha`) and the workspace start commit
   8 KB keeps its first and last 4 KB around a `[... N bytes omitted ...]`
   line, and `output_truncated` is `true`; build errors are usually at the end.
 - `rc` is what the harness reports. Where it reports only success or failure
-  (Claude Code), `rc` is `0` or `1`.
+  (Claude Code), `rc` is `0` or `1`. It is `null` when no result came back,
+  for example when the run stopped at its turn or budget limit; a grader
+  must not count `null` as a failure.
 
 ### 4.2 `grade.json` (written by `grade` to `{run_dir}/grade.json`)
 
@@ -334,61 +346,118 @@ the same content runnable by the framework.
 
 ## 6. Harness profiles
 
-A harness is described by a profile file. The model is passed through as an
-opaque string.
+A harness is described by a `harness_profile.v1` file. Built-in profiles live
+in `agent_benchmarks/repos/profiles/`; `--harness` also takes a path. The model
+is passed through as an opaque string.
 
 ```yaml
 schema: harness_profile.v1
 name: claude-code
-version_cmd: "claude --version"
-invoke: >-
-  claude -p {prompt} --model {model} --output-format stream-json --verbose
-  --max-turns {max_turns} --max-budget-usd {budget}
-  --permission-mode bypassPermissions --disallowedTools WebFetch WebSearch
-config_dir_env: CLAUDE_CONFIG_DIR
+bin: claude                          # --bin overrides it, for example to pin a CLI version
+version_cmd: ["{bin}", "--version"]
+invoke: ["{bin}", "-p", "{prompt}", "--model", "{model}", "--output-format", "stream-json",
+         "--verbose", "--max-turns", "{max_turns}", "--max-budget-usd", "{budget}",
+         "--no-session-persistence", "--strict-mcp-config",
+         "--permission-mode", "bypassPermissions", "{tools}"]
+tools:                               # what the "{tools}" element expands to
+  none: ["--tools", ""]
+  read: ["--tools", "Read"]
+  all:  ["--disallowedTools", "WebFetch", "WebSearch"]
+config_dir_env: CLAUDE_CONFIG_DIR    # a fresh directory per run
 env_allow: [PATH, HOME, AWS_REGION, AWS_BEARER_TOKEN_BEDROCK, ANTHROPIC_API_KEY,
-            CLAUDE_CODE_USE_BEDROCK, http_proxy, https_proxy, no_proxy]
-env_set: {CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"}
+            CLAUDE_CODE_USE_BEDROCK, https_proxy, no_proxy, ...]
+env_set: {CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1", DISABLE_AUTOUPDATER: "1"}
 egress: ["bedrock-runtime.*.amazonaws.com", "api.anthropic.com"]   # the only hosts the agent container reaches (§2)
-endpoint_env: ANTHROPIC_BASE_URL        # used by payload capture, if set
-trace: {format: claude-stream-json}      # converter to events.jsonl + UsageRecord
-guidance:                                # DECLARED; verified by the reach probe, never trusted
-  names: [CLAUDE.md]
+endpoint_env: ANTHROPIC_BASE_URL     # used by payload capture, if set
+trace: claude-stream-json            # converter to events.jsonl; or: text
+guidance:                            # DECLARED; verified by the reach probe, never trusted
+  names: [CLAUDE.md, CLAUDE.local.md, AGENTS.md]
   resolution: ancestors-of-cwd + lazy-on-subtree-access
   imports: "@path"
 bridge: {for: AGENTS.md, write: CLAUDE.md, content: "@AGENTS.md"}
 ```
 
+- `invoke` and `version_cmd` are argv lists. Each element becomes exactly one
+  argument after substitution, and nothing passes through a shell.
+- The placeholders are `{bin}`, `{prompt}`, `{model}`, `{max_turns}` and
+  `{budget}`; `version_cmd` takes only `{bin}`. A substituted value is never
+  substituted again. `invoke` holds the element `"{tools}"` exactly once.
+- The child gets only the `env_allow` names, then `env_set`, then
+  `config_dir_env`. User settings, memory and unrelated credentials stay out.
+
 Profiles for other harnesses (Codex, Gemini CLI, Copilot CLI, Cursor agent,
 Aider, OpenCode, in-house agents) follow the same shape. Their `guidance`
 blocks start as the vendor's documented behaviour and are corrected by the
-reach probe.
+reach probe. Loading changes between versions of one harness, so
+reach results are keyed by version.
 
 ## 7. Reach probe (`guidance_reach.v1`)
 
 Protocol:
 
-1. Copy the prepared workspace. Put a head token and a tail token in each
-   guidance file, for example `RC` plus 6 hex digits of a hash of path and
-   position.
-2. Run each scenario once per (harness, version, model), with a cheap model
-   and tools disabled:
-   - cwd = repository root
-   - cwd = each directory that holds guidance
-   - "read `<file in dir D>` then list tokens" (read tool enabled), for each
-     guidance directory D
-3. Ask for every token in the instructions or context. Parse the reported
-   tokens and the trace.
+1. Build a skeleton workspace in a temporary directory: the guidance files at
+   their repository paths, one probe file per guidance directory, and a
+   one-commit git repository.
+   - Guidance files are those matching `guidance.globs`, plus every file named
+     like the profile's `guidance.names`, outside `eval_dir`.
+   - Loading depends on paths and names, not on the rest of the tree. A
+     skeleton also keeps a blob-less clone from fetching every blob.
+   - The probe refuses to run if any ancestor of the workspace holds a
+     guidance file.
+   - It also refuses a tree path with a `\`, a `:`, or a `.`, `..` or `.git`
+     component, which would be written outside the workspace or into its git
+     directory.
+   - A symlink is one file, as in a checkout. With `CLAUDE.md -> AGENTS.md`,
+     `AGENTS.md` is seeded once and `CLAUDE.md` is recreated as a link to it,
+     so a harness that loads `CLAUDE.md` loads `AGENTS.md`'s tokens. Where the
+     OS refuses a symlink (Windows without Developer Mode), the link is written
+     as a copy of the seeded file, and `alias_kind: copy` says so: a harness
+     that skips symlinks would then still show the file loaded.
+   - A link that escapes the tree, dangles, loops or names a directory is not
+     seeded. It is listed in `unresolved` with the reason.
+2. Seed the workspace. Each guidance file gets a head token, placed after any
+   YAML front matter, and a tail token. A token is `RC` plus the first 6 hex
+   digits of sha256(salt, path, position).
+3. Run each scenario once per (harness, version, model), with a cheap model.
+   Each run gets a fresh config directory. The harness runs on the host, not
+   in the agent container (§2), so the profile's `egress` list is not enforced.
+   - `cwd=.`: started at the repository root, tools off.
+   - `cwd=<dir>`: started in each guidance directory, tools off.
+   - `read=<dir>`: started at the root, read tool on. The agent is told to
+     read `<dir>/REACH_PROBE.txt`, then list tokens.
+   - A scenario that runs past `--timeout` is an `error`. Its harness is
+     killed with its process group (POSIX) or job object (Windows). A process
+     that leaves the group, such as one that calls `setsid()` or daemonizes,
+     is not contained. It can outlive the run with the harness's environment,
+     credentials included.
+4. Ask for every token in the instructions or context, including context
+   attached to a tool result. Parse the reported tokens from the answer, and
+   the reads from `events.jsonl`.
 
-Output, one record per (file, scenario):
+Output: `<out>/reach.json` and `<out>/traces/` (raw stdout and `events.jsonl`
+per scenario).
 
-```json
-{"file": "sub/AGENTS.md", "scenario": "cwd=root", "harness": "claude-code",
- "harness_version": "2.1.241", "model": "claude-haiku-4-5",
- "head": false, "tail": false, "read_by_tool": false, "class": "not_loaded"}
-```
+- One record is written per (file, scenario):
 
-`class` is one of `loaded`, `truncated` (head without tail), `not_loaded`, or
-`fetched` (reported only after the agent read it with a tool). If payload
-capture is available, a `payload` field records whether each token was in the
-request bytes, which settles cases where the model under-reports.
+  ```json
+  {"file": "sub/AGENTS.md", "scenario": "cwd=.", "harness": "claude-code",
+   "harness_version": "2.1.286", "model": "claude-haiku-4-5",
+   "head": false, "tail": false, "read_by_tool": false, "class": "not_loaded"}
+  ```
+
+- `file` is the link target. Links to it are listed once, as `aliases` of
+  its entry in `files`; they share its tokens and its records.
+- `class` is one of:
+  - `loaded`: both tokens reported;
+  - `truncated`: one token reported;
+  - `fetched`: reported only after the agent read the file with a tool;
+  - `not_loaded`;
+  - `error`: the scenario produced no usable answer: no answer, a non-zero
+    exit, or an error result.
+- Each scenario also records:
+  - `unknown`: tokens the model reported that were never seeded;
+  - `prose`: words besides tokens. A high count usually means an explanation
+    or a refusal, so read that trace before trusting its `not_loaded` cells.
+- If payload capture is available, a `payload` field records whether each
+  token was in the request bytes. This settles cells where the model
+  under-reports, which is how a small model produces false `truncated` cells.

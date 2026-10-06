@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/agent-benchmark/schemas/harness_profile.v1.json",
+  "title": "Harness profile v1",
+  "description": "How to invoke, isolate and read one coding-agent CLI (docs/repo-evaluation-contract.md §6). An input, not a produced artifact, so it carries `schema`. `invoke` and `version_cmd` are argv lists: each element is one argument after placeholder substitution, and the element \"{tools}\" is replaced by the argument list of the selected tool mode. Nothing is passed through a shell. The `guidance` block is the DECLARED loading behaviour and is only ever verified by the reach probe, never trusted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "name", "bin", "version_cmd", "invoke", "tools", "trace"],
+  "properties": {
+    "schema": {"const": "harness_profile.v1"},
+    "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "bin": {"type": "string", "minLength": 1},
+    "version_cmd": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "invoke": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["none", "read"],
+      "properties": {
+        "none": {"type": "array", "items": {"type": "string"}},
+        "read": {"type": "array", "items": {"type": "string"}},
+        "all": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "config_dir_env": {"type": ["string", "null"]},
+    "env_allow": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"}},
+    "env_set": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+      "additionalProperties": {"type": "string"}
+    },
+    "egress": {"type": "array", "items": {"type": "string", "pattern": "^(?:(?:\\*|[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)\\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?::(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"}, "description": "Hosts the agent container may reach through the framework egress proxy (contract §2). `*` stands for exactly one whole DNS label and the last two labels are literal, so `*`, `**` and `*.com` are refused. Same pattern as repos/manifest.py HOST_PATTERN."},
+    "endpoint_env": {"type": ["string", "null"]},
+    "trace": {"enum": ["claude-stream-json", "text"]},
+    "guidance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "names": {"type": "array", "items": {"type": "string"}},
+        "resolution": {"type": "string"},
+        "imports": {"type": ["string", "null"]},
+        "notes": {"type": "string"}
+      }
+    },
+    "bridge": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["for", "write", "content"],
+      "properties": {
+        "for": {"type": "string"},
+        "write": {"type": "string"},
+        "content": {"type": "string"}
+      }
+    }
+  }
+}

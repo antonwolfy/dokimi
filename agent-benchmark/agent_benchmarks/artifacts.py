@@ -6,8 +6,9 @@
 The benchmark produces long-lived JSON artifact kinds: ``questions``,
 ``answers``, ``eval`` (LLM-judge scores), ``arms`` (treatment-arm comparisons),
 ``task_runs`` (executable task results), ``explore_runs`` (ExploreBench
-localization results), and ``novelty`` (what an artifact's content adds to one
-model). This module stamps each with a ``schema_version`` and
+localization results), ``novelty`` (what an artifact's content adds to one
+model), and ``guidance_reach`` (L1 reach probes). This module stamps each with
+a ``schema_version`` and
 validates it against the JSON Schema in ``agent_benchmarks/schemas/`` on save
 and load, so fixtures and baselines stay forward-compatible and self-describing.
 """
@@ -31,6 +32,7 @@ SCHEMA_VERSIONS: dict[str, str] = {
     "novelty": "novelty.v1",
     "task_runs": "task_runs.v1",
     "explore_runs": "explore_runs.v1",
+    "guidance_reach": "guidance_reach.v1",
 }
 
 # kind -> superseded versions still accepted on *load*, newest first. A bump is additive by policy,

@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/agent-benchmark/schemas/guidance_reach.v1.json",
+  "title": "Guidance reach probe v1",
+  "description": "L1 reach: which of a repository's guidance files one (harness, version, model) actually loads, measured with head/tail tokens per file and scenario (docs/repo-evaluation-contract.md §7). `class` is loaded (both tokens reported), truncated (one), fetched (reported only after the agent read the file with a tool), not_loaded, or error (no usable answer: none, a non-zero exit, or an error result).",
+  "type": "object",
+  "required": ["schema_version", "repo", "harness", "model", "files", "scenarios", "records", "summary"],
+  "properties": {
+    "schema_version": {"const": "guidance_reach.v1"},
+    "generated_at": {"type": "string"},
+    "repo": {
+      "type": "object",
+      "required": ["id", "tree"],
+      "properties": {
+        "id": {"type": "string"},
+        "tree": {"type": "string"},
+        "sha": {"type": ["string", "null"], "description": "Full commit SHA of a git source; null for a working tree."},
+        "manifest": {"type": "string"}
+      }
+    },
+    "harness": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "profile": {"type": "string"},
+        "declared": {"type": "object"}
+      }
+    },
+    "model": {"type": "string"},
+    "salt": {"type": "string"},
+    "ask": {"type": "string", "description": "The token-listing instruction every scenario used; results with different asks are not comparable."},
+    "workspace": {"type": ["string", "null"]},
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "head", "tail"],
+        "properties": {
+          "path": {"type": "string"},
+          "head": {"type": "string", "pattern": "^RC[0-9A-F]{6}$"},
+          "tail": {"type": "string", "pattern": "^RC[0-9A-F]{6}$"},
+          "aliases": {"type": "array", "items": {"type": "string"}, "description": "Probed paths that are symlinks to this file. They are one file in a checkout, so they share its tokens and its records."},
+          "alias_kind": {"enum": ["symlink", "copy"], "description": "How the aliases were written in the workspace: as links, or as copies of the seeded file where the OS refused a symlink."}
+        }
+      }
+    },
+    "unresolved": {
+      "type": "array",
+      "description": "Probed paths that are symlinks the probe cannot follow inside the tree (escaping, dangling, looping or naming a directory). They are not seeded and have no records.",
+      "items": {
+        "type": "object",
+        "required": ["path", "reason"],
+        "properties": {"path": {"type": "string"}, "reason": {"type": "string"}}
+      }
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "cwd", "tools", "error"],
+        "properties": {
+          "id": {"type": "string"},
+          "cwd": {"type": "string"},
+          "tools": {"type": "string"},
+          "read": {"type": ["string", "null"]},
+          "returncode": {"type": ["integer", "null"]},
+          "error": {"type": ["string", "null"]},
+          "cost_usd": {"type": ["number", "null"]},
+          "num_turns": {"type": ["integer", "null"]},
+          "reported": {"type": "array", "items": {"type": "string"}},
+          "unknown": {"type": "array", "items": {"type": "string"}},
+          "prose": {"type": ["integer", "null"], "description": "Words in the answer besides tokens; a high count flags an explanation or refusal."}
+        }
+      }
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "scenario", "harness", "harness_version", "model", "head", "tail", "read_by_tool", "class"],
+        "properties": {
+          "file": {"type": "string"},
+          "scenario": {"type": "string"},
+          "harness": {"type": "string"},
+          "harness_version": {"type": "string"},
+          "model": {"type": "string"},
+          "head": {"type": "boolean"},
+          "tail": {"type": "boolean"},
+          "read_by_tool": {"type": "boolean"},
+          "class": {"enum": ["loaded", "truncated", "fetched", "not_loaded", "error"]}
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["cost_usd", "by_class"],
+      "properties": {
+        "cost_usd": {"type": "number"},
+        "by_class": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "matrix": {"type": "object"}
+      }
+    }
+  }
+}

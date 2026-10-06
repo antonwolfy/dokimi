@@ -169,6 +169,11 @@ def test_missing_and_non_yaml_manifest(tmp_path):
         ({"budget_usd": True}, "budget_usd"),
         ({"egress": "pypi.org"}, "egress must be a list"),
         ({"egress": ["https://pypi.org/simple"]}, "egress must be a list"),
+        ({"egress": ["*"]}, "egress must be a list"),
+        ({"egress": ["**"]}, "egress must be a list"),
+        ({"egress": ["*.org"]}, "egress must be a list"),
+        ({"egress": ["pypi.*"]}, "egress must be a list"),
+        ({"egress": ["py*.org"]}, "egress must be a list"),
     ],
 )
 def test_bad_task_is_reported(tmp_path, task_extra, needle):
