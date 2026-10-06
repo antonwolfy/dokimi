@@ -1,0 +1,37 @@
+{
+  "claims": [
+    {
+      "claim": "a.h",
+      "file": "AGENTS.md",
+      "kind": "path",
+      "line": 3,
+      "status": "ok"
+    },
+    {
+      "claim": "b.h",
+      "file": "AGENTS.md",
+      "kind": "path",
+      "line": 4,
+      "status": "ok_basename"
+    },
+    {
+      "claim": "//x",
+      "ctx": "bazel test //x",
+      "file": "AGENTS.md",
+      "kind": "target",
+      "line": 9,
+      "status": "fail",
+      "why": "no such target"
+    }
+  ],
+  "counts": {
+    "fail": 1,
+    "ok": 1,
+    "ok_basename": 1,
+    "unresolved": 0
+  },
+  "files": [
+    "AGENTS.md"
+  ],
+  "schema": "repo_static.v1"
+}

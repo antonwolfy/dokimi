@@ -141,7 +141,11 @@ end-to-end walkthrough of that; the "External Sources" section of
 
 ## CI
 
-Two GitHub Actions workflows run on PRs (see `.github/workflows/`):
+Three GitHub Actions workflows run on PRs (see `.github/workflows/`). The third,
+`contracts.yml`, runs only when a PR touches `agent_benchmarks/schemas/`:
+`python -m agent_benchmarks.schema_compat` fails an in-place edit that narrows
+an existing schema version, unless a reviewer applies the `schema-break-ok`
+label. The other two:
 
 **`ci.yml`** — fast code checks:
 

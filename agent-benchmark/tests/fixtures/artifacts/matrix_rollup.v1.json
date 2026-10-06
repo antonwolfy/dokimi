@@ -1,0 +1,174 @@
+{
+  "cells": [
+    {
+      "artifact": "/tmp/run/agent-none.json",
+      "cost_summary": {
+        "baseline": {
+          "completion_tokens": 20
+        },
+        "skill": {
+          "completion_tokens": 40
+        }
+      },
+      "harness": "agent",
+      "matrix_cell": "agent-none",
+      "model": "m",
+      "plugin_set": "none",
+      "plugin_set_id": "sha256:empty",
+      "provider": "openai",
+      "summary": {
+        "per_arm": {
+          "baseline": {
+            "avg_aggregate": 70.0,
+            "n": 1
+          }
+        }
+      }
+    },
+    {
+      "artifact": "/tmp/run/agent-caveman.json",
+      "cost_summary": {
+        "baseline": {
+          "completion_tokens": 20
+        },
+        "skill": {
+          "completion_tokens": 30
+        }
+      },
+      "harness": "agent",
+      "matrix_cell": "agent-caveman",
+      "model": "m",
+      "plugin_set": "caveman:full",
+      "plugin_set_id": "sha256:sha",
+      "provider": "openai",
+      "summary": {
+        "per_arm": {
+          "baseline": {
+            "avg_aggregate": 70.0,
+            "n": 1
+          }
+        }
+      }
+    }
+  ],
+  "generated_at": "2026-10-04T17:47:16.294238Z",
+  "library_name": "oneTBB",
+  "plugin_deltas": [
+    {
+      "answer_text_deltas": {
+        "baseline": {
+          "final_answer_chars": {
+            "baseline_avg": 100.0,
+            "delta": 0.0,
+            "plugin_avg": 100.0
+          },
+          "raw_answer_chars": {
+            "baseline_avg": 100.0,
+            "delta": 0.0,
+            "plugin_avg": 100.0
+          }
+        },
+        "skill": {
+          "final_answer_chars": {
+            "baseline_avg": 120.0,
+            "delta": 0.0,
+            "plugin_avg": 120.0
+          },
+          "raw_answer_chars": {
+            "baseline_avg": 120.0,
+            "delta": 0.0,
+            "plugin_avg": 120.0
+          }
+        }
+      },
+      "artifact": "/tmp/run/plugin-delta-agent-none-to-agent-caveman-fbb8a406.json",
+      "baseline_cell": "agent-none",
+      "cost_deltas": {
+        "baseline": {
+          "completion_tokens": {
+            "baseline": 20,
+            "delta": 0.0,
+            "plugin": 20
+          },
+          "mean_latency_sec": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          },
+          "mean_ttft_sec": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          },
+          "prompt_tokens": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          },
+          "total_cost_usd": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          },
+          "total_tokens": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          }
+        },
+        "skill": {
+          "completion_tokens": {
+            "baseline": 40,
+            "delta": -10.0,
+            "plugin": 30
+          },
+          "mean_latency_sec": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          },
+          "mean_ttft_sec": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          },
+          "prompt_tokens": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          },
+          "total_cost_usd": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          },
+          "total_tokens": {
+            "baseline": null,
+            "delta": null,
+            "plugin": null
+          }
+        }
+      },
+      "plugin_cell": "agent-caveman",
+      "plugin_set": "caveman:full",
+      "plugin_set_id": "sha256:sha",
+      "score_deltas": {
+        "baseline": {
+          "aggregate_delta": 0.0,
+          "baseline_avg_aggregate": 70.0,
+          "n": 1,
+          "plugin_avg_aggregate": 70.0
+        },
+        "skill": {
+          "aggregate_delta": -4.0,
+          "baseline_avg_aggregate": 80.0,
+          "n": 1,
+          "plugin_avg_aggregate": 76.0
+        }
+      }
+    }
+  ],
+  "schema_version": "matrix_rollup.v1",
+  "total_cells": 2,
+  "warnings": []
+}

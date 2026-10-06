@@ -1,0 +1,66 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+name: contracts
+
+# Artifact schemas are versions: an in-place edit to <kind>.v<N>.json may only
+# widen what it accepts (agent_benchmarks/schema_compat.py says why and what to
+# do instead). The fixture half of the contract runs in the test suite
+# (tests/test_schema_compat.py); this job is the diff half, which needs the
+# PR's base.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'agent-benchmark/agent_benchmarks/schemas/**'
+      - 'agent-benchmark/agent_benchmarks/schema_compat.py'
+      - '.github/workflows/contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: agent-benchmark
+
+jobs:
+  schema-compat:
+    name: Schema compatibility
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+        with:
+          python-version: '3.11'
+      # A reviewer who has decided a narrowing is safe (it states an invariant
+      # every written artifact already met) applies the `schema-break-ok` label;
+      # the findings are still printed, the job just does not fail on them.
+      # WARNING lines (narrowings no base fixture hits) never fail the job; they
+      # go to the step summary and as annotations so a reviewer sees them.
+      - name: schema_compat vs the PR base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'schema-break-ok') }}
+        run: |
+          set -o pipefail
+          status=0
+          python -m agent_benchmarks.schema_compat --base "$BASE_SHA" | tee compat.txt || status=$?
+          if grep -qE '^(BREAKING|WARNING)' compat.txt; then
+            { echo '### Schema compatibility'; echo '```'; cat compat.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          { grep '^WARNING' compat.txt || true; } | sed 's/^WARNING */::warning title=schema_compat::/'
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          if [ "$OVERRIDE" = true ]; then
+            echo "::warning::breaking schema edits accepted by the schema-break-ok label"
+            exit 0
+          fi
+          exit 1

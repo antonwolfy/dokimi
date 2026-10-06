@@ -1,0 +1,125 @@
+{
+  "answer_text_deltas": {
+    "baseline": {
+      "final_answer_chars": {
+        "baseline_avg": 90.0,
+        "delta": 0.0,
+        "plugin_avg": 90.0
+      },
+      "raw_answer_chars": {
+        "baseline_avg": 90.0,
+        "delta": 0.0,
+        "plugin_avg": 90.0
+      }
+    },
+    "skill": {
+      "final_answer_chars": {
+        "baseline_avg": 130.0,
+        "delta": -65.0,
+        "plugin_avg": 65.0
+      },
+      "raw_answer_chars": {
+        "baseline_avg": 130.0,
+        "delta": 0.0,
+        "plugin_avg": 130.0
+      }
+    }
+  },
+  "arms": [
+    "baseline",
+    "skill"
+  ],
+  "baseline_plugin_set": "none",
+  "baseline_plugin_set_id": "sha256:empty",
+  "cost_deltas": {
+    "baseline": {
+      "completion_tokens": {
+        "baseline": 40,
+        "delta": 0.0,
+        "plugin": 40
+      },
+      "mean_latency_sec": {
+        "baseline": 1.0,
+        "delta": 0.0,
+        "plugin": 1.0
+      },
+      "mean_ttft_sec": {
+        "baseline": null,
+        "delta": null,
+        "plugin": null
+      },
+      "prompt_tokens": {
+        "baseline": 100,
+        "delta": 0.0,
+        "plugin": 100
+      },
+      "total_cost_usd": {
+        "baseline": 0.02,
+        "delta": 0.0,
+        "plugin": 0.02
+      },
+      "total_tokens": {
+        "baseline": 140,
+        "delta": 0.0,
+        "plugin": 140
+      }
+    },
+    "skill": {
+      "completion_tokens": {
+        "baseline": 60,
+        "delta": -30.0,
+        "plugin": 30
+      },
+      "mean_latency_sec": {
+        "baseline": 1.5,
+        "delta": 0.0,
+        "plugin": 1.5
+      },
+      "mean_ttft_sec": {
+        "baseline": 0.2,
+        "delta": 0.0,
+        "plugin": 0.2
+      },
+      "prompt_tokens": {
+        "baseline": 150,
+        "delta": 0.0,
+        "plugin": 150
+      },
+      "total_cost_usd": {
+        "baseline": 0.03,
+        "delta": 0.0,
+        "plugin": 0.03
+      },
+      "total_tokens": {
+        "baseline": 210,
+        "delta": 0.0,
+        "plugin": 210
+      }
+    }
+  },
+  "harness": "agent",
+  "judge_model": "judge-m",
+  "judge_provider": "openai",
+  "library_name": "oneTBB",
+  "model": "m",
+  "plugin_set": "caveman:full",
+  "plugin_set_id": "sha256:sha",
+  "provider": "openai",
+  "schema_version": "plugin_delta.v1",
+  "score_deltas": {
+    "baseline": {
+      "aggregate_delta": 0.0,
+      "baseline_avg_aggregate": 65.0,
+      "n": 2,
+      "plugin_avg_aggregate": 65.0
+    },
+    "skill": {
+      "aggregate_delta": -4.0,
+      "baseline_avg_aggregate": 85.0,
+      "n": 2,
+      "plugin_avg_aggregate": 81.0
+    }
+  },
+  "total_questions": 2,
+  "warnings": []
+}

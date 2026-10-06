@@ -1,0 +1,22 @@
+{
+  "answers": [
+    {
+      "library_name": "demo",
+      "question_id": "q1",
+      "question_text": "How do I install the library?",
+      "with_docs": {
+        "answer": "pip install demo",
+        "tokens": 5
+      },
+      "without_docs": {
+        "answer": "unsure",
+        "tokens": 2
+      }
+    }
+  ],
+  "generated_at": "2026-01-01T00:00:00Z",
+  "model": "demo-model",
+  "provider": "openai",
+  "schema_version": "answers.v1",
+  "total_questions": 1
+}

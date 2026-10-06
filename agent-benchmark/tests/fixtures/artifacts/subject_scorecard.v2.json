@@ -1,0 +1,306 @@
+{
+  "awareness": {
+    "arm_specs": [
+      "baseline",
+      "docs:local:docs"
+    ],
+    "runs": []
+  },
+  "baseline": "baseline",
+  "baseline_digest": "sha256:d72aaf74f7981bf6f50ea2e69b2bf6abd2ff0bbbc36635052b1e6edb54d92240",
+  "cells": [],
+  "descriptor": "/tmp/run/subject.toml",
+  "generated_at": "2026-10-04T17:47:19.175356Z",
+  "novelty": {
+    "caveats": [
+      "novelty is per (artifact, model) and not comparable across cells",
+      "`added` is a profile, not a ranking: ranking artifacts by it inside one model correlated with the measured task delta at -0.446",
+      "every novelty check is soft and none blocks a build"
+    ],
+    "cells": [
+      {
+        "artifact": {
+          "kind": "skill",
+          "ref": "skill:skills/accel-tuning"
+        },
+        "atoms": {
+          "n": 40,
+          "n_probed": 40,
+          "sampling": "all"
+        },
+        "gate": {
+          "artifact_ref": "skill:skills/accel-tuning",
+          "blocking": false,
+          "checks": [
+            {
+              "measured": true,
+              "message": "lenient `added` 0.420 over 40 paired probes (floor 0.15); this is one (artifact, model) pair and is not comparable to another artifact's figure",
+              "name": "added_floor",
+              "passed": true,
+              "severity": "warn",
+              "threshold": 0.15,
+              "value": 0.42
+            },
+            {
+              "measured": true,
+              "message": "0 atoms classified harmful/conflicting. Correctness gates before volume: one study skill carried 33 conflicts and still routed at 0.810, so it loads and misinforms",
+              "name": "harmful_atoms",
+              "passed": true,
+              "severity": "warn",
+              "threshold": 0,
+              "value": 0
+            },
+            {
+              "measured": true,
+              "message": "0.120 of tokens carry no extracted atom (ceiling 0.25); an upper bound on waste, not a measurement of it",
+              "name": "dead_tokens",
+              "passed": true,
+              "severity": "warn",
+              "threshold": 0.25,
+              "value": 0.12
+            },
+            {
+              "measured": false,
+              "message": "0 of 0 offered candidates drop a protected span. The study's worst candidate kept 0.916 of knowledge at 0.158 protection, which is why protection is pinned rather than averaged in",
+              "name": "protection_invariant",
+              "passed": true,
+              "severity": "warn",
+              "threshold": 0,
+              "value": 0
+            },
+            {
+              "measured": false,
+              "message": "span citations were not confirmed for this run, so the span views report the extractor's citation as given",
+              "name": "span_citations_confirmed",
+              "passed": true,
+              "severity": "info",
+              "threshold": 0.8,
+              "value": null
+            },
+            {
+              "measured": false,
+              "message": "no shortening candidates were ranked",
+              "name": "value_is_measured",
+              "passed": true,
+              "severity": "info",
+              "threshold": 0.5,
+              "value": null
+            },
+            {
+              "measured": false,
+              "message": "the shuffled control was not run",
+              "name": "order_independence",
+              "passed": true,
+              "severity": "info",
+              "threshold": false,
+              "value": null
+            }
+          ],
+          "model": "m",
+          "not_measured": [
+            "protection_invariant",
+            "span_citations_confirmed",
+            "value_is_measured",
+            "order_independence"
+          ],
+          "status": "PASS"
+        },
+        "judge_model": "j",
+        "k0": {
+          "lenient": 0.5,
+          "strict": 0.6
+        },
+        "model": "m",
+        "paired": {
+          "lenient": {
+            "added": 0.42,
+            "ci95_added": null,
+            "degraded": null,
+            "n_paired": 40,
+            "redundant": null,
+            "still_missing": null
+          },
+          "strict": {
+            "added": 0.3,
+            "ci95_added": null,
+            "degraded": null,
+            "n_paired": 40,
+            "redundant": null,
+            "still_missing": null
+          }
+        },
+        "provider": "openai",
+        "run_config": {
+          "paraphrases": false,
+          "seed": 7
+        },
+        "spans": {
+          "capped_atom_set": false,
+          "frac_carrying_nothing": 0.12,
+          "n": 60,
+          "tokens": 900
+        },
+        "warnings": []
+      },
+      {
+        "artifact": {
+          "kind": "skill",
+          "ref": "skill:skills/accel-tuning"
+        },
+        "atoms": {
+          "n": 40,
+          "n_probed": 40,
+          "sampling": "all"
+        },
+        "gate": {
+          "artifact_ref": "skill:skills/accel-tuning",
+          "blocking": false,
+          "checks": [
+            {
+              "measured": true,
+              "message": "lenient `added` 0.420 over 40 paired probes (floor 0.15); this is one (artifact, model) pair and is not comparable to another artifact's figure",
+              "name": "added_floor",
+              "passed": true,
+              "severity": "warn",
+              "threshold": 0.15,
+              "value": 0.42
+            },
+            {
+              "measured": true,
+              "message": "0 atoms classified harmful/conflicting. Correctness gates before volume: one study skill carried 33 conflicts and still routed at 0.810, so it loads and misinforms",
+              "name": "harmful_atoms",
+              "passed": true,
+              "severity": "warn",
+              "threshold": 0,
+              "value": 0
+            },
+            {
+              "measured": true,
+              "message": "0.120 of tokens carry no extracted atom (ceiling 0.25); an upper bound on waste, not a measurement of it",
+              "name": "dead_tokens",
+              "passed": true,
+              "severity": "warn",
+              "threshold": 0.25,
+              "value": 0.12
+            },
+            {
+              "measured": false,
+              "message": "0 of 0 offered candidates drop a protected span. The study's worst candidate kept 0.916 of knowledge at 0.158 protection, which is why protection is pinned rather than averaged in",
+              "name": "protection_invariant",
+              "passed": true,
+              "severity": "warn",
+              "threshold": 0,
+              "value": 0
+            },
+            {
+              "measured": false,
+              "message": "span citations were not confirmed for this run, so the span views report the extractor's citation as given",
+              "name": "span_citations_confirmed",
+              "passed": true,
+              "severity": "info",
+              "threshold": 0.8,
+              "value": null
+            },
+            {
+              "measured": false,
+              "message": "no shortening candidates were ranked",
+              "name": "value_is_measured",
+              "passed": true,
+              "severity": "info",
+              "threshold": 0.5,
+              "value": null
+            },
+            {
+              "measured": false,
+              "message": "the shuffled control was not run",
+              "name": "order_independence",
+              "passed": true,
+              "severity": "info",
+              "threshold": false,
+              "value": null
+            }
+          ],
+          "model": "m",
+          "not_measured": [
+            "protection_invariant",
+            "span_citations_confirmed",
+            "value_is_measured",
+            "order_independence"
+          ],
+          "status": "PASS"
+        },
+        "judge_model": "j",
+        "k0": {
+          "lenient": 0.5,
+          "strict": 0.6
+        },
+        "model": "m",
+        "paired": {
+          "lenient": {
+            "added": 0.42,
+            "ci95_added": null,
+            "degraded": null,
+            "n_paired": 40,
+            "redundant": null,
+            "still_missing": null
+          },
+          "strict": {
+            "added": 0.3,
+            "ci95_added": null,
+            "degraded": null,
+            "n_paired": 40,
+            "redundant": null,
+            "still_missing": null
+          }
+        },
+        "provider": "openai",
+        "spans": {
+          "capped_atom_set": false,
+          "frac_carrying_nothing": 0.12,
+          "n": 60,
+          "tokens": 900
+        },
+        "warnings": []
+      }
+    ],
+    "n_cells": 2,
+    "status": "measured"
+  },
+  "plugin_deltas": [],
+  "run_manifest": {
+    "awareness_runs": 0,
+    "matrix_cells": 1,
+    "out_dir": "/tmp/run"
+  },
+  "schema_version": "subject_scorecard.v2",
+  "subject": {
+    "id": "docs-subject",
+    "kind": "doc-source",
+    "members": [],
+    "ref": "local:docs",
+    "ref_digest": "sha256:ee8510524ee6eba46b2bbf6d1e08969b777fcdc90a7c292bee5ac89fddde7db5"
+  },
+  "suite": {
+    "products": [
+      "oneTBB"
+    ],
+    "question_set_hash": "sha256:7b0379b853ffc6170161dede74ec099e8819110188311444256faab6eea2d06e",
+    "questions": [
+      "questions.json"
+    ],
+    "tasks": []
+  },
+  "warnings": [],
+  "work": {
+    "arm_specs": [
+      "baseline",
+      "agent:local:docs"
+    ],
+    "harnesses": [],
+    "status": "not_run",
+    "summary": {},
+    "task_report": null,
+    "task_runs": null,
+    "tasks": []
+  }
+}

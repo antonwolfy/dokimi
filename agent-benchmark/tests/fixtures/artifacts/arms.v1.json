@@ -1,0 +1,133 @@
+{
+  "answers": [],
+  "arms": [
+    "baseline",
+    "docs",
+    "skill:x",
+    "docs+skill:x"
+  ],
+  "baseline_arm": "baseline",
+  "library_name": "onetbb",
+  "model": "m",
+  "provider": "openai",
+  "summary": {
+    "interactions": [
+      {
+        "additive_expectation": 14.0,
+        "arm_a": "docs",
+        "arm_b": "skill:x",
+        "baseline_arm": "baseline",
+        "ci_confidence": 0.95,
+        "ci_hi": -6.3742,
+        "ci_lo": -9.6258,
+        "ci_method": "student_t",
+        "cohens_d": -5.164,
+        "combined_arm": "docs+skill:x",
+        "correction": "holm",
+        "correction_family": "interactions",
+        "delta_a": 2.0,
+        "delta_b": 12.0,
+        "delta_combined": 6.0,
+        "delta_mean": -8.0,
+        "delta_std": 1.55,
+        "effect": "large",
+        "family_size": 1,
+        "family_tested": 1,
+        "interaction": -8.0,
+        "n": 6,
+        "n_wilcoxon": 6,
+        "p_adjusted": 5.49e-05,
+        "p_ttest": 5.49e-05,
+        "p_wilcoxon": 0.0312,
+        "significant": true,
+        "significant_adjusted": true
+      }
+    ],
+    "per_arm": {
+      "baseline": {
+        "avg_aggregate": 50.5,
+        "delta_vs_baseline": null,
+        "n": 6
+      },
+      "docs": {
+        "avg_aggregate": 52.5,
+        "delta_vs_baseline": 2.0,
+        "n": 6,
+        "significance": {
+          "ci_confidence": 0.95,
+          "ci_hi": 3.6258,
+          "ci_lo": 0.3742,
+          "ci_method": "student_t",
+          "cohens_d": 1.291,
+          "correction": "holm",
+          "correction_family": "arms",
+          "delta_mean": 2.0,
+          "delta_std": 1.55,
+          "effect": "large",
+          "family_size": 3,
+          "family_tested": 3,
+          "n": 6,
+          "n_wilcoxon": 6,
+          "p_adjusted": 0.025,
+          "p_ttest": 0.025,
+          "p_wilcoxon": 0.0625,
+          "significant": false,
+          "significant_adjusted": false
+        }
+      },
+      "docs+skill:x": {
+        "avg_aggregate": 56.5,
+        "delta_vs_baseline": 6.0,
+        "n": 6,
+        "significance": {
+          "ci_confidence": 0.95,
+          "ci_hi": 7.6258,
+          "ci_lo": 4.3742,
+          "ci_method": "student_t",
+          "cohens_d": 3.873,
+          "correction": "holm",
+          "correction_family": "arms",
+          "delta_mean": 6.0,
+          "delta_std": 1.55,
+          "effect": "large",
+          "family_size": 3,
+          "family_tested": 3,
+          "n": 6,
+          "n_wilcoxon": 6,
+          "p_adjusted": 0.0004,
+          "p_ttest": 0.0002,
+          "p_wilcoxon": 0.0312,
+          "significant": true,
+          "significant_adjusted": true
+        }
+      },
+      "skill:x": {
+        "avg_aggregate": 62.5,
+        "delta_vs_baseline": 12.0,
+        "n": 6,
+        "significance": {
+          "ci_confidence": 0.95,
+          "ci_hi": 13.6258,
+          "ci_lo": 10.3742,
+          "ci_method": "student_t",
+          "cohens_d": 7.746,
+          "correction": "holm",
+          "correction_family": "arms",
+          "delta_mean": 12.0,
+          "delta_std": 1.55,
+          "effect": "large",
+          "family_size": 3,
+          "family_tested": 3,
+          "n": 6,
+          "n_wilcoxon": 6,
+          "p_adjusted": 2.25e-05,
+          "p_ttest": 7.49e-06,
+          "p_wilcoxon": 0.0312,
+          "significant": true,
+          "significant_adjusted": true
+        }
+      }
+    }
+  },
+  "total_questions": 6
+}

@@ -1,0 +1,40 @@
+{
+  "build_systems": [
+    "make",
+    "pytest"
+  ],
+  "entry_points": {
+    "grade": "python3 dev/evals/run.py grade --contract {run_dir}",
+    "oracle": "python3 dev/evals/run.py oracle --contract {run_dir}"
+  },
+  "eval_dir": "dev/evals",
+  "guidance": {
+    "also_scan": [
+      "CONTRIBUTING.md"
+    ],
+    "globs": [
+      "**/AGENTS.md",
+      ".github/instructions/*.md"
+    ]
+  },
+  "id": "toy",
+  "image": {
+    "caches": [
+      {
+        "name": "build-cache",
+        "path": "/cache/build"
+      }
+    ],
+    "dockerfile": "dev/evals/Dockerfile",
+    "env": {
+      "OUT_BASE": "{run_dir}/ob",
+      "X": "{home}"
+    },
+    "network": "none"
+  },
+  "schema": "repo_manifest.v1",
+  "source": {
+    "url": "https://example.invalid/toy"
+  },
+  "tasks": "dev/evals/tasks"
+}

@@ -487,5 +487,6 @@ content repository and pass them in with `--questions` / `--questions-root` and
 Answer runs, judge scores and static-benchmark snapshots are outputs, not
 fixtures: keep them under `results/`, `reports/`, `answers/`, `eval/` or
 `baselines/`, which are git-ignored. Their schemas are locked by
-`agent_benchmarks/schemas/*.json` and `tests/test_artifacts.py`, so no captured
-run has to be committed to protect the format.
+`agent_benchmarks/schemas/*.json` and `tests/test_artifacts.py`; the only
+committed artifacts are the one-per-schema fixtures in `tests/fixtures/artifacts/`,
+which every later edit of that schema version must still accept.
