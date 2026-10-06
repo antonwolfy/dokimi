@@ -117,7 +117,16 @@ class DockerSolverHarness:
         returncode = 0
         extra_metrics: dict[str, Any] = {}
         try:
-            self._build_image(task, image, log)
+            try:
+                self._build_image(task, image, log)
+            except subprocess.TimeoutExpired as exc:
+                # The image never got built, so no agent ran and there is no
+                # verdict: raise so the cell is errored like a build that fails
+                # fast. Only a solve or verify timeout below is a reward-0 failure.
+                log.write(f"\nBUILD TIMEOUT: {exc}\n")
+                raise RuntimeError(
+                    f"docker build timed out after {exc.timeout}s; see run.log"
+                ) from exc
             self._start_container(task, image, container, log)
             try:
                 if self.mode == "oracle":

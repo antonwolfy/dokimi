@@ -137,13 +137,14 @@ def render_subject_scorecard(scorecard: dict) -> str:
     per_harness = work.get("summary", {}).get("per_harness", {})
     if per_harness:
         lines.append("")
-        lines.append("| Harness | Pass rate | Passed | Runs |")
-        lines.append("| --- | ---: | ---: | ---: |")
+        lines.append("| Harness | Pass rate | Passed | Scored | Errored |")
+        lines.append("| --- | ---: | ---: | ---: | ---: |")
         for harness, stats in per_harness.items():
             rate = stats.get("pass_rate")
             rate_s = "n/a" if rate is None else f"{rate:.2%}"
             lines.append(
-                f"| `{harness}` | {rate_s} | {stats.get('passed', 0)} | {stats.get('n', 0)} |"
+                f"| `{harness}` | {rate_s} | {stats.get('passed', 0)} | "
+                f"{stats.get('scored', stats.get('n', 0))} | {stats.get('errored', 0)} |"
             )
 
     lines.extend(_novelty_section(scorecard.get("novelty", {}) or {}))

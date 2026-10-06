@@ -152,41 +152,51 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
     # ── headline ──
     lines.append("## Headline")
     lines.append("")
-    lines.append("| Harness | Pass rate | Cost (USD) | Wall (min) | "
+    lines.append("| Harness | Pass rate | Errored | Cost (USD) | Wall (min) | "
                  "Completion tok | Cache read tok | Cost-known |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     for h in harnesses:
         s = ph.get(h, {})
         c = s.get("cost", {})
         rate = s.get("pass_rate")
-        rate_s = "—" if rate is None else f"{rate*100:.2f}% ({s.get('passed', 0)}/{s.get('n', 0)})"
+        scored = s.get("scored", s.get("n", 0))
+        rate_s = "—" if rate is None else f"{rate*100:.2f}% ({s.get('passed', 0)}/{scored})"
         lines.append(
-            f"| `{h}` | {rate_s} | {_fmt_cost(c.get('total_cost_usd'))} | "
+            f"| `{h}` | {rate_s} | {s.get('errored', 0)} | {_fmt_cost(c.get('total_cost_usd'))} | "
             f"{s.get('elapsed_sec', 0)/60:.1f} | {c.get('completion_tokens', '—')} | "
             f"{c.get('cache_read_tokens', '—')} | "
             f"{c.get('cost_known_n', '—')}/{s.get('n', 0)} |"
         )
     lines.append("")
+    if any(ph.get(h, {}).get("errored") for h in harnesses):
+        lines.append("_Pass rate is over scored cells. An errored cell is one whose "
+                     "harness raised (docker build, exec, config): it produced no "
+                     "verdict, so it is missing data, not a 0. An agent or "
+                     "verifier timeout is a failure, not an error._")
+        lines.append("")
 
     # ── per-cell aggregation, keyed by full harness id ──
     # cost is None until a row actually reports cost_usd, so harnesses without
     # LLM telemetry (oracle, dry runs) render "—" rather than a fake $0.0000.
     tasks = sorted({r["task"] for r in rows})
     cell: dict[tuple[str, str], dict[str, Any]] = defaultdict(
-        lambda: {"passed": 0, "n": 0, "cost": None, "detail": []}
+        lambda: {"passed": 0, "n": 0, "errored": 0, "cost": None, "detail": []}
     )
     for r in rows:
         key = (r["task"], r["harness"])
         c = cell[key]
-        c["n"] += 1
-        c["passed"] += 1 if r.get("passed") else 0
+        errored = bool(r.get("metrics", {}).get("error"))
+        c["errored"] += 1 if errored else 0
+        c["n"] += 0 if errored else 1
+        c["passed"] += 1 if r.get("passed") and not errored else 0
         cost = r.get("metrics", {}).get("cost_usd")
         if isinstance(cost, (int, float)):
             c["cost"] = (c["cost"] or 0.0) + cost
         claim, turns = _self_report(r.get("output_dir"))
         c["detail"].append({
             "repeat": r.get("repeat", 1), "reward": r.get("reward"),
-            "passed": bool(r.get("passed")), "rc": r.get("returncode"),
+            "passed": bool(r.get("passed")) and not errored, "errored": errored,
+            "rc": r.get("returncode"),
             "cost": cost, "turns": turns, "claim": claim,
         })
 
@@ -196,19 +206,20 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
     lines.append("| Difficulty | Tasks | " + " | ".join(f"`{h}` pass" for h in harnesses) + " |")
     lines.append("|-----------|------:|" + "|".join("------:" for _ in harnesses) + "|")
     by_diff: dict[str, dict[str, list[int]]] = defaultdict(
-        lambda: {h: [0, 0] for h in harnesses}
+        lambda: {h: [0, 0, 0] for h in harnesses}
     )
     for t in tasks:
         dlv = diff_of.get(t, "?")
         for h in harnesses:
             by_diff[dlv][h][0] += cell[(t, h)]["passed"]
             by_diff[dlv][h][1] += cell[(t, h)]["n"]
+            by_diff[dlv][h][2] += cell[(t, h)]["errored"]
     for dlv in sorted(by_diff):
         n_tasks = sum(1 for t in tasks if diff_of.get(t) == dlv)
         cols = []
         for h in harnesses:
-            p, n = by_diff[dlv][h]
-            cols.append(f"{p}/{n}" if n else "—")
+            p, n, e = by_diff[dlv][h]
+            cols.append((f"{p}/{n}" if n else "—") + (f" (+{e} err)" if e else ""))
         lines.append(f"| {dlv} | {n_tasks} | " + " | ".join(cols) + " |")
     lines.append("")
 
@@ -221,10 +232,18 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
         lines.append("| --- | ---: | ---: | ---: | ---: |")
         for h, cr in cmp.items():
             prd = cr.get("pass_rate_delta")
-            prd_s = f"{prd*100:+.2f} pp" if isinstance(prd, (int, float)) else "—"
+            withheld = cr.get("passed_delta", 0) is None
+            if isinstance(prd, (int, float)):
+                prd_s = f"{prd*100:+.2f} pp"
+            elif withheld:
+                prd_s = "— (arms lost different cells)"
+            else:
+                prd_s = "—"
+            pd = cr.get("passed_delta", 0)
+            pd_s = "—" if pd is None else f"{pd:+}"
             cd = cr.get("cost_delta_usd")
             cd_s = f"{cd:+.4f}" if isinstance(cd, (int, float)) else "—"
-            lines.append(f"| `{h}` | {prd_s} | {cr.get('passed_delta', 0):+} | "
+            lines.append(f"| `{h}` | {prd_s} | {pd_s} | "
                          f"{cr.get('operation_count_delta', 0):+} | {cd_s} |")
         lines.append("")
         lines.extend(_mcnemar_lines(cmp, baseline))
@@ -240,7 +259,9 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
         cols = []
         for h in harnesses:
             c = cell[(t, h)]
-            cols.append(f"{c['passed']}/{c['n']} | {_fmt_cost(c['cost'])}")
+            err_s = f" (+{c['errored']} err)" if c["errored"] else ""
+            pass_s = f"{c['passed']}/{c['n']}" if c["n"] else "—"
+            cols.append(f"{pass_s}{err_s} | {_fmt_cost(c['cost'])}")
         lines.append(f"| {t} | {diff_of.get(t, '?')} | " + " | ".join(cols) + " |")
     lines.append("")
 
@@ -262,9 +283,15 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
                 rw = det["reward"]
                 rw_s = f"{rw:g}" if isinstance(rw, (int, float)) else "null"
                 claimed = det["claim"] and "done" in det["claim"].lower()
-                pass_s = "✅" if det["passed"] else ("❌ ⚠️" if claimed else "❌")
+                if det["errored"]:
+                    pass_s = "ERR"
+                else:
+                    pass_s = "✅" if det["passed"] else ("❌ ⚠️" if claimed else "❌")
                 turns = det["turns"] if det["turns"] is not None else "—"
-                claim = det["claim"] or ("(timeout rc124)" if det["rc"] == 124 else "(no result)")
+                claim = det["claim"] or (
+                    "(timeout rc124)" if det["rc"] == 124
+                    else "(harness error)" if det["errored"] else "(no result)"
+                )
                 lines.append(f"| `{h}` | {det['repeat']} | {rw_s} | {pass_s} | {turns} | "
                              f"{_fmt_cost(det['cost'])} | {_md_cell(claim)} |")
         lines.append("")

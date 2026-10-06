@@ -128,8 +128,12 @@ jobs:
           import json, sys
           data = json.load(open(sys.argv[1], encoding="utf-8"))
           stats = data["summary"]["per_harness"]["docker-oracle"]
-          print(f"docker-oracle: {stats['passed']}/{stats['n']} pass (rate={stats['pass_rate']})")
-          sys.exit(0 if stats["pass_rate"] == 1.0 else 1)
+          errored = stats.get("errored", 0)
+          print(f"docker-oracle: {stats['passed']}/{stats['n']} pass, {errored} errored "
+                f"(rate={stats['pass_rate']})")
+          # Not pass_rate == 1.0: an errored cell is excluded from pass_rate's
+          # denominator, so one pass plus one harness error would still read 1.0.
+          sys.exit(0 if stats["n"] > 0 and stats["passed"] == stats["n"] and not errored else 1)
           PY
       - name: Upload run artifact
         if: always()

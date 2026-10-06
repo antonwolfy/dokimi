@@ -97,6 +97,7 @@ def summarize_task_results(
             {
                 "n": 0,
                 "passed": 0,
+                "errored": 0,
                 "reward_sum": 0.0,
                 "reward_n": 0,
                 "elapsed_sec": 0.0,
@@ -106,13 +107,16 @@ def summarize_task_results(
                 "_cost_sum": 0.0,
                 "_cost_known": 0,
                 "_tokens": {k: 0 for k in _COST_KEYS if k != "cost_usd"},
-                "_by_task": {},   # task -> {"n", "passed"}
+                "_by_task": {},   # task -> {"n", "passed", "errored"}
             },
         )
+        errored = _is_errored(row)
+        passed = bool(row.get("passed")) and not errored
         stats["n"] += 1
-        stats["passed"] += 1 if row.get("passed") else 0
+        stats["passed"] += 1 if passed else 0
+        stats["errored"] += 1 if errored else 0
         reward = row.get("reward")
-        if isinstance(reward, (int, float)):
+        if isinstance(reward, (int, float)) and not errored:
             stats["reward_sum"] += float(reward)
             stats["reward_n"] += 1
         stats["elapsed_sec"] += float(row.get("elapsed_sec") or 0.0)
@@ -132,12 +136,17 @@ def summarize_task_results(
         # Per-task breakdown (which tasks the harness solves).
         task = row.get("task")
         if task is not None:
-            bucket = stats["_by_task"].setdefault(task, {"n": 0, "passed": 0})
+            bucket = stats["_by_task"].setdefault(task, {"n": 0, "passed": 0, "errored": 0})
             bucket["n"] += 1
-            bucket["passed"] += 1 if row.get("passed") else 0
+            bucket["passed"] += 1 if passed else 0
+            bucket["errored"] += 1 if errored else 0
 
     for stats in per_harness.values():
-        stats["pass_rate"] = round(stats["passed"] / stats["n"], 4) if stats["n"] else None
+        # An errored cell produced no verdict, so it is out of the denominator:
+        # counting a docker build failure as a 0 charges infrastructure to the
+        # treatment, the same reason _outcomes_by_cell drops it from McNemar.
+        stats["scored"] = stats["n"] - stats["errored"]
+        stats["pass_rate"] = _rate(stats["passed"], stats["scored"])
         stats["avg_reward"] = (
             round(stats["reward_sum"] / stats["reward_n"], 4) if stats["reward_n"] else None
         )
@@ -155,8 +164,8 @@ def summarize_task_results(
         }
         by_task = stats.pop("_by_task")
         stats["per_task"] = {
-            t: {"n": v["n"], "passed": v["passed"],
-                "pass_rate": round(v["passed"] / v["n"], 4) if v["n"] else None}
+            t: {"n": v["n"], "passed": v["passed"], "errored": v["errored"],
+                "pass_rate": _rate(v["passed"], v["n"] - v["errored"])}
             for t, v in sorted(by_task.items())
         }
 
@@ -171,18 +180,32 @@ def summarize_task_results(
             pass_rate = stats.get("pass_rate")
             base_cost = base["cost"].get("total_cost_usd")
             arm_cost = stats["cost"].get("total_cost_usd")
+            # The unpaired deltas compare totals. A cell lost to an error on one
+            # side only makes the arms differ by more than the treatment (an arm
+            # with fewer verdicts looks like fewer passes and less cost), so the
+            # deltas are withheld rather than computed over what survived. Cells
+            # both arms lost cancel out. The paired McNemar below always uses
+            # the shared scored cells.
+            comparable = _errored_cells(outcomes, attempted, harness) == _errored_cells(
+                outcomes, attempted, baseline_harness)
             comparisons[harness] = {
                 "baseline_harness": baseline_harness,
                 "pass_rate_delta": (
                     round(pass_rate - base_pass, 4)
                     if isinstance(pass_rate, float) and isinstance(base_pass, float)
+                    and comparable
                     else None
                 ),
-                "passed_delta": stats.get("passed", 0) - base.get("passed", 0),
+                "errored": stats["errored"],
+                "baseline_errored": base["errored"],
+                "passed_delta": (
+                    stats.get("passed", 0) - base.get("passed", 0) if comparable else None
+                ),
                 "operation_count_delta": stats.get("operation_count", 0) - base.get("operation_count", 0),
                 "cost_delta_usd": (
                     round(arm_cost - base_cost, 6)
                     if isinstance(arm_cost, (int, float)) and isinstance(base_cost, (int, float))
+                    and comparable
                     else None
                 ),
                 "mcnemar": _paired_binary_test(
@@ -213,10 +236,25 @@ def _outcomes_by_cell(
     for row in rows:
         key = (row.get("task"), row.get("repeat", 1))
         attempted.setdefault(row["harness"], set()).add(key)
-        if row.get("metrics", {}).get("error"):
+        if _is_errored(row):
             continue
         out.setdefault(row["harness"], {})[key] = bool(row.get("passed"))
     return out, attempted
+
+
+def _errored_cells(
+    outcomes: dict[str, dict[tuple, bool]], attempted: dict[str, set[tuple]], harness: str
+) -> set[tuple]:
+    return attempted.get(harness, set()) - set(outcomes.get(harness, {}))
+
+
+def _is_errored(row: dict[str, Any]) -> bool:
+    """A cell whose harness raised (``metrics.error``): no verdict, not a 0."""
+    return bool(row.get("metrics", {}).get("error"))
+
+
+def _rate(passed: int, scored: int) -> float | None:
+    return round(passed / scored, 4) if scored else None
 
 
 def _paired_binary_test(

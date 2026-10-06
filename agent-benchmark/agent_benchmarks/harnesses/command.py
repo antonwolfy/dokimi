@@ -92,23 +92,40 @@ class CommandHarness:
         task_root = task.path.parent
         if task_root.parent == task_root:
             raise ValueError(f"Task path must be inside a task root directory: {task.path}")
-        proc = subprocess.run(
-            command,
-            cwd=str(task_root.parent),
-            env=env,
-            text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
-        )
+        timed_out = False
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=str(task_root.parent),
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                check=False,
+            )
+            returncode = proc.returncode
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
+        except subprocess.TimeoutExpired as exc:
+            # The agent ran out of time: a verified failure (reward 0, rc 124 as
+            # the docker harness records it), not an errored cell. Raising
+            # would reach the runner's catch-all and take the cell out of the
+            # pass-rate denominator, scoring an arm that hangs above one that
+            # fails fast.
+            timed_out = True
+            returncode = 124
+            stdout = _text(exc.stdout)
+            stderr = _text(exc.stderr) + f"\nTIMEOUT: {exc}\n"
         elapsed = time.time() - start
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
         operations.extend(load_operations(output_dir, stdout, stderr))
-        reward = _find_reward(output_dir, stdout, stderr)
-        passed = reward is not None and reward >= 1.0
-        if reward is None:
-            passed = proc.returncode == 0
+        if timed_out:
+            reward: float | None = 0.0
+            passed = False
+        else:
+            reward = _find_reward(output_dir, stdout, stderr)
+            passed = reward is not None and reward >= 1.0
+            if reward is None:
+                passed = returncode == 0
 
         metrics = {
             "dry_run": False,
@@ -116,11 +133,13 @@ class CommandHarness:
             "stdout_bytes": len(stdout.encode("utf-8")),
             "stderr_bytes": len(stderr.encode("utf-8")),
         }
+        if timed_out:
+            metrics["timed_out"] = True
         return HarnessResult(
             harness=self.harness_id,
             task=task.name,
             command=command,
-            returncode=proc.returncode,
+            returncode=returncode,
             elapsed_sec=elapsed,
             reward=reward,
             passed=passed,
@@ -191,6 +210,16 @@ def _parse_reward_text(text: str) -> float | None:
     if match:
         return float(match.group(1))
     return None
+
+
+def _text(data: str | bytes | None) -> str:
+    """Captured output of a timed-out run; ``TimeoutExpired`` may carry bytes
+    even when the process ran with ``text=True``."""
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    return data
 
 
 def _tail(text: str, limit: int = 4000) -> str:

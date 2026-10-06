@@ -105,8 +105,10 @@ def cmd_tasks_run(args: argparse.Namespace) -> None:
         rate_s = "n/a" if rate is None else f"{rate:.2%}"
         cost = stats.get("cost", {}).get("total_cost_usd")
         cost_s = "" if cost is None else f", cost=${cost:.4f}"
+        scored = stats.get("scored", stats["n"])
+        errored_s = f", {stats['errored']} errored" if stats.get("errored") else ""
         print(
-            f"{harness}: {stats['passed']}/{stats['n']} pass ({rate_s}), "
+            f"{harness}: {stats['passed']}/{scored} pass ({rate_s}){errored_s}, "
             f"ops={stats['operation_count']}, elapsed={stats['elapsed_sec']:.2f}s{cost_s}"
         )
     for harness, cmp_row in output["summary"]["comparisons"].items():

@@ -136,6 +136,45 @@ def test_per_task_cost_unknown_renders_dash():
     assert "$0.0000" not in md
 
 
+def test_errored_cells_render_as_missing_data_not_failures():
+    from agent_benchmarks.harnesses.runner import summarize_task_results
+
+    def row(task, harness, passed, error=None):
+        metrics = {"operation_count": 0, "operations_by_type": {}}
+        if error:
+            metrics["error"] = error
+        return {"task": task, "harness": harness, "passed": passed,
+                "reward": None if error else float(passed), "returncode": 1 if error else 0,
+                "elapsed_sec": 1.0, "output_dir": None, "metrics": metrics}
+
+    rows = [
+        row("t1", "base", False), row("t1", "skill", True),
+        row("t2", "base", True), row("t2", "skill", False, error="RuntimeError: docker build failed"),
+    ]
+    data = {
+        "schema_version": "task_runs.v1", "model": "m", "repeats": 1,
+        "baseline_harness": "base", "harnesses": ["base", "skill"],
+        "tasks": [{"name": t, "path": "p", "metadata": {"difficulty": "easy"},
+                   "verifier": {}, "agent": {}, "environment": {}} for t in ("t1", "t2")],
+        "results": rows,
+        "summary": summarize_task_results(rows, baseline_harness="base"),
+    }
+    md = render_task_runs_report(data)
+    assert "| `skill` | 100.00% (1/1) | 1 |" in md          # headline: scored cells, errored column
+    assert "missing data, not a 0" in md
+    assert "| t2 | easy | 1/1 | — | — (+1 err) | — |" in md
+    assert "— (arms lost different cells)" in md         # unpaired deltas withheld
+    assert "| `skill` | 1 | null | ERR |" in md
+    assert "(harness error)" in md
+
+    # A foreign row marked passed with metrics.error is not a pass in the tables either.
+    rows[3]["passed"] = True
+    data["summary"] = summarize_task_results(rows, baseline_harness="base")
+    md = render_task_runs_report(data)
+    assert "| easy | 2 | 1/2 | 1/1 (+1 err) |" in md
+    assert "| `skill` | 1 | null | ERR |" in md
+
+
 # ── McNemar section ───────────────────────────────────────────────────────────
 
 

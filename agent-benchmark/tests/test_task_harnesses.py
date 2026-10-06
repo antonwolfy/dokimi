@@ -348,6 +348,90 @@ def test_cells_that_errored_on_both_sides_are_counted_as_excluded():
     assert mc["n_excluded"] == 1
 
 
+def test_pass_rate_excludes_errored_cells_from_the_denominator():
+    """Two scored passes and one docker crash is 2/2, not 2/3."""
+    rows = [
+        _row("t0", "skill", True), _row("t1", "skill", True),
+        _row("t2", "skill", False, error="RuntimeError: docker build failed"),
+    ]
+    stats = summarize_task_results(rows)["per_harness"]["skill"]
+    assert stats["n"] == 3
+    assert stats["errored"] == 1
+    assert stats["scored"] == 2
+    assert stats["pass_rate"] == 1.0
+    assert stats["per_task"]["t2"] == {"n": 1, "passed": 0, "errored": 1, "pass_rate": None}
+
+
+def test_all_cells_errored_gives_no_pass_rate():
+    rows = [_row("t0", "skill", False, error="RuntimeError: docker build failed")]
+    stats = summarize_task_results(rows)["per_harness"]["skill"]
+    assert stats["scored"] == 0
+    assert stats["pass_rate"] is None
+
+
+def test_unpaired_deltas_are_withheld_when_one_arm_errored():
+    """Arms that lost different cells differ by more than the treatment."""
+    rows = [
+        _row("t0", "noskill", False), _row("t0", "skill", True),
+        _row("t1", "noskill", False), _row("t1", "skill", True),
+        _row("t2", "noskill", True),
+        _row("t2", "skill", False, error="RuntimeError: docker build failed"),
+    ]
+    cmp = summarize_task_results(rows, baseline_harness="noskill")["comparisons"]["skill"]
+    assert cmp["pass_rate_delta"] is None
+    assert cmp["passed_delta"] is None  # not "1 fewer pass": the cell has no verdict
+    assert cmp["errored"] == 1
+    assert cmp["baseline_errored"] == 0
+    assert cmp["mcnemar"]["n"] == 2     # the paired test still uses t0, t1
+
+
+def test_cost_delta_is_withheld_when_one_arm_errored():
+    """An errored cell has no cost, so the arm would look cheaper."""
+    rows = [_row("t0", "noskill", True), _row("t0", "skill", True),
+            _row("t1", "noskill", True), _row("t1", "skill", False, error="E")]
+    for r in rows:
+        if not r["metrics"].get("error"):
+            r["metrics"]["cost_usd"] = 1.0
+    cmp = summarize_task_results(rows, baseline_harness="noskill")["comparisons"]["skill"]
+    assert cmp["cost_delta_usd"] is None
+
+
+def test_deltas_are_reported_when_both_arms_lost_the_same_cell():
+    """A build that breaks for one task in both arms leaves the scored sets equal."""
+    rows = [
+        _row("t0", "noskill", False), _row("t0", "skill", True),
+        _row("t1", "noskill", False), _row("t1", "skill", True),
+        _row("t2", "noskill", False, error="RuntimeError: docker build failed"),
+        _row("t2", "skill", False, error="RuntimeError: docker build failed"),
+    ]
+    cmp = summarize_task_results(rows, baseline_harness="noskill")["comparisons"]["skill"]
+    assert cmp["pass_rate_delta"] == 1.0
+    assert cmp["passed_delta"] == 2
+    assert cmp["errored"] == 1 and cmp["baseline_errored"] == 1
+
+
+def test_an_errored_row_never_counts_as_passed():
+    """A foreign row marked passed with metrics.error must not lift pass_rate past 1."""
+    rows = [_row("t0", "skill", True), _row("t1", "skill", True)]
+    rows[0]["metrics"]["error"] = "E"
+    stats = summarize_task_results(rows)["per_harness"]["skill"]
+    assert stats["passed"] == 1 and stats["scored"] == 1 and stats["pass_rate"] == 1.0
+    assert stats["per_task"]["t0"]["passed"] == 0
+
+
+def test_an_errored_row_is_out_of_avg_reward():
+    rows = [_row("t0", "skill", True), _row("t1", "skill", True)]
+    rows[0]["metrics"]["error"] = "E"
+    rows[0]["reward"] = 0.0
+    assert summarize_task_results(rows)["per_harness"]["skill"]["avg_reward"] == 1.0
+
+
+def test_pass_rate_delta_is_reported_when_no_cell_errored():
+    cmp = _sweep([(False, True), (True, True)])["comparisons"]["skill"]
+    assert cmp["pass_rate_delta"] == 0.5
+    assert cmp["errored"] == 0 and cmp["baseline_errored"] == 0
+
+
 def test_repeats_pair_by_index_within_a_task():
     rows = [
         _row("t0", "noskill", False, repeat=1), _row("t0", "skill", True, repeat=1),
@@ -448,3 +532,86 @@ def test_path_placeholders_keep_windows_separators(tmp_path):
     harness = CommandHarness("fake", "agent --task {task_path} --out {output_dir}")
     cmd = harness.build_command(task, model=None, output_dir=PureWindowsPath(r"C:\runs\out"))
     assert cmd == ["agent", "--task", "C:/tasks/toy-task", "--out", "C:/runs/out"]
+
+
+def _timeout_expired(command, cwd, env, text, capture_output, timeout, check):
+    # subprocess.run attaches captured output as bytes even with text=True.
+    raise subprocess.TimeoutExpired(command, timeout, output=b"partial out", stderr=b"partial err")
+
+
+@pytest.mark.parametrize("harness_id", ["command:fake-agent {task_path}", "codex", "claude-code",
+                                        "terminal-bench:aider"])
+def test_agent_timeout_is_a_failed_cell_not_an_errored_one(tmp_path, monkeypatch, harness_id):
+    """An agent that exceeds its timeout produced a verdict: it failed. Raising
+    would make the runner record it as errored and drop it from pass_rate."""
+    task = load_task(_fixture_task(tmp_path))
+    monkeypatch.setattr(subprocess, "run", _timeout_expired)
+
+    result = create_harness(harness_id).run(task, model="m", output_dir=tmp_path / "out")
+
+    assert result.returncode == 124
+    assert result.reward == 0.0
+    assert result.passed is False
+    assert result.metrics["timed_out"] is True
+    assert "error" not in result.metrics
+    assert "partial out" in result.stdout_tail
+    assert "TIMEOUT" in result.stderr_tail
+
+
+def test_agent_timeout_with_text_output_still_reports(tmp_path, monkeypatch):
+    task = load_task(_fixture_task(tmp_path))
+
+    def fake_run(command, cwd, env, text, capture_output, timeout, check):
+        raise subprocess.TimeoutExpired(command, timeout, output="reward: 1.0", stderr=None)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = CommandHarness("fake", "fake-agent").run(task, output_dir=tmp_path / "out")
+    # A reward printed before the timeout does not turn a timeout into a pass.
+    assert result.reward == 0.0 and result.passed is False
+
+
+def test_an_arm_that_hangs_is_not_scored_above_one_that_fails_fast(tmp_path):
+    """Real sweep: two arms identical except that on the hard tasks one hangs
+    past timeout_sec and the other exits 1. Both are failures, so the arms tie
+    and the delta is reported (nothing errored)."""
+    import sys
+
+    root = tmp_path / "tasks"
+    for name in ("easy-1", "easy-2", "hard-1", "hard-2"):
+        task = root / name
+        task.mkdir(parents=True)
+        (task / "instruction.md").write_text("x", encoding="utf-8")
+        (task / "task.toml").write_text("[agent]\ntimeout_sec = 1\n", encoding="utf-8")
+    # The harness id becomes a run directory name; a script path relative to
+    # the harness cwd keeps it under Windows' 260-character path limit.
+    (tmp_path / "agent.py").write_text(
+        "import sys, time\n"
+        "mode, task = sys.argv[1], sys.argv[2]\n"
+        "if task.startswith('easy'):\n"
+        "    print('reward: 1.0'); sys.exit(0)\n"
+        "if mode == 'hang':\n"
+        "    time.sleep(30)\n"
+        "print('reward: 0.0'); sys.exit(1)\n",
+        encoding="utf-8",
+    )
+    py = Path(sys.executable).as_posix()
+    hang = f"command:{py} agent.py hang {{task}}"
+    fast = f"command:{py} agent.py fast {{task}}"
+    output = TaskSuiteRunner(
+        tasks=discover_tasks(root),
+        harnesses=[fast, hang],
+        baseline_harness=fast,
+        output_root=tmp_path / "runs",
+    ).run()
+
+    validate_artifact("task_runs", output)
+    ph = output["summary"]["per_harness"]
+    for h in (hang, fast):
+        assert ph[h]["errored"] == 0
+        assert ph[h]["scored"] == 4
+        assert ph[h]["pass_rate"] == 0.5
+    cmp = output["summary"]["comparisons"][hang]
+    assert cmp["pass_rate_delta"] == 0.0
+    assert cmp["errored"] == 0 and cmp["baseline_errored"] == 0
+    hung = {r["task"]: r for r in output["results"] if r["harness"] == hang}
+    assert hung["hard-1"]["returncode"] == 124

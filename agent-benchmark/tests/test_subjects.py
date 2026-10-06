@@ -443,7 +443,7 @@ tasks = ["tasks-root/example"]
     md = render_subject_scorecard(scorecard)
     assert "## Work runs" in md
     assert "`out/task-runs.json`" in md
-    assert "| Harness | Pass rate | Passed | Runs |" in md
+    assert "| Harness | Pass rate | Passed | Scored | Errored |" in md
     assert "| `codex` | 0.00% | 0 | 1 |" in md
 
 

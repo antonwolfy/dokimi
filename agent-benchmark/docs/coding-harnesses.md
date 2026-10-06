@@ -261,8 +261,22 @@ The block reports the whole 2×2 table, not just a p-value:
 
 Note the two similarly named deltas. `mcnemar.paired_pass_rate_delta` is
 `(n_gained - n_lost) / n` over the **shared** cells; its sibling
-`comparisons.<harness>.pass_rate_delta` subtracts two marginal pass rates over
-every row each harness ran. They disagree whenever a cell is excluded.
+`comparisons.<harness>.pass_rate_delta` subtracts two marginal pass rates.
+
+An errored cell is one whose harness raised (`metrics.error`: a docker build
+failure or timeout, or an exec failure). It produced no verdict, so it is
+missing data, not a 0. An agent that exceeds its timeout, or a verifier that
+does, is a failure (reward 0, returncode 124), not an error: otherwise an arm
+that hangs would score above one that fails fast.
+
+- `per_harness.<h>` carries `errored` and `scored = n - errored`, and
+  `pass_rate = passed / scored`. `per_task` carries `errored` too.
+- `pass_rate_delta`, `passed_delta` and `cost_delta_usd` are null when the two
+  arms lost different cells to errors, since an arm with fewer verdicts would
+  look like fewer passes and less cost. Cells both arms lost cancel out. Each
+  comparison also carries `errored` and `baseline_errored`.
+- McNemar always pairs only the cells both arms scored; `n_excluded` counts
+  the rest.
 
 Four properties are worth internalising before reading the number:
 

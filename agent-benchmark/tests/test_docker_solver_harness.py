@@ -12,7 +12,10 @@ saved data.
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from agent_benchmarks.artifacts import validate_artifact
 from agent_benchmarks.harnesses import TaskSuiteRunner, load_task
@@ -350,8 +353,8 @@ def test_summary_rolls_up_cost_and_per_task():
     assert stats["cost"]["cost_known_n"] == 3
     assert stats["cost"]["total_tokens"] == 200
     # task "a" ran twice (1 pass), task "b" once (1 pass)
-    assert stats["per_task"]["a"] == {"n": 2, "passed": 1, "pass_rate": 0.5}
-    assert stats["per_task"]["b"] == {"n": 1, "passed": 1, "pass_rate": 1.0}
+    assert stats["per_task"]["a"] == {"n": 2, "passed": 1, "errored": 0, "pass_rate": 0.5}
+    assert stats["per_task"]["b"] == {"n": 1, "passed": 1, "errored": 0, "pass_rate": 1.0}
 
 
 def test_summary_cost_delta_vs_baseline():
@@ -462,3 +465,45 @@ def test_recompile_failure_recorded_in_metrics(tmp_path, monkeypatch):
     result = create_harness("docker-claude").run(task, model="haiku", output_dir=tmp_path / "out")
     assert result.metrics["recompile_failed"] == ["g++ -O3 bench.cpp -o /app/bench"]
     assert result.passed is False
+
+
+# ── timeouts: build is errored, solve/verify is a reward-0 failure ────────────
+
+
+def test_build_timeout_raises_so_the_cell_is_errored(tmp_path, monkeypatch):
+    """A build that exceeds build_timeout_sec never ran the agent, so it must
+    be errored like a build that fails fast — not a reward-0 failure."""
+    task = load_task(_fixture_task(tmp_path))
+    _patch_pipeline(monkeypatch, reward=1.0, usage_json=None)
+
+    def slow_build(self, t, i, log):
+        raise subprocess.TimeoutExpired(["docker", "build"], 900)
+
+    monkeypatch.setattr(DockerSolverHarness, "_build_image", slow_build)
+    with pytest.raises(RuntimeError, match="docker build timed out after 900"):
+        create_harness("docker-oracle").run(task, output_dir=tmp_path / "out")
+    assert "BUILD TIMEOUT" in (tmp_path / "out" / "run.log").read_text(encoding="utf-8")
+
+    output = TaskSuiteRunner(
+        tasks=[task], harnesses=["docker-oracle"], output_root=tmp_path / "runs",
+    ).run()
+    row = output["results"][0]
+    assert row["reward"] is None
+    assert "docker build timed out" in row["metrics"]["error"]
+    assert output["summary"]["per_harness"]["docker-oracle"]["errored"] == 1
+
+
+@pytest.mark.parametrize("step", ["_solve_oracle", "_verify"])
+def test_solve_or_verify_timeout_is_a_failed_cell(tmp_path, monkeypatch, step):
+    task = load_task(_fixture_task(tmp_path))
+    _patch_pipeline(monkeypatch, reward=1.0, usage_json=None)
+
+    def slow(self, *args):
+        raise subprocess.TimeoutExpired(["docker", "exec"], 30)
+
+    monkeypatch.setattr(DockerSolverHarness, step, slow)
+    result = create_harness("docker-oracle").run(task, output_dir=tmp_path / "out")
+    assert result.returncode == 124
+    assert result.reward == 0.0
+    assert result.passed is False
+    assert "error" not in result.metrics

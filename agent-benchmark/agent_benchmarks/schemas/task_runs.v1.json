@@ -257,7 +257,10 @@
                 "type": [
                   "number",
                   "null"
-                ]
+                ],
+                "description": "passed / scored; null when no cell was scored.",
+                "minimum": 0,
+                "maximum": 1
               },
               "avg_reward": {
                 "type": [
@@ -305,10 +308,27 @@
                       "type": [
                         "number",
                         "null"
-                      ]
+                      ],
+                      "description": "passed / (n - errored); null when no cell was scored.",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "errored": {
+                      "type": "integer",
+                      "minimum": 0
                     }
                   }
                 }
+              },
+              "errored": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Cells whose harness raised (metrics.error): no verdict. Excluded from pass_rate."
+              },
+              "scored": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "n - errored: the denominator of pass_rate."
               }
             }
           }
@@ -331,10 +351,15 @@
                 "type": [
                   "number",
                   "null"
-                ]
+                ],
+                "description": "Null when the two arms lost different cells to harness errors: an arm with fewer verdicts would otherwise look different for reasons other than the treatment. Cells both arms lost cancel out. mcnemar pairs only cells both arms scored."
               },
               "passed_delta": {
-                "type": "integer"
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Null under the same rule as pass_rate_delta."
               },
               "operation_count_delta": {
                 "type": "integer"
@@ -343,7 +368,8 @@
                 "type": [
                   "number",
                   "null"
-                ]
+                ],
+                "description": "Null when either arm's cost is unknown, or under the same rule as pass_rate_delta."
               },
               "mcnemar": {
                 "type": [
@@ -451,6 +477,14 @@
                   }
                 },
                 "additionalProperties": true
+              },
+              "errored": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "baseline_errored": {
+                "type": "integer",
+                "minimum": 0
               }
             }
           }
