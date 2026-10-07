@@ -402,6 +402,58 @@ confirmed for three of them. Above
 0.2 the run says so in `warnings`. The checks reject on evidence only, so a rate of 0.0 is
 the absence of detectable corruption — not proof that the wordings are faithful.
 
+## Do the probes measure anything
+
+Two LLM-free item-analysis checks, answering different questions.
+
+**Kind agreement**, inside one run. An atom asked twice — its own question and a reworded
+one — should get the same verdict in the same arm. When it does not, that atom's outcome
+is a property of the wording: prior knowledge that holds only under the artifact's own
+phrasing is not prior knowledge, which is the whole reason the `paraphrase` kind exists.
+Reversal probes are excluded (their key is "refuse", so disagreeing with the others is
+their job). The figure is the share of multi-kind *atoms* that were unanimous — an atom asked three
+ways where two agree counts as a disagreement, since one of its three answers is wrong
+either way. Reported per arm in `items.kind_agreement`, warned below 0.8 in **either** arm,
+and checked by the gate as `probe_kind_agreement`, which takes the worse arm, names it, and
+reports without judging when there are fewer than five multi-kind atoms. Read
+the baseline arm first: a low figure there means the `redundant` share is wording-matched
+recall rather than prior knowledge.
+
+**Discrimination**, across runs. Corrected (rest-score) point-biserial with the *models* as
+the respondents: an atom every model gets right separates nothing, and one the weaker models
+pass more often than the stronger ones is measuring something other than the knowledge it
+names. Each atom is correlated against the models' scores on the **other** atoms — a total
+containing the item correlates it with itself, which at three respondents is enough to
+report a perfect `r` on no evidence.
+
+```bash
+python cli.py novelty probe --artifact skill:s --atoms atoms.json --model M1 --out m1.json
+python cli.py novelty probe --artifact skill:s --atoms atoms.json --model M2 --out m2.json
+python cli.py novelty probe --artifact skill:s --atoms atoms.json --model M3 --out m3.json
+python cli.py novelty items --probes m1.json m2.json m3.json
+```
+
+Three **distinct models** is the minimum; below that — including three runs of one model,
+which are repeated measurements of one respondent — the command says the statistic is not
+computable rather than printing one. Runs of one model are folded into one respondent
+before the count, and the count is of models with usable runs. Runs of different
+artifacts, or of one artifact at different revisions (`artifact` or `ref_digest`
+differ), are refused. Three is also too few for the floor: enumerating every
+3×6 pass matrix under a uniform null puts 30% of atoms above `r = 0.2` and 32% below zero
+by chance, and the attainable values are a lumpy set that 0.2 does not land on. So the
+0.2 floor is **not applied** below 12 cells (`min_discrimination` comes back `null`,
+`floor_applies` `false`), the `r` column is a ranking until then, and the result's own
+`note` says which regime it is in. `r` is `None` — with the reason named — when an item or the
+totals have no variance, or when nothing is left to correlate against. Only atoms **every**
+cell scored are correlated (the rest are reported in `atoms_dropped`): counting a missing
+probe as a failure would manufacture a correlation, and leaving a one-cell atom in the rest
+score moved the shared atoms' totals and could flip their sign. The correlation itself
+lives in `eval/stats.py`, next to the other statistics, so the next caller finds it instead
+of writing its own.
+
+Read the output as a statement about the *measurement*, not the atom: a non-discriminating
+atom can be true and simply universal. A **negative** `r` is the one to treat as a defect.
+
 ## Comparing knowledge: which matcher is allowed to answer
 
 Two steps ask "is this the same knowledge?" — the retention oracle ("does the shortened text still

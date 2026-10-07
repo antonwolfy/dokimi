@@ -519,3 +519,90 @@ def test_probe_refuses_a_new_eval_case_when_evals_were_requested(tmp_path):
     (root / "evals" / "q.md").write_text("Q: two?\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="evals/q.md"):
         _reprobe(root, saved)
+
+
+def test_item_analysis_refuses_a_file_that_carries_no_probe_runs(tmp_path):
+    path = tmp_path / "novelty.json"
+    path.write_text(json.dumps({"model": "m", "paired": {}}), encoding="utf-8")
+    args = _parse("novelty", "items", "--probes", str(path))
+    with pytest.raises(SystemExit, match="no probe runs"):
+        args.func(args)
+
+
+def test_item_analysis_over_three_models_reports_discrimination(tmp_path, capsys):
+    def probes_file(name, outcomes):
+        path = tmp_path / name
+        path.write_text(json.dumps({"model": name.removesuffix(".json"), "runs": [
+            {"atom_id": atom, "probe_kind": "direct", "arm": "full", "question": "q",
+             "response": "r", "verdict": "correct_complete" if ok else "wrong_other"}
+            for atom, ok in outcomes.items()
+        ]}), encoding="utf-8")
+        return str(path)
+
+    files = [
+        probes_file("strong.json", {"u": True, "hard": True, "f1": True}),
+        probes_file("middle.json", {"u": True, "hard": False, "f1": True}),
+        probes_file("weak.json", {"u": True, "hard": False, "f1": False}),
+    ]
+    out = tmp_path / "items.json"
+    args = _parse("novelty", "items", "--probes", *files, "--out", str(out))
+    args.func(args)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    lenient = payload["discrimination"]["lenient"]
+    assert lenient["measured"] is True and lenient["n_atoms"] == 3
+    rows = {row["atom_id"]: row for row in lenient["per_atom"]}
+    assert rows["u"]["r"] is None            # every model knew it
+    assert rows["hard"]["r"] > 0
+    # Three respondents is below the floor's calibration, so the headline says so rather
+    # than counting atoms against a cut that flags a third of them by chance.
+    assert "floor not applied at 3 respondents" in capsys.readouterr().out
+
+
+def test_item_analysis_of_one_model_prints_why_it_is_not_computable(tmp_path, capsys):
+    path = tmp_path / "one.json"
+    path.write_text(json.dumps({"model": "m1", "runs": [
+        {"atom_id": "a1", "probe_kind": "direct", "arm": "full", "question": "q",
+         "response": "r", "verdict": "correct_complete"}]}), encoding="utf-8")
+    args = _parse("novelty", "items", "--probes", str(path))
+    args.func(args)
+    assert "at least 3" in capsys.readouterr().out
+
+
+def test_two_runs_of_the_same_model_do_not_overwrite_each_other(tmp_path, capsys):
+    def probes_file(name, model):
+        path = tmp_path / name
+        path.write_text(json.dumps({"model": model, "runs": [
+            {"atom_id": "a1", "probe_kind": "direct", "arm": "full", "question": "q",
+             "response": "r", "verdict": "correct_complete"},
+            {"atom_id": "a1", "probe_kind": "paraphrase", "arm": "full", "question": "q2",
+             "response": "r", "verdict": "wrong_other"},
+        ]}), encoding="utf-8")
+        return str(path)
+
+    files = [probes_file("seed0.json", "m"), probes_file("seed1.json", "m")]
+    out = tmp_path / "items.json"
+    args = _parse("novelty", "items", "--probes", *files, "--out", str(out))
+    args.func(args)
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    # Keyed by source, so two seeds of one model are two rows, not one.
+    assert len(payload["kind_agreement"]) == 2
+    assert {row["model"] for row in payload["kind_agreement"].values()} == {"m"}
+    assert "seed0.json" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("field", ["artifact", "ref_digest"])
+def test_items_refuses_runs_of_different_artifacts(tmp_path, field):
+    files = []
+    for n, model in enumerate(("m1", "m2", "m3")):
+        path = tmp_path / f"{model}.json"
+        meta = {"artifact": "skill:a", "ref_digest": "sha256:aa"}
+        if n == 2:
+            meta[field] = "skill:b" if field == "artifact" else "sha256:bb"
+        path.write_text(json.dumps({"model": model, **meta, "runs": [
+            {"atom_id": "a1", "probe_kind": "direct", "arm": "full", "question": "q",
+             "response": "r", "verdict": "correct_complete"}]}), encoding="utf-8")
+        files.append(str(path))
+    args = _parse("novelty", "items", "--probes", *files)
+    with pytest.raises(SystemExit, match=f"different texts \\({field}"):
+        args.func(args)

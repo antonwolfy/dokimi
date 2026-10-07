@@ -21,6 +21,9 @@ paired_vectors(evaluations, arm_a, arm_b)
     Per-question paired score vectors for two arms, complete cases only.
 mean_ci(values, ...)
     Student-t CI for the mean, coherent with ``p_ttest``; bootstrap fallback.
+point_biserial(flags, totals)
+    Item-analysis discrimination: correlation of one binary item against the
+    respondents' total scores.
 paired_test(treatment, control, ...)
     Paired t-test + Wilcoxon + Cohen's d_z + CI on the deltas.
 arm_significance(evaluations, baseline_arm, ...)
@@ -295,6 +298,51 @@ def paired_vectors(
             a_vals.append(a)
             b_vals.append(b)
     return a_vals, b_vals
+
+
+def point_biserial(flags: Sequence[bool], totals: Sequence[float]) -> Dict[str, Any]:
+    """Discrimination of one binary item against respondents' total scores.
+
+    Classical item analysis: an item that the strong respondents pass and the weak ones
+    fail correlates positively with the total; one that everybody passes, or that the
+    weak respondents pass more often, is not measuring what the total measures. Equal to
+    the Pearson correlation between ``flags`` (0/1) and ``totals``, computed in the
+    point-biserial form so the degenerate cases are explicit rather than a division error.
+
+    Args:
+        flags: Per-respondent pass/fail on this item.
+        totals: Each respondent's total score, same order and length.
+
+    Returns:
+        ``{"r": float | None, "n": int, "n_pass": int, "reason": str | None}``. ``r`` is
+        ``None`` when it is undefined: fewer than three respondents, no variance in the
+        totals, or an item every respondent passed or failed. ``reason`` names which.
+    """
+    if len(flags) != len(totals):
+        raise ValueError(
+            f"point_biserial needs one total per flag, got {len(flags)} flags and "
+            f"{len(totals)} totals; truncating would return a number for a mismatch"
+        )
+    pairs = [(bool(f), float(t)) for f, t in zip(flags, totals, strict=True)]
+    n = len(pairs)
+    n_pass = sum(1 for flag, _ in pairs if flag)
+    if n < 3:
+        return {"r": None, "n": n, "n_pass": n_pass, "reason": "fewer than 3 respondents"}
+    if n_pass in (0, n):
+        return {"r": None, "n": n, "n_pass": n_pass,
+                "reason": "no variance in the item: every respondent scored it the same"}
+    all_totals = [t for _, t in pairs]
+    sd = _sample_sd(all_totals)
+    if _is_degenerate(_mean(all_totals), sd):
+        return {"r": None, "n": n, "n_pass": n_pass,
+                "reason": "no variance in the totals: nothing for the item to discriminate"}
+    mean_pass = _mean([t for flag, t in pairs if flag])
+    mean_fail = _mean([t for flag, t in pairs if not flag])
+    proportion = n_pass / n
+    # Population sd, which is the point-biserial convention; _sample_sd is n-1.
+    sd_pop = sd * ((n - 1) / n) ** 0.5
+    r = (mean_pass - mean_fail) / sd_pop * (proportion * (1 - proportion)) ** 0.5
+    return {"r": round(r, 4), "n": n, "n_pass": n_pass, "reason": None}
 
 
 def _one_sample_pvalues(deltas: Sequence[float]) -> Dict[str, Any]:

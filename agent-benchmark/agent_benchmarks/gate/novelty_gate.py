@@ -42,6 +42,13 @@ DEFAULTS: dict[str, Any] = {
     # outside SKILL.md, per skill median 0.43 and worst 0.99, so an entry-point-only run of
     # a progressive-disclosure skill is a run about a fraction of it.
     "max_unmeasured_outside_share": 0.50,
+    # Share of multi-kind atoms whose kinds must agree, in the *worse* of the arms the run
+    # measured. Below this, those outcomes are wording-dependent, which is the one thing a
+    # `redundant` verdict may not be. Conventional, not measured on this data.
+    "min_kind_agreement": 0.80,
+    # Multi-kind atoms below which agreement is reported but not judged: one disagreeing
+    # atom out of one is a 0.0 that says nothing.
+    "min_atoms_for_kind_agreement": 5,
     # Share of generated probe wordings dropped by the fidelity check. Above this, the kind
     # that hit it covered materially fewer atoms than `atoms.n` suggests.
     "max_probe_malformed_rate": 0.20,
@@ -311,6 +318,68 @@ def evaluate_novelty(artifact: dict, thresholds: dict[str, Any] | None = None) -
                 f"(worst kind: {worst[0] or 'n/a'} at {worst[1]:.0%}); those atoms were probed by "
                 "fewer kinds than the run's budget implies. The check is mechanical, so this is "
                 "a floor on corruption, not a wording-quality score"
+            ),
+        ))
+
+    # ── 3d. Do an atom's probe kinds agree, or is the outcome a wording? ────
+    agreement_block = ((artifact.get("items") or {}).get("kind_agreement") or {})
+    # Both arms matter, and for different reasons: in the artifact arm a disagreement makes
+    # `added` wording-dependent, in the baseline arm it makes `redundant` wording-matched
+    # recall rather than prior knowledge. The check takes the worse of the two and names it.
+    # `novelty items --out` writes the same field keyed by source file rather than by arm;
+    # each row carries its own `arm`, so read that and ignore the key. Several files can
+    # share an arm (two seeds of one model); the worse row per arm is kept, not the last.
+    measured_arms: dict[str, Any] = {}
+    for key, row in agreement_block.items():
+        if (row or {}).get("agreement") is None:
+            continue
+        arm = row.get("arm") or key
+        # A row too thin to judge must not hide a wide row that fails: rank wide rows first.
+        def rank(r: dict[str, Any]) -> tuple[bool, float]:
+            return (r.get("n_atoms_multi_kind", 0) < cfg["min_atoms_for_kind_agreement"],
+                    r["agreement"])
+        if arm not in measured_arms or rank(row) < rank(measured_arms[arm]):
+            measured_arms[arm] = row
+    if not measured_arms:
+        checks.append(NoveltyCheck(
+            name="probe_kind_agreement", passed=True, value=None,
+            threshold=cfg["min_kind_agreement"], severity="info", measured=False,
+            message=(
+                "no atom was asked by more than one probe kind, so whether its outcome "
+                "survives a rewording is unmeasured"
+            ),
+        ))
+    else:
+        worst_arm, worst = min(
+            measured_arms.items(),
+            key=lambda pair: (
+                pair[1].get("n_atoms_multi_kind", 0) < cfg["min_atoms_for_kind_agreement"],
+                pair[1]["agreement"],
+            ),
+        )
+        value = worst["agreement"]
+        thin = worst.get("n_atoms_multi_kind", 0) < cfg["min_atoms_for_kind_agreement"]
+        others = ", ".join(
+            f"`{arm}` {row['agreement']:.2f}" for arm, row in sorted(measured_arms.items())
+            if arm != worst_arm
+        )
+        checks.append(NoveltyCheck(
+            name="probe_kind_agreement",
+            passed=thin or value >= cfg["min_kind_agreement"],
+            measured=not thin,
+            value=round(value, 4), threshold=cfg["min_kind_agreement"],
+            message=(
+                f"worst arm `{worst_arm}`: {worst['n_agree']} of "
+                f"{worst['n_atoms_multi_kind']} atoms asked by several probe kinds got the "
+                f"same verdict from all of them (floor {cfg['min_kind_agreement']})"
+                + (f"; other arms: {others}" if others else "")
+                + (
+                    f"; fewer than {cfg['min_atoms_for_kind_agreement']} multi-kind atoms, "
+                    "so this is reported and not judged" if thin else ""
+                )
+                + ". A disagreeing atom's outcome is wording-dependent: in the artifact arm "
+                "that makes `added` a property of the phrasing, and in the baseline arm it "
+                "makes `redundant` wording-matched recall rather than prior knowledge"
             ),
         ))
 

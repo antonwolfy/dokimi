@@ -22,7 +22,8 @@ from pathlib import Path
 
 from . import atoms as atoms_mod
 from . import attribute, bundle as bundle_mod
-from . import classify, measure, needs, probes, report, retention, shorten, spans
+from . import classify, items as items_mod
+from . import measure, needs, probes, report, retention, shorten, spans
 from .client import LLMClient, roll_up_cost
 from .retention import RetentionOracle
 
@@ -98,6 +99,30 @@ class AnalyzeResult:
     atoms: list = field(default_factory=list)
     spans: list = field(default_factory=list)
     measure_result: object | None = None
+
+
+def kind_agreement_warnings(rows: dict[str, dict]) -> list[str]:
+    """Warn only where the gate would judge: same floor, same minimum atom count."""
+    from ..gate.novelty_gate import DEFAULTS
+
+    out: list[str] = []
+    for arm, row in sorted(rows.items()):
+        if (
+            row["agreement"] is not None
+            and row["n_atoms_multi_kind"] >= DEFAULTS["min_atoms_for_kind_agreement"]
+            and row["agreement"] < DEFAULTS["min_kind_agreement"]
+        ):
+            reading = (
+                "`redundant` in this arm is wording-matched recall rather than prior "
+                "knowledge" if arm == measure.BASELINE_ARM
+                else "those atoms' outcomes are a property of the phrasing"
+            )
+            out.append(
+                f"in arm `{arm}`, {len(row['disagreeing'])} of {row['n_atoms_multi_kind']} "
+                f"atoms asked by more than one probe kind got different verdicts per kind; "
+                f"{reading}"
+            )
+    return out
 
 
 def analyze(
@@ -247,6 +272,20 @@ def analyze(
                 "so the knowledge-vs-protection gap is visible, not offered as accepted output"
             )
 
+    # Does an atom's own question and its rewording agree? A `redundant` that survives only
+    # the artifact's phrasing is not prior knowledge (open question the kind split exists for).
+    item_stats = {
+        "kind_agreement": {
+            arm: items_mod.kind_agreement(measure_result.runs, arm=arm)
+            for arm in (measure.BASELINE_ARM, measure_result.with_arm)
+        },
+        "discrimination": items_mod.discrimination(
+            [{"model": answerer.model, "runs": measure_result.runs}],
+            arm=measure_result.with_arm,
+        ),
+    }
+    warnings.extend(kind_agreement_warnings(item_stats["kind_agreement"]))
+
     bundle_summary: dict = {}
     if artifact_bundle is not None:
         bundle_summary = artifact_bundle.summary()
@@ -294,6 +333,7 @@ def analyze(
         span_summary=spans.span_summary(span_list, atom_list, atom_cap=config.max_atoms),
         by_knowledge_kind=by_knowledge_kind,
         probe_fidelity=probe_set.as_dict(),
+        items=item_stats,
         bundle=bundle_summary,
         attribution_summary=attribute.attribution_summary(
             attributions, confirmation=confirmation

@@ -41,6 +41,13 @@ def _artifact(**overrides):
         "attribution": {"carrier_confirmation": {"n_atoms": 40, "n_located": 38,
                                                  "n_unlocated": 2, "frac_located": 0.95}},
         "controls": {"order_independent": False},
+        "arms": {"lenient": {"no_artifact": 0.4, "full": 0.8}},
+        "items": {"kind_agreement": {
+            "no_artifact": {"arm": "no_artifact", "n_atoms_multi_kind": 40, "n_agree": 36,
+                            "agreement": 0.9, "disagreeing": []},
+            "full": {"arm": "full", "n_atoms_multi_kind": 40, "n_agree": 38,
+                     "agreement": 0.95, "disagreeing": []},
+        }},
         "bundle": {"include_resources": True, "n_files": 3, "entry_point_words": 400,
                    "resource_words_measured": 900, "resource_words_on_disk": 900,
                    "outside_share": 0.69, "excluded": [],
@@ -71,14 +78,14 @@ def test_a_run_that_skipped_its_stages_says_so_instead_of_passing():
     # --no-classify --no-shorten --no-confirm-carriers, and no shuffled arm (the default arms).
     verdict = evaluate_novelty(_artifact(
         categories={}, shortening=[], attribution={}, controls={}, spans={"n": 60},
-        bundle={}, probes={}))
+        bundle={}, probes={}, items={}))
     assert verdict.not_measured == [
         "harmful_atoms", "dead_tokens", "artifact_coverage", "probe_wording_fidelity",
-        "protection_invariant", "span_citations_confirmed", "value_is_measured",
-        "order_independence",
+        "probe_kind_agreement", "protection_invariant", "span_citations_confirmed",
+        "value_is_measured", "order_independence",
     ]
     block = format_novelty_block([verdict])
-    assert "(8 of 9 not measured)" in block
+    assert "(9 of 10 not measured)" in block
     assert "| harmful_atoms | not measured | None |" in block
 
 
@@ -295,3 +302,40 @@ def test_the_aggregate_malformed_rate_cannot_be_hidden_by_the_per_kind_rows():
     }))
     check = _named(verdict, "probe_wording_fidelity")
     assert (check.passed, check.value) == (False, 0.9)
+def test_an_atom_whose_kinds_disagree_is_reported_as_wording_dependent():
+    verdict = evaluate_novelty(_artifact(items={"kind_agreement": {
+        "full": {"arm": "full", "n_atoms_multi_kind": 40, "n_agree": 24,
+                 "agreement": 0.6,
+                 "disagreeing": [{"atom_id": "a1",
+                                  "by_kind": {"direct": True, "paraphrase": False}}]},
+    }}))
+    check = _named(verdict, "probe_kind_agreement")
+    assert (check.passed, check.value) == (False, 0.6)
+    assert "wording-dependent" in check.message
+
+
+def test_the_kind_agreement_check_takes_the_worse_arm_and_names_it():
+    verdict = evaluate_novelty(_artifact(items={"kind_agreement": {
+        "no_artifact": {"arm": "no_artifact", "n_atoms_multi_kind": 40, "n_agree": 20,
+                        "agreement": 0.5, "disagreeing": []},
+        "full": {"arm": "full", "n_atoms_multi_kind": 40, "n_agree": 39,
+                 "agreement": 0.975, "disagreeing": []},
+    }}))
+    check = _named(verdict, "probe_kind_agreement")
+    # The docs say the baseline arm is the more interesting read; the gate must agree.
+    assert (check.passed, check.value) == (False, 0.5)
+    assert "worst arm `no_artifact`" in check.message
+    assert "`full` 0.97" in check.message
+    assert "wording-matched recall" in check.message
+
+
+def test_two_files_in_one_arm_are_judged_on_the_worse_one():
+    # `novelty items --out` keys rows by source file, so two seeds share an arm.
+    verdict = evaluate_novelty(_artifact(items={"kind_agreement": {
+        "seed0.json": {"arm": "full", "n_atoms_multi_kind": 10, "n_agree": 2,
+                       "agreement": 0.2, "disagreeing": []},
+        "seed1.json": {"arm": "full", "n_atoms_multi_kind": 20, "n_agree": 19,
+                       "agreement": 0.95, "disagreeing": []},
+    }}))
+    check = _named(verdict, "probe_kind_agreement")
+    assert (check.passed, check.value) == (False, 0.2)

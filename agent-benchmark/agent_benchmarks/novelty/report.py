@@ -58,6 +58,7 @@ def build_novelty_artifact(
     attribution_summary: dict,
     by_knowledge_kind: dict | None = None,
     probe_fidelity: dict | None = None,
+    items: dict | None = None,
     bundle: dict | None = None,
     categories: dict[str, int] | None = None,
     faithfulness: dict[str, int] | None = None,
@@ -106,6 +107,7 @@ def build_novelty_artifact(
         "k0": {scoring: row["k0"] for scoring, row in paired.items()},
         "by_knowledge_kind": by_knowledge_kind or {},
         "probes": probe_fidelity or {},
+        "items": items or {},
         "bundle": bundle or {},
         "arms": {
             scoring: measure_result.arm_means(scoring) for scoring in ("lenient", "strict")
@@ -145,6 +147,44 @@ def _order_independent(measure_result) -> bool | None:
     if "shuffled" not in means or measure_result.with_arm not in means:
         return None
     return means["shuffled"] >= means[measure_result.with_arm]
+
+
+def _render_items(artifact: dict) -> list[str]:
+    """Whether the probes measured anything — reported next to what they measured."""
+    items = artifact.get("items") or {}
+    agreement_block = items.get("kind_agreement") or {}
+    rows = [
+        (arm, row) for arm, row in agreement_block.items()
+        if (row or {}).get("agreement") is not None
+    ]
+    discriminated = items.get("discrimination") or {}
+    if not rows and not discriminated:
+        return []
+    lines = ["## Do the probes measure anything", ""]
+    for arm, row in rows:
+        disagreeing = len(row.get("disagreeing") or [])
+        lines.append(
+            f"- `{arm}`: {row['n_agree']} of {row['n_atoms_multi_kind']} atoms asked by "
+            f"several probe kinds agree ({row['agreement']:.2f})."
+            + (f" {disagreeing} atoms are wording-dependent in this arm." if disagreeing
+               else "")
+        )
+    if discriminated and not discriminated.get("measured"):
+        lines.append(f"- discrimination: {discriminated.get('reason', 'not measured')} — "
+                     "run `novelty items --probes …` over several models' probe runs.")
+    elif discriminated:
+        floor = discriminated.get("min_discrimination")
+        verdict = (
+            f"{discriminated['n_non_discriminating']} of {discriminated['n_atoms']} atoms "
+            f"below r={floor}" if floor is not None
+            else f"floor not applied to {discriminated['n_atoms']} atoms"
+        )
+        lines.append(
+            f"- discrimination: {verdict} over {len(discriminated['models'])} models "
+            f"({discriminated['n_negative']} negative)."
+        )
+    lines.append("")
+    return lines
 
 
 def _render_bundle(artifact: dict) -> list[str]:
@@ -313,6 +353,7 @@ def render_novelty_markdown(artifact: dict) -> str:
 
     lines.extend(_render_knowledge_kinds(artifact))
     lines.extend(_render_bundle(artifact))
+    lines.extend(_render_items(artifact))
 
     arms = artifact.get("arms", {}).get("lenient", {})
     if len(arms) > 1:

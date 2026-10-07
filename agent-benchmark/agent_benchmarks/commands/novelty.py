@@ -15,6 +15,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 PROVIDERS = ["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"]
 
@@ -196,6 +197,103 @@ def cmd_novelty_probe(args: argparse.Namespace) -> None:
             f"degraded {row['degraded']}  still-missing {row['still_missing']}  "
             f"(n={row['n_paired']})"
         )
+
+
+def cmd_novelty_items(args: argparse.Namespace) -> None:
+    """Item analysis across saved probe runs: which atoms separate the models."""
+    from agent_benchmarks.novelty.items import discrimination, kind_agreement
+    from agent_benchmarks.novelty.measure import ProbeRun
+
+    cells = []
+    for raw in args.probes:
+        data = json.loads(Path(raw).read_text(encoding="utf-8"))
+        try:
+            runs = [
+                ProbeRun(
+                    atom_id=row["atom_id"], probe_kind=row["probe_kind"], arm=row["arm"],
+                    question=row.get("question", ""), response=row.get("response", ""),
+                    verdict=row["verdict"], confidence=row.get("confidence"),
+                )
+                for row in data.get("runs", [])
+            ]
+        except (KeyError, TypeError) as exc:
+            raise SystemExit(
+                f"{raw} has a probe run missing {exc}; it is not `novelty probe` output"
+            ) from None
+        if not runs:
+            raise SystemExit(f"{raw} carries no probe runs; item analysis needs `novelty "
+                             "probe` output, not a novelty.json")
+        cells.append({"model": data.get("model", raw), "runs": runs, "source": raw,
+                      "artifact": data.get("artifact"), "ref_digest": data.get("ref_digest")})
+
+    # Correlating atoms across models only means something over one answer key and one
+    # probed text. Atom ids are content hashes, so ids collide across artifacts only for
+    # identical statements -- but then the "same atom" was asked with different context.
+    # A file that does not record a field (older output) is not held against the rest.
+    for field in ("artifact", "ref_digest"):
+        values = {cell[field] for cell in cells if cell[field] is not None}
+        if len(values) > 1:
+            raise SystemExit(
+                f"these probe runs measured different texts ({field}: "
+                f"{', '.join(sorted(values))}); item analysis correlates one artifact's "
+                "atoms across models, so pass runs of one artifact at one revision"
+            )
+
+    atom_sets = {frozenset(run.atom_id for run in cell["runs"]) for cell in cells}
+    if len(atom_sets) > 1:
+        print("WARNING: these runs do not cover the same atom set; an atom missing from a "
+              "cell is dropped from its own statistic rather than counted as a failure",
+              file=sys.stderr)
+
+    payload: dict[str, Any] = {
+        "cells": [{"model": cell["model"], "source": cell["source"],
+                   "n_runs": len(cell["runs"])} for cell in cells],
+        "discrimination": {
+            scoring: discrimination(cells, scoring=scoring, arm=args.arm)
+            for scoring in ("lenient", "strict")
+        },
+        # Keyed by source file: two runs of the same model (two seeds, say) must not
+        # overwrite each other.
+        "kind_agreement": {
+            cell["source"]: dict(kind_agreement(cell["runs"], arm=args.arm),
+                                 model=cell["model"])
+            for cell in cells
+        },
+    }
+    if args.out:
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.out).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        print(f"OK Saved item analysis: {args.out}")
+
+    for scoring in ("lenient", "strict"):
+        row = payload["discrimination"][scoring]
+        if not row["measured"]:
+            print(f"{scoring:8s} discrimination not measured: {row['reason']}")
+            continue
+        headline = (
+            f"{row['n_non_discriminating']} below r={row['min_discrimination']}"
+            if row.get("floor_applies")
+            else f"floor not applied at {row['n_respondents']} respondents"
+        )
+        print(f"{scoring:8s} {row['n_atoms']} atoms over {row['n_respondents']} models: "
+              f"{headline}, {row['n_negative']} negative, {row['n_undefined']} undefined"
+              + (f", {row['n_atoms_dropped']} atoms dropped (not scored by every cell)"
+                 if row.get("n_atoms_dropped") else ""))
+        scored = [r for r in row["per_atom"] if r["r"] is not None]
+        shown = [r for r in scored if r["r"] < 0] or scored[:5]
+        if shown:
+            label = "negative" if shown and shown[0]["r"] < 0 else f"lowest {len(shown)}"
+            print(f"         {label} of {len(scored)} scored:")
+            for item in shown[:5]:
+                print(f"         {item['atom_id']}  r={item['r']:+.3f}  "
+                      f"passed by {item['n_pass']}/{item['n']}")
+    for source, agreement in payload["kind_agreement"].items():
+        label = f"{agreement['model']} ({Path(source).name})"
+        if agreement["agreement"] is None:
+            print(f"{label}: kind agreement not measurable (one probe kind per atom)")
+        else:
+            print(f"{label}: kind agreement {agreement['agreement']:.3f} over "
+                  f"{agreement['n_atoms_multi_kind']} atoms asked by several kinds")
 
 
 def cmd_novelty_shorten(args: argparse.Namespace) -> None:
@@ -527,6 +625,19 @@ def register(sub, positive_int) -> None:
                            help="Allow a best-candidate pick that drops protected spans")
     shorten_p.add_argument("--out", default=None, help="Write the chosen candidate here")
     shorten_p.set_defaults(func=cmd_novelty_shorten)
+
+    items_p = novelty_sub.add_parser(
+        "items", help="Item analysis across saved probe runs: which atoms separate the models"
+    )
+    items_p.add_argument("--probes", nargs="+", required=True,
+                         help="probes.json files from `novelty probe`, one per model. "
+                              "Point-biserial discrimination needs at least three, since the "
+                              "models are the respondents")
+    items_p.add_argument("--arm", default="full",
+                         help="Arm to score discrimination and check probe-kind agreement in "
+                              "(default: the artifact arm)")
+    items_p.add_argument("--out", default=None)
+    items_p.set_defaults(func=cmd_novelty_items)
 
     view_p = novelty_sub.add_parser("view", help="Re-render the annotated artifact view")
     view_p.add_argument("--novelty", required=True, help="novelty.json from `novelty analyze`")
