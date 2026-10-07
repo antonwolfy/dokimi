@@ -106,6 +106,10 @@ tokens, invisible to any frequency or perplexity ranking, expensive to lose. Tha
 
 ## Using it as an authoring tool
 
+The commands in order, with the costs and the three free steps that come first, are in
+[skill-novelty-walkthrough.md](skill-novelty-walkthrough.md). This section is the reference
+for what each output means.
+
 ### 1. Whole-artifact triage
 
 ```bash

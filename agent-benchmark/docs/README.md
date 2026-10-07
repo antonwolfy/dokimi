@@ -148,6 +148,10 @@ CLI surface. The files in this directory go deeper:
   rather than what it scores: the added/redundant/degraded/still-missing 2×2 per
   knowledge atom, span/topic/term attribution with colour legend, and
   five-axis shortening. Authoring tool, usable standalone.
+- [skill-novelty-walkthrough.md](skill-novelty-walkthrough.md) — the authoring path in
+  order, one artifact and one model: can it be selected, what will measuring cost, triage,
+  extract once and probe per model, read the span view, shorten, re-measure. Says at each
+  step what the number refuses to claim.
 - [skill-novelty-evidence.md](skill-novelty-evidence.md) — the 33-skill study
   the novelty numbers come from: method, K0 per model, the 2×2, need-graph
   statistics, content categories, shortening with measured behaviour, and the
