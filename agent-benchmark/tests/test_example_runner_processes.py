@@ -48,8 +48,13 @@ def _gone_soon(pid: int) -> bool:
             os.kill(pid, 0)
         except ProcessLookupError:
             return True
-        stat = Path(f"/proc/{pid}/stat")
-        if stat.exists() and stat.read_text().rsplit(")", 1)[1].split()[0] == "Z":
+        # The process can be reaped between the kill probe and this read; a
+        # vanished /proc entry (ENOENT, or ESRCH mid-read) means it is gone.
+        try:
+            state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        except (FileNotFoundError, ProcessLookupError):
+            return True
+        if state == "Z":
             return True
         time.sleep(0.05)
     return False
