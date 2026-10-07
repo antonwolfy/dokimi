@@ -407,3 +407,91 @@ def test_a_skill_s_own_evals_do_not_make_the_entry_point_run_warn(tmp_path):
     assert "rerun with `--include-resources`" not in rendered
     assert "500" in rendered                      # the decision is still stated
     validate_artifact("novelty", dict(artifact, schema_version="novelty.v1"))
+
+
+def test_a_tier_writes_its_forfeits_into_the_run_it_produced(tmp_path):
+    from agent_benchmarks.novelty.tiers import FORFEITS, TIERS, resolve
+
+    resolved = resolve("triage", {})
+    result = _analyze(tmp_path, **resolved["settings"])
+    # The config the tier produced must be what the artifact reports back.
+    assert result.artifact["run_config"]["max_atoms"] == 25
+    assert result.artifact["run_config"]["stages"]["classify"] is False
+
+    path = tmp_path / "again" / "s" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                           description=description, frontmatter=frontmatter, concurrency=1,
+                           **resolved["settings"])
+    extractor, answerer, judge = _clients()
+    artifact = analyze(body, config, extractor=extractor, answerer=answerer, judge=judge,
+                       tier=resolved["tier"]).artifact
+    assert artifact["run_config"]["tier"]["name"] == "triage"
+    forfeits = [w for w in artifact["warnings"] if w.startswith("tier `triage` forfeits:")]
+    # Two atoms under a cap of 25: the run is not sampled, so the sampled-rate forfeits
+    # the tier states up front are dropped from what it records.
+    assert artifact["atoms"]["n"] < 25
+    assert len(forfeits) == len(TIERS["triage"]["forfeits"]) - len(FORFEITS["sampled"])
+    assert sorted(artifact["run_config"]["tier"]["forfeits"]) == sorted(
+        w.split("forfeits: ", 1)[1] for w in forfeits)
+    assert not any("sampled rate" in w for w in forfeits)
+    validate_artifact("novelty", dict(artifact, schema_version="novelty.v1"))
+
+
+def test_skipping_the_faithfulness_check_is_recorded_as_a_warning(tmp_path):
+    result = _analyze(tmp_path, verify_faithfulness=False)
+    assert result.artifact["atoms"]["faithfulness"] == {}
+    assert any("--no-verify" in w for w in result.artifact["warnings"])
+
+
+def test_a_tier_overridden_by_flags_says_its_forfeits_may_not_be_this_run_s(tmp_path):
+    from agent_benchmarks.novelty.tiers import resolve
+
+    resolved = resolve("triage", {"max_atoms": 90})
+    result = _analyze(tmp_path, **resolved["settings"])
+    assert result.artifact["run_config"]["max_atoms"] == 90
+    path = tmp_path / "o" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                           description=description, frontmatter=frontmatter, concurrency=1,
+                           **resolved["settings"])
+    extractor, answerer, judge = _clients()
+    artifact = analyze(body, config, extractor=extractor, answerer=answerer, judge=judge,
+                       tier=resolved["tier"]).artifact
+    assert any("overridden by flags" in w for w in artifact["warnings"])
+
+
+def test_estimate_brackets_counted_calls(tmp_path):
+    import pytest
+
+    from agent_benchmarks.novelty.tiers import TIERS, estimate_calls
+
+    for tier, spec in TIERS.items():
+        path = tmp_path / tier / "accel-tuning" / "SKILL.md"
+        path.parent.mkdir(parents=True)
+        path.write_text(SKILL, encoding="utf-8")
+        kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+        config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                               description=description, frontmatter=frontmatter,
+                               concurrency=1, **spec["settings"])
+        scripted, calls = _scripted("informed"), []
+
+        def counting(prompt, system, scripted=scripted, calls=calls):
+            calls.append(prompt)
+            return scripted(prompt, system)
+
+        extractor, answerer, judge = (LLMClient(model=m, role=r, transport=counting)
+                                      for m, r in (("e", "extractor"), ("a", "answerer"),
+                                                   ("j", "judge")))
+        artifact = analyze(body, config, extractor=extractor, answerer=answerer,
+                           judge=judge).artifact
+        estimate = estimate_calls(artifact["atoms"]["n"],
+                                  dict(spec["settings"], budgets=config.budgets),
+                                  n_arms=len(config.arms))
+        if not (estimate["total_calls"] <= len(calls)
+                <= estimate["total_calls_if_every_pair_escalates"]):
+            pytest.fail(f"{tier}: counted {len(calls)} outside {estimate}")

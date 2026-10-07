@@ -174,7 +174,11 @@ def evaluate_novelty(artifact: dict, thresholds: dict[str, Any] | None = None) -
         value=harmful if categories else None, threshold=0,
         severity="warn", measured=bool(categories),
         message=(
-            f"{harmful} atoms classified harmful/conflicting"
+            (f"{harmful} atoms classified harmful/conflicting" if categories else
+             # No count to report: "0 classified" read as a clean result on runs that
+             # never classified anything (the `standard` tier, --no-classify).
+             "not measured: atoms were not classified, so harmful/conflicting content is "
+             "unknown")
             + (f"; strict `degraded` {degraded:.3f}" if degraded is not None else "")
             + ". Correctness gates before volume: one study skill carried 33 conflicts and still "
               "routed at 0.810, so it loads and misinforms"
@@ -291,7 +295,10 @@ def evaluate_novelty(artifact: dict, thresholds: dict[str, Any] | None = None) -
     # ── 3c. Was the answer key the judge graded against intact? ─────────────
     probe_stats = artifact.get("probes") or {}
     malformed = probe_stats.get("malformed_rate")
-    if not probe_stats or malformed is None:
+    # `0.0` over no generated wordings is not a measurement: a run with the paraphrase and
+    # reversal probes off (triage) has an empty `by_kind`, and nothing was checked.
+    if not probe_stats or malformed is None or (
+            not probe_stats.get("by_kind") and not malformed):
         checks.append(NoveltyCheck(
             name="probe_wording_fidelity", passed=True, value=None,
             threshold=cfg["max_probe_malformed_rate"], severity="info", measured=False,

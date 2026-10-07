@@ -89,6 +89,17 @@ def test_a_run_that_skipped_its_stages_says_so_instead_of_passing():
     assert "| harmful_atoms | not measured | None |" in block
 
 
+def test_unclassified_run_does_not_report_zero_harmful():
+    # The `standard` tier skips classification; the row once read "0 atoms classified
+    # harmful/conflicting" next to a PASS.
+    check = _named(evaluate_novelty(_artifact(categories={})), "harmful_atoms")
+    assert check.measured is False and check.value is None
+    assert "not classified" in check.message
+    assert not check.message.startswith("0 atoms")
+    classified = _named(evaluate_novelty(_artifact()), "harmful_atoms")
+    assert classified.message.startswith("0 atoms classified")
+
+
 @pytest.mark.parametrize("name, overrides", [
     ("added_floor", {"paired": {"lenient": {"added": 0.04, "n_paired": 40}}}),
     ("harmful_atoms", {"categories": {"harmful_conflicting": 3}}),

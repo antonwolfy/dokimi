@@ -530,34 +530,70 @@ scorecard's top-level `warnings`.
 
 ## Cost, and how it is kept down
 
-The measurement is LLM-call bound: `atoms × probes × arms × (answer + grade)` — instrumented
-over three real skills, that is **≈4 model calls per paired probe**, with grading and answering
-each half the bill and every other stage under 5% of it. A full-tier `analyze` of a 1,700-word
-skill came to 1,078 calls; the same skill at a triage budget (25 atoms, direct probes only, no
-classification or carrier confirmation) came to 103.
+The measurement is LLM-call bound, and the probe term is predictable: **every probe costs an
+answer and a grade in every arm**. Counted with a stub client over three real skills at all
+three tiers, the projection in `novelty/tiers.py` landed within 1–3% of the counted total at
+all nine points — on a corpus whose atoms the **retention oracle resolves locally**.
 
-Atoms are model-independent, so extraction amortizes across models:
+That caveat is the one to carry. The oracle escalates its ambiguous band to a model, once
+per atom for carrier confirmation and once per atom per shortening candidate, so its cost
+is a range rather than a number: on a corpus engineered to escalate, the real total came to
+1.4–1.6× the no-escalation projection, and the oracle was 35% of the calls. `estimate_calls`
+therefore reports `total_calls` (nothing escalates) *and*
+`total_calls_if_every_pair_escalates`; the truth is between them and depends on your
+content, not on the tier.
+
+| tier | atoms | probe kinds | stages | calls on a 1,700-word skill |
+|---|---|---|---|---|
+| `triage` | 25 | direct | none | **103** |
+| `standard` | 60 | direct + paraphrase | verify, shorten, carriers | **549** |
+| `study` | 120 | direct + paraphrase + reversal | all | **1,078** |
+
+```bash
+python cli.py novelty analyze --artifact skill:s --tier triage          # ~10x cheaper
+python cli.py novelty analyze --artifact skill:s --tier study --estimate-only
+```
+
+`--estimate-only` prints the projected bill and exits without constructing a client, so
+the decision costs nothing. An explicit flag always beats the tier, and the override is
+recorded — a `--tier triage --max-atoms 90` run is not a stock triage run and does not get
+to be read as one.
+
+Each tier carries the **claims it forfeits**, and those strings are written into
+`run_config.tier` *and* appended to the artifact's warnings. They follow the settings the
+run used and the atoms it extracted, not the tier's name: `--no-verify` adds the
+faithfulness forfeit, and `--all-atoms` or a skill with fewer atoms than the cap drops the
+sampled-rate ones. `--estimate-only` cannot know the atom count yet, so it lists them:
+
+> tier `triage` forfeits: no paraphrase probe, so a `redundant` verdict is unprotected
+> against the model matching the artifact's own wording
+
+That is the point of naming tiers at all. The cheap run is useful; a cheap run quoted as a
+sweep is not.
+
+Two further savings are orthogonal to the tier. Atoms are model-independent, so extraction
+amortizes across models:
 
 ```bash
 python cli.py novelty atoms --artifact skill:path/to/skill --extract-model E \
-    [--include-resources] --out atoms.json      # once
+    [--include-resources] --out atoms.json        # once
 python cli.py novelty probe --artifact skill:path/to/skill --atoms atoms.json --model M1
 python cli.py novelty probe --artifact skill:path/to/skill --atoms atoms.json --model M2
 ```
 
-`atoms.json` records which files it was extracted from, and `probe` rebuilds exactly that file
-set rather than trusting flags: probing bundle-derived atoms against an entry-point-only context
-would score every atom from a reference file `still_missing` for the wrong reason. If the
-artifact's files changed since extraction — edited, removed, or a new text file added —
-`probe` refuses instead of mis-scoring. The entry point alone may change (that is the
-re-measure step); the result's `ref_digest` and `bundle` then describe the text that was
-probed, and `atoms_ref_digest` the text the atoms came from. `shorten`
-rewrites one file, so with a bundle-derived atom set it scores only the entry point's spans and
-says so. Defaults therefore
-sample — atoms are capped per artifact and each atom gets two paraphrases — and the artifact records
-exactly what was sampled, so a number is never quoted as if it were a full sweep. The retention
-oracle runs retrieval → NLI locally and escalates to an LLM only for the ambiguous band, with a
-disk cache keyed on (atom, text). Full sweeps are opt-in.
+`atoms.json` records which files it was extracted from, and `probe` rebuilds exactly that
+file set rather than trusting flags: probing bundle-derived atoms against an
+entry-point-only context would score every atom from a reference file `still_missing` for
+the wrong reason. If the artifact's files changed since extraction — edited, removed, or a
+new text file added — `probe` refuses instead of mis-scoring. The entry point alone may
+change (that is the re-measure step); the result's `ref_digest` and `bundle` then describe
+the text that was probed, and `atoms_ref_digest` the text the atoms came from. `shorten`
+rewrites one file, so with a bundle-derived atom set it scores only the entry point's spans
+and says so.
+
+And the retention oracle runs retrieval → NLI locally, escalating to an LLM only for the
+ambiguous band, with a disk cache keyed on (atom, text). Full sweeps stay opt-in
+(`--all-atoms`).
 
 ## Limits to state when quoting these numbers
 

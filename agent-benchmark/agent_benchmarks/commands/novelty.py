@@ -41,24 +41,78 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
     )
     body = artifact_bundle.text
 
+    from agent_benchmarks.novelty.spans import segment
+    from agent_benchmarks.novelty.tiers import FLAG_DEFAULTS, estimate_calls, resolve
+
+    resolved = resolve(args.tier, {flag: getattr(args, flag) for flag in FLAG_DEFAULTS})
+    tier_settings = resolved["settings"]
+    if resolved["tier"]:
+        forfeits = resolved["tier"]["forfeits"]
+        overrides = resolved["tier"]["overrides"]
+        print(f"Tier `{args.tier}`: " + ", ".join(
+            f"{k}={v}" for k, v in sorted(tier_settings.items())), file=sys.stderr)
+        for line in forfeits:
+            print(f"  forfeits: {line}", file=sys.stderr)
+        if overrides:
+            print(f"  overridden by flags: {sorted(overrides)}", file=sys.stderr)
+
+    if args.estimate_only:
+        spans = segment(artifact_bundle.text)
+        cap = tier_settings.get("max_atoms", None if args.all_atoms else _atom_cap(args))
+        # One atom per two spans is the density the study's extractor produced.
+        expected = max(1, len(spans) // 2)
+        n_atoms = expected if cap is None else min(cap, expected)
+        # The full resolved settings, so the projection is the model `estimate_calls`
+        # implements rather than a subset of it.
+        estimate = estimate_calls(n_atoms, {
+            "paraphrases": tier_settings.get(
+                "paraphrases", 0 if args.no_paraphrase else 1),
+            "reversals": tier_settings.get("reversals", not args.no_reversal),
+            "verify_faithfulness": tier_settings.get(
+                "verify_faithfulness", not args.no_verify),
+            "classify_content": tier_settings.get("classify_content", not args.no_classify),
+            "shorten_artifact": tier_settings.get("shorten_artifact", not args.no_shorten),
+            "confirm_carriers": tier_settings.get(
+                "confirm_carriers", not args.no_confirm_carriers),
+            "budgets": tuple(args.budgets),
+        }, n_arms=len(_arms(args.arms)))
+        print(json.dumps({
+            "spans": len(spans), "atom_cap": cap, "estimate": estimate,
+            "tier": resolved["tier"] or None,
+            # The forfeits follow the resolved settings, but the atom count is a guess here:
+            # an artifact with fewer atoms than the cap drops the sampled-rate forfeits.
+            "caveat": (
+                "forfeits assume the atom cap is reached; the run recomputes them from the "
+                "atoms it extracts" if cap is not None else None
+            ),
+        }, indent=2))
+        print("Estimate only, nothing was measured. ~4 calls per paired probe is the "
+              "measured shape; batch sizes and retries move the real figure.",
+              file=sys.stderr)
+        return
+
     extractor, answerer, judge = _clients(args)
+    # A setting the tier fixes comes from the tier; the rest from the flags.
+    flag_settings: dict[str, Any] = {
+        "max_atoms": None if args.all_atoms else _atom_cap(args),
+        "paraphrases": 0 if args.no_paraphrase else 1,
+        "reversals": not args.no_reversal,
+        "verify_faithfulness": not args.no_verify,
+        "classify_content": not args.no_classify,
+        "shorten_artifact": not args.no_shorten,
+        "confirm_carriers": not args.no_confirm_carriers,
+    }
     config = AnalyzeConfig(
         artifact_ref=args.artifact,
         artifact_kind=kind,
         name=name,
         description=description,
         frontmatter=frontmatter,
-        max_atoms=None if args.all_atoms else args.max_atoms,
-        paraphrases=0 if args.no_paraphrase else 1,
-        reversals=not args.no_reversal,
         arms=tuple(_arms(args.arms)),
         budgets=tuple(args.budgets),
         concurrency=args.concurrency,
         allow_self_judge=args.allow_self_judge,
-        verify_faithfulness=not args.no_verify,
-        classify_content=not args.no_classify,
-        shorten_artifact=not args.no_shorten,
-        confirm_carriers=not args.no_confirm_carriers,
+        **{k: v for k, v in flag_settings.items() if k not in tier_settings},
         placebo_text=(
             Path(args.placebo_text).read_text(encoding="utf-8")
             if args.placebo_text else None
@@ -67,6 +121,7 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
         seed=args.seed,
         include_resources=args.include_resources,
         resource_roles=tuple(args.resource_roles) if args.resource_roles else None,
+        **tier_settings,
     )
     try:
         result = analyze(
@@ -74,6 +129,7 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
             extractor=extractor, answerer=answerer, judge=judge,
             ref_digest=_digest(args.artifact, bundle=artifact_bundle),
             artifact_bundle=artifact_bundle,
+            tier=resolved["tier"] or None,
         )
     except (SelfJudgeError, ExtractionError) as exc:
         raise SystemExit(str(exc)) from None
@@ -109,7 +165,7 @@ def cmd_novelty_atoms(args: argparse.Namespace) -> None:
     body = artifact_bundle.text
     extractor = _client(args.extract_model or args.model, args.provider, "extractor", args)
     spans = segment(body)
-    cap = None if args.all_atoms else args.max_atoms
+    cap = None if args.all_atoms else _atom_cap(args)
     try:
         atoms = extract_atoms(spans, client=extractor, cap=cap)
     except ExtractionError as exc:
@@ -123,7 +179,7 @@ def cmd_novelty_atoms(args: argparse.Namespace) -> None:
                            artifact_ref=args.artifact,
                            measured_digest=artifact_bundle.measured_digest()))
     print(f"OK Saved {len(atoms)} atoms over {len(spans)} spans: {out}")
-    print(json.dumps(span_summary(spans, atoms), indent=2))
+    print(json.dumps(span_summary(spans, atoms, atom_cap=cap), indent=2))
 
 
 def cmd_novelty_probe(args: argparse.Namespace) -> None:
@@ -561,6 +617,8 @@ def _entry_point_only(atoms_path: str, spans: list, atoms: list) -> tuple[list, 
 
 def register(sub, positive_int) -> None:
     """Add the `novelty` subcommand group."""
+    from agent_benchmarks.novelty.tiers import TIERS
+
     novelty_p = sub.add_parser(
         "novelty",
         help="Measure what an artifact's content adds to a model",
@@ -587,6 +645,16 @@ def register(sub, positive_int) -> None:
                                 "(0.19 of atoms in the study were not recoverable from it)")
     analyze_p.add_argument("--no-verify", action="store_true", dest="no_verify",
                            help="Skip the per-atom faithfulness check")
+    analyze_p.add_argument("--tier", default=None, choices=sorted(TIERS),
+                           help="Named cost tier. The measurement is probe-budget bound "
+                                "(~4 model calls per paired probe), so a tier is mostly a "
+                                "statement about atoms and probe kinds: triage ~100 calls, "
+                                "study ~1000 on the same 1,700-word skill. Every tier records "
+                                "the claims it forfeits into run_config and the artifact's "
+                                "warnings. An explicit flag always wins over the tier")
+    analyze_p.add_argument("--estimate-only", action="store_true", dest="estimate_only",
+                           help="Print the projected model-call bill and exit without "
+                                "spending anything")
     _add_bundle_args(analyze_p, positive_int)
     analyze_p.set_defaults(func=cmd_novelty_analyze)
 
@@ -679,9 +747,11 @@ def _add_bundle_args(parser: argparse.ArgumentParser, positive_int) -> None:
 def _add_common(parser: argparse.ArgumentParser, positive_int) -> None:
     parser.add_argument("--artifact", required=True,
                         help="skill:<path to SKILL.md or its directory>, or text:<path>")
-    parser.add_argument("--max-atoms", type=positive_int, default=120, dest="max_atoms",
-                        help="Atom cap per artifact. The measurement is LLM-call bound: "
-                             "atoms × probes × arms × (answer + grade)")
+    parser.add_argument("--max-atoms", type=positive_int, default=None, dest="max_atoms",
+                        help="Atom cap per artifact (default 120). The measurement is "
+                             "LLM-call bound: atoms × probes × arms × (answer + grade). "
+                             "Unset by default so that passing the default value explicitly "
+                             "still overrides a --tier cap")
     parser.add_argument("--all-atoms", action="store_true", dest="all_atoms",
                         help="Extract every atom (opt-in: this is the expensive sweep)")
     parser.add_argument("--budgets", type=float, nargs="+", default=[0.75, 0.5],
@@ -759,6 +829,13 @@ def _arms(spec: str) -> list[str]:
     if "full" not in arms:
         raise SystemExit("--arms must include full: the headline 2x2 pairs it with no_artifact")
     return arms
+
+
+def _atom_cap(args: argparse.Namespace) -> int:
+    """The atom cap, resolving the unset sentinel to the documented default."""
+    from agent_benchmarks.novelty.tiers import DEFAULT_MAX_ATOMS
+
+    return DEFAULT_MAX_ATOMS if args.max_atoms is None else args.max_atoms
 
 
 def _digest(ref: str, *, bundle=None) -> str | None:

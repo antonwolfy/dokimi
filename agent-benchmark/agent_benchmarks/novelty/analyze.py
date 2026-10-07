@@ -134,6 +134,7 @@ def analyze(
     judge: LLMClient,
     ref_digest: str | None = None,
     artifact_bundle: "bundle_mod.Bundle | None" = None,
+    tier: dict | None = None,
 ) -> AnalyzeResult:
     """Run the full pipeline over one artifact's text.
 
@@ -145,6 +146,9 @@ def analyze(
         judge: Grades responses; must differ from ``answerer`` unless allowed.
         ref_digest: Content digest of the artifact, so a stored result can be tied to the
             exact bytes it was measured on.
+        tier: The resolved cost tier and the claims it forfeits, recorded in
+            ``run_config`` and appended to the artifact's warnings so a cheap run cannot be
+            quoted as a sweep.
         artifact_bundle: The resolved bundle ``text`` was rendered from. Supplying it adds
             per-file provenance: every span, atom and outcome can then be traced to the
             file it came from, which is the cut an author needs to decide what belongs in
@@ -155,6 +159,32 @@ def analyze(
     atom_list = atoms_mod.extract_atoms(
         span_list, client=extractor, cap=config.max_atoms
     )
+    if tier:
+        # From what this run did, not the tier's text: an override or an atom set under
+        # the cap changes which claims are forfeit.
+        from .tiers import forfeits
+
+        tier = dict(tier, forfeits=forfeits(
+            {name: getattr(config, name) for name in (
+                "max_atoms", "paraphrases", "reversals", "verify_faithfulness",
+                "classify_content", "shorten_artifact", "confirm_carriers")},
+            n_atoms=len(atom_list)))
+        for forfeit in tier["forfeits"]:
+            warnings.append(f"tier `{tier['name']}` forfeits: {forfeit}")
+        if tier.get("overrides"):
+            warnings.append(
+                f"tier `{tier['name']}` was overridden by flags "
+                f"({', '.join(sorted(tier['overrides']))}); the forfeits above follow the "
+                "settings this run used"
+            )
+    else:
+        from .tiers import FORFEITS
+
+        # A tier states these through its forfeits; the same flags typed alone did not.
+        if not config.paraphrases:
+            warnings.extend(FORFEITS["paraphrases"])
+        if not config.reversals:
+            warnings.extend(FORFEITS["reversals"])
     sampling = (
         f"cap-per-artifact:{config.max_atoms}" if config.max_atoms is not None else "full"
     )
@@ -167,6 +197,12 @@ def analyze(
         warnings.append("no atoms with span provenance were extracted; nothing to measure")
 
     faithfulness = None
+    if not config.verify_faithfulness:
+        warnings.append(
+            "atoms were not checked against the spans they came from (--no-verify): "
+            "`faithfulness` is empty, so distortion by the extractor is unbounded for "
+            "this run"
+        )
     if config.verify_faithfulness and atom_list:
         faithfulness = atoms_mod.verify_atoms(atom_list, span_list, client=extractor)
         distorted = faithfulness.get("distorted", 0) + faithfulness.get("unsupported", 0)
@@ -352,6 +388,7 @@ def analyze(
         warnings=warnings,
     )
     payload["run_config"] = _run_config(config)
+    payload["run_config"]["tier"] = tier or None
     return AnalyzeResult(
         artifact=payload,
         attributions=attributions,
