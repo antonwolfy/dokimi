@@ -352,6 +352,118 @@ def cmd_novelty_items(args: argparse.Namespace) -> None:
                   f"{agreement['n_atoms_multi_kind']} atoms asked by several kinds")
 
 
+def cmd_novelty_routing(args: argparse.Namespace) -> None:
+    """Can this artifact be selected against its competitors? Lexical floor, model on top."""
+    from agent_benchmarks.novelty.analyze import load_artifact_text
+    from agent_benchmarks.novelty.routing import (
+        Candidate,
+        headings_as_queries,
+        lexical_routing,
+        model_routing,
+    )
+
+    def candidate(ref: str) -> tuple[Candidate, str]:
+        kind, name, description, _frontmatter, body = load_artifact_text(ref)
+        if kind == "skill" and not description:
+            print(f"WARNING: {ref} has no description; its card is a name, which is all a "
+                  "tool schema would show", file=sys.stderr)
+        return Candidate(name=name or ref, description=description), body
+
+    try:
+        gold, body = candidate(args.artifact)
+        competitors = [candidate(ref)[0] for ref in args.competitors]
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(f"cannot load an artifact: {exc}") from None
+    if not competitors:
+        raise SystemExit(
+            "routing needs competitors: selecting from one candidate measures whether the "
+            "model will use a tool at all, not whether this artifact wins"
+        )
+
+    # The artifact as its own competitor is a measurement that cannot succeed: the tie
+    # break puts the gold card last, so it scores 0 against itself. Checked before the
+    # query file is read, so the message is about the real problem.
+    if any(c.name == gold.name for c in competitors):
+        raise SystemExit(
+            f"`{gold.name}` appears in --competitors as well as --artifact; selection "
+            "against itself is not a measurement. Drop it from the competitor list."
+        )
+    # A repeated competitor is counted twice in "vs N competitors" and splits the lexical
+    # tie-break between two copies of one card, so the rates describe a different field.
+    names = [c.name for c in competitors]
+    repeated = sorted({n for n in names if names.count(n) > 1})
+    if repeated:
+        raise SystemExit(f"--competitors names {', '.join(f'`{n}`' for n in repeated)} more "
+                         "than once; pass each competitor once")
+
+    self_derived = False
+    if args.queries:
+        raw = Path(args.queries).read_text(encoding="utf-8-sig")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = None
+        if not isinstance(data, (list, dict)):      # one-per-line, e.g. "[urgent] build fails"
+            data = raw.splitlines()
+        listed = data if isinstance(data, list) else data.get("queries", [])
+        # A string here is iterable, so `{"queries": "a b"}` once became one query per
+        # character and a run over 0 scored queries exited 0.
+        if not isinstance(listed, list) or not all(isinstance(q, str) for q in listed):
+            raise SystemExit(f"{args.queries}: queries must be a list of strings, "
+                             "or one query per line")
+        queries = [q for q in listed if q.strip()]
+    elif args.queries_from_headings:
+        queries = headings_as_queries(body)
+        self_derived = True
+        print("WARNING: queries derived from the artifact's own headings. The artifact then "
+              "defines both the problem scope and its own relevance, so this is triage, not "
+              "a routing rate", file=sys.stderr)
+    else:
+        raise SystemExit(
+            "pass --queries <file> with requests written independently of the artifact, or "
+            "--queries-from-headings for a self-derived triage run"
+        )
+    if not queries:
+        raise SystemExit("no usable queries")
+
+    candidates = [gold, *competitors]
+    lexical = dict(lexical_routing(candidates, queries, gold=0),
+                   queries_self_derived=self_derived)
+    payload = {
+        "artifact": args.artifact,
+        "n_candidates": len(candidates),
+        "queries_self_derived": self_derived,
+        "lexical": lexical,
+    }
+    if args.model:
+        selector = _client(args.model, args.provider, "selector", args)
+        payload["model"] = dict(
+            model_routing(candidates, queries, client=selector, gold=0, seed=args.seed),
+            queries_self_derived=self_derived,
+        )
+
+    out = Path(args.out) if args.out else _default_dir(args.artifact) / "routing.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"OK Saved routing measurement: {out}")
+
+    lexical = payload["lexical"]
+    print(f"lexical  R@1 {lexical['recall_at_1']}  R@3 {lexical['recall_at_3']}  "
+          f"MRR {lexical['mrr']}  over {lexical['n_queries_scored']} of "
+          f"{lexical['n_queries_given']} queries vs {len(competitors)} competitors"
+          + ("  (R@3 needs more than 3 candidates to mean anything)"
+             if lexical["recall_at_3"] is None else ""))
+    if "model" in payload:
+        row = payload["model"]
+        print(f"model    selection {row['selection_rate']}  "
+              f"({row['selection_rate_among_answered']} among answered; "
+              f"{row['n_abstained']} abstained, {row['n_failed']} failed)  [{row['model']}]")
+        print("The model figure is an upper bound on harness behaviour: a harness that "
+              "truncates descriptions in its own listing selects on less text.")
+    if self_derived:
+        print("Self-derived queries: read as triage only.")
+
+
 def cmd_novelty_shorten(args: argparse.Namespace) -> None:
     """Score shortening candidates on the five axes and optionally write the best one."""
     from agent_benchmarks.novelty.analyze import load_artifact_text
@@ -693,6 +805,34 @@ def register(sub, positive_int) -> None:
                            help="Allow a best-candidate pick that drops protected spans")
     shorten_p.add_argument("--out", default=None, help="Write the chosen candidate here")
     shorten_p.set_defaults(func=cmd_novelty_shorten)
+
+    routing_p = novelty_sub.add_parser(
+        "routing", help="Can the artifact be selected against competitors? (name+description)"
+    )
+    routing_p.add_argument("--artifact", required=True,
+                           help="skill:<path> or text:<path> under test")
+    routing_p.add_argument("--competitors", nargs="+", required=True,
+                           help="Other artifacts the selector sees. Selection among one "
+                                "candidate is not routing: the sibling confusion is the "
+                                "failure mode (every `dpnp-*` skill scored 0.0 lexically)")
+    routing_p.add_argument("--queries", default=None,
+                           help="JSON list (or one per line) of user-shaped requests that "
+                                "should select this artifact, written independently of it")
+    routing_p.add_argument("--queries-from-headings", action="store_true",
+                           dest="queries_from_headings",
+                           help="Derive queries from the artifact's own headings. Triage "
+                                "only: the artifact then defines both the problem scope and "
+                                "its own relevance, and the result is stamped as such")
+    routing_p.add_argument("--model", default=None,
+                           help="Also ask this model to pick from the same cards. Optional: "
+                                "without it only the free lexical floor is computed")
+    routing_p.add_argument("--provider", default="openai", choices=PROVIDERS)
+    routing_p.add_argument("--max-tokens", type=positive_int, default=None, dest="max_tokens")
+    routing_p.add_argument("--seed", type=int, default=0,
+                           help="Seeds the per-query card permutation, so a position-biased "
+                                "model scores ~1/N and the run is reproducible")
+    routing_p.add_argument("--out", default=None)
+    routing_p.set_defaults(func=cmd_novelty_routing)
 
     items_p = novelty_sub.add_parser(
         "items", help="Item analysis across saved probe runs: which atoms separate the models"

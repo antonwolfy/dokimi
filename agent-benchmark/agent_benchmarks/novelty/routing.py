@@ -1,0 +1,289 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Can this artifact be selected at all, against the alternatives?
+
+Content novelty answers "what does this add once loaded". It deliberately holds the
+frontmatter fixed, so it cannot see the failure that precedes everything else: the artifact
+is never picked. The existing `skill-agent:` arm offers *one* skill, which makes selection
+a binary did-it-load question and cannot see the real failure mode — picking the wrong
+sibling out of a family.
+
+Two measurements, reported side by side and never merged into one score:
+
+* **Lexical** — BM25 over each candidate's `name + description`, which is the text a tool
+  schema shows. Free, deterministic, and a floor: measured over the 33-skill study corpus
+  it ranked the right skill first for only 0.225 of queries drawn from the skills' own
+  section headings, and every `dpnp-*` sibling scored 0.0. A description that cannot beat
+  BM25 among its siblings is not discriminating; one that can has not yet been shown to be
+  picked by a model.
+* **Model** — ask a model to choose from the same cards. This is the number people mean by
+  "routing", and it is an **upper bound on harness behaviour**: a harness that truncates or
+  omits descriptions in its own skill listing selects on less than this measurement shows,
+  which has been observed. Only a run inside the harness can settle that.
+
+The query set must come from outside the artifact. Deriving queries from the artifact's own
+headings lets the artifact define both the problem scope and its own relevance; that mode
+exists for triage, stamps ``queries_self_derived`` into the result, and must not be quoted
+as a routing rate.
+"""
+
+from __future__ import annotations
+
+import math
+import random
+import re
+from collections import Counter
+from dataclasses import dataclass
+
+from agent_benchmarks.llm import extract_json_object
+
+from .client import LLMClient
+
+# Words, with sentence punctuation left out. A version like `2.1` stays one token, and a
+# hyphenated name yields its parts as well as the whole: `dpnp-array-creation` could not
+# otherwise be matched by a query that says "array".
+_WORD = re.compile(r"[a-z0-9]+(?:[._+-][a-z0-9]+)*")
+_SPLITTABLE = re.compile(r"[-_.]")
+_STOP = frozenset("""a an the and or of to in on for with without is are be do does how
+what when which that this it its use using when-to you your we i if then than from as at
+by not no only also can could should would may might must will shall into over under
+about""".split())
+
+_SELECT_PROMPT = """\
+You are given a user request and a numbered list of available tools. Pick the single tool \
+whose description best fits the request, or answer 0 if none fits.
+
+Return ONLY a JSON object: {{"pick": <number>}}
+
+REQUEST:
+{query}
+
+TOOLS:
+{cards}
+"""
+
+
+@dataclass
+class Candidate:
+    """One selectable artifact, as the selector sees it."""
+
+    name: str
+    description: str
+
+    @property
+    def card(self) -> str:
+        """The text a tool schema exposes: name plus one-line description, nothing else."""
+        return f"{self.name} {self.description}".strip()
+
+
+def tokenize(text: str) -> list[str]:
+    """Content words of ``text``, lowercased, with hyphenated names also split.
+
+    Trailing punctuation used to stay attached, so a description ending in "deadlock."
+    could never match a query asking about a deadlock -- which made part of the measured
+    BM25 floor a tokenizer artifact rather than a property of the descriptions.
+    """
+    tokens: list[str] = []
+    for word in _WORD.findall(text.lower()):
+        if word in _STOP or len(word) < 2:
+            continue
+        tokens.append(word)
+        parts = [p for p in _SPLITTABLE.split(word) if len(p) > 1 and p not in _STOP]
+        if len(parts) > 1:
+            tokens.extend(parts)
+    return tokens
+
+
+class BM25:
+    """Okapi BM25 over a small, fixed candidate set. No index, no dependency."""
+
+    def __init__(self, docs: list[list[str]], k1: float = 1.5, b: float = 0.75) -> None:
+        if not docs:
+            raise ValueError("BM25 needs at least one document")
+        self.k1, self.b = k1, b
+        self.tf = [Counter(doc) for doc in docs]
+        self.lengths = [len(doc) for doc in docs]
+        self.avg_length = sum(self.lengths) / len(docs) or 1.0
+        document_frequency: Counter = Counter()
+        for doc in docs:
+            document_frequency.update(set(doc))
+        self.idf = {
+            term: math.log(1 + (len(docs) - n + 0.5) / (n + 0.5))
+            for term, n in document_frequency.items()
+        }
+
+    def score(self, query: list[str], index: int) -> float:
+        """BM25 score of document ``index`` for ``query``."""
+        total = 0.0
+        for term in query:
+            frequency = self.tf[index].get(term, 0)
+            if not frequency:
+                continue
+            denominator = frequency + self.k1 * (
+                1 - self.b + self.b * self.lengths[index] / self.avg_length
+            )
+            total += self.idf.get(term, 0.0) * frequency * (self.k1 + 1) / denominator
+        return total
+
+    def rank(self, query: list[str], *, last: int | None = None) -> list[int]:
+        """Document indices, best first. Ties break by index, so the order is stable.
+
+        ``last`` sorts that document after every document it ties with, so a tie (most
+        often a query sharing no word with any card) is never scored as its win.
+        """
+        scored = [(-self.score(query, i), i == last, i) for i in range(len(self.tf))]
+        return [index for _score, _is_last, index in sorted(scored)]
+
+
+def lexical_routing(
+    candidates: list[Candidate], queries: list[str], *, gold: int = 0
+) -> dict:
+    """Rank the gold candidate against its competitors with BM25.
+
+    Args:
+        candidates: Every selectable artifact, the one under test included.
+        queries: User-shaped requests that *should* select ``gold``.
+        gold: Index of the artifact under test.
+
+    Returns:
+        ``recall_at_1``, ``recall_at_3``, ``mrr``, ``n_queries``, ``n_candidates``, and the
+        per-query rank of the gold card. ``None`` rates when no query had content words.
+    """
+    if not 0 <= gold < len(candidates):
+        raise ValueError(f"gold index {gold} is outside 0..{len(candidates) - 1}")
+    bm25 = BM25([tokenize(c.card) for c in candidates])
+    ranks: list[int] = []
+    per_query: list[dict] = []
+    for query in queries:
+        tokens = tokenize(query)
+        if not tokens:
+            per_query.append({"query": query, "rank": None, "reason": "no content words"})
+            continue
+        order = bm25.rank(tokens, last=gold)
+        rank = order.index(gold) + 1
+        ranks.append(rank)
+        per_query.append({"query": query, "rank": rank,
+                          "picked": candidates[order[0]].name})
+    n = len(ranks)
+    return {
+        "method": "bm25_name_description",
+        "n_candidates": len(candidates),
+        "n_queries_given": len(queries),
+        "n_queries_scored": n,
+        "n_queries": n,
+        "recall_at_1": round(sum(1 for r in ranks if r == 1) / n, 4) if n else None,
+        # With three or fewer candidates every rank is <= 3, so the figure would be a
+        # structural 1.0 rather than a measurement.
+        "recall_at_3": (
+            round(sum(1 for r in ranks if r <= 3) / n, 4)
+            if n and len(candidates) > 3 else None
+        ),
+        "mrr": round(sum(1 / r for r in ranks) / n, 4) if n else None,
+        "per_query": per_query,
+        "note": (
+            "A floor, and free. Over the 33-skill study corpus BM25 put the right skill "
+            "first for 0.225 of queries drawn from the skills' own headings, and 0.0 for "
+            "every `dpnp-*` sibling: descriptions discriminate a domain, not a sibling."
+        ),
+    }
+
+
+def _as_card_number(value: object) -> int:
+    """Card number from a model's ``pick``, or 0 when it is not one (null, prose, 2.9, true)."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else 0
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value)
+    return 0
+
+
+def model_routing(
+    candidates: list[Candidate], queries: list[str], *, client: LLMClient, gold: int = 0,
+    seed: int = 0,
+) -> dict:
+    """Ask a model to pick from the same cards, one call per query.
+
+    The candidate order is a seeded random permutation per query, so a model that always
+    picks the first (or last) option scores about ``1/N`` rather than a figure set by how
+    the queries happen to line up with the candidate count. A rotation would not do that:
+    with 5 queries over 33 candidates it shows the gold card at position 1, then last, then
+    second-to-last -- exactly the positions where primacy and recency bias are strongest.
+    The permutation is recorded per query, so a result can be re-read or replayed.
+
+    Returns:
+        ``selection_rate``, ``n_queries``, ``n_abstained``, ``n_failed``, the per-query pick
+        with the position the gold card was shown at, and the caveat that this bounds
+        harness behaviour from above.
+    """
+    if not 0 <= gold < len(candidates):
+        raise ValueError(f"gold index {gold} is outside 0..{len(candidates) - 1}")
+    picks: list[dict] = []
+    for index_of_query, query in enumerate(queries):
+        shuffler = random.Random(f"{seed}:{index_of_query}:{len(candidates)}")
+        order = list(range(len(candidates)))
+        shuffler.shuffle(order)
+        cards = "\n".join(
+            f"{position + 1}. {candidates[index].card}"
+            for position, index in enumerate(order)
+        )
+        try:
+            reply = client.text(_SELECT_PROMPT.format(query=query, cards=cards))
+        except Exception as exc:  # noqa: BLE001 - one failed query must not lose the rest
+            picks.append({"query": query, "picked": None, "error": str(exc)[:200]})
+            continue
+        # A reply that is not a usable pick is the model declining to route, not a
+        # transport failure: it stays in the denominator like an explicit abstention.
+        try:
+            raw = _as_card_number(extract_json_object(reply).get("pick", 0))
+        except ValueError:
+            raw = 0
+        if raw < 1 or raw > len(order):
+            picks.append({"query": query, "picked": None, "abstained": True})
+            continue
+        chosen = order[raw - 1]
+        picks.append({"query": query, "picked": candidates[chosen].name,
+                      "correct": chosen == gold, "picked_at": raw,
+                      "gold_shown_at": order.index(gold) + 1,
+                      "order": [candidates[i].name for i in order]})
+
+    answered = [p for p in picks if "correct" in p]
+    hits = sum(1 for p in answered if p["correct"])
+    attempted = len(picks) - sum(1 for p in picks if p.get("error"))
+    return {
+        "method": "model_choice_over_cards",
+        "model": client.model,
+        "n_candidates": len(candidates),
+        "n_queries": len(queries),
+        "n_abstained": sum(1 for p in picks if p.get("abstained")),
+        "n_failed": sum(1 for p in picks if p.get("error")),
+        "seed": seed,
+        "card_order": "seeded random permutation per query",
+        # Abstaining *is* the routing failure, so it belongs in the denominator. The
+        # among-answered rate is kept beside it, never alone: reporting only that let a
+        # model that picked gold once and abstained nine times report 1.0.
+        "selection_rate": round(hits / attempted, 4) if attempted else None,
+        "selection_rate_among_answered": (
+            round(hits / len(answered), 4) if answered else None
+        ),
+        "per_query": picks,
+        "note": (
+            "An upper bound on harness behaviour, not a harness measurement: a harness "
+            "whose own skill listing truncates or omits descriptions selects on less text "
+            "than this. Only a run inside the harness settles that."
+        ),
+    }
+
+
+def headings_as_queries(body: str, *, limit: int = 40) -> list[str]:
+    """Section headings of an artifact, for triage only.
+
+    Queries taken from the artifact let it define both the problem scope and its own
+    relevance. Callers must stamp ``queries_self_derived`` on any result built from these.
+    """
+    headings = [h.strip() for h in re.findall(r"^#{2,3}\s+(.+)$", body, re.M)]
+    return [h for h in headings if len(tokenize(h)) >= 2][:limit]

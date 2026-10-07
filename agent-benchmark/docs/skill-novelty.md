@@ -123,10 +123,10 @@ protected), and the control arms.
 
 Read it in this order:
 
-1. **`routing` first.** If the description does not win the artifact's own queries, content work is
-   unrecoverable spend. In the study six of thirteen skills routed below 0.50, one at 0.146.
-   Routing is measured by the existing skill-selection track, not by `novelty analyze`, which
-   holds the frontmatter fixed so the two are not confounded.
+1. **`routing` first.** If the artifact is not selected, content work is unrecoverable
+   spend. In the study six of thirteen skills routed below 0.50, one at 0.146. `novelty
+   analyze` holds the frontmatter fixed so the two are never confounded — selection is its
+   own command, [below](#can-the-artifact-be-selected-at-all).
 2. **`harmful_conflicting` next.** Conflicts are the only category that can make the artifact worse
    than nothing.
 3. **`frac_carrying_nothing`.** Tokens that carry no extractable knowledge. Measured against the full
@@ -401,6 +401,52 @@ not rows the generator returned, so a failed or truncated generation counts: a
 confirmed for three of them. Above
 0.2 the run says so in `warnings`. The checks reject on evidence only, so a rate of 0.0 is
 the absence of detectable corruption — not proof that the wordings are faithful.
+
+## Can the artifact be selected at all
+
+```bash
+python cli.py novelty routing --artifact skill:path/to/skill \
+    --competitors skill:sibling-a skill:sibling-b ... \
+    --queries queries.json [--model M]
+```
+
+Two numbers, reported side by side and never merged:
+
+- **Lexical** — BM25 over each candidate's `name + description`, which is exactly the text
+  a tool schema shows. Free, deterministic, and a floor.
+- **Model** (`--model`, optional) — a model picks from the same cards, with the card order
+  a **seeded random permutation per query** (`--seed`), so a model that always picks the
+  first option tends to `1/N` rather than to a figure set by how the query count lines up
+  with the candidate count. It *tends* to it: at five queries the realised rate is a fixed
+  offset from `1/N`, so read small query sets as such. Each permutation and the position
+  the gold card was shown at are recorded per query. **An abstention counts against
+  `selection_rate`** — not picking anything is the routing failure — with
+  `selection_rate_among_answered` beside it; a failed call is excluded from both and
+  counted, and one failed query does not lose the rest.
+
+`recall_at_3` comes back `null` with three or fewer candidates, where every rank is `<= 3`
+and the figure would be a structural 1.0. The lexical arm also reports `n_queries_given`
+next to `n_queries_scored`, since a query with no content words is dropped rather than
+counted as a miss.
+
+Three properties worth knowing before quoting either:
+
+- **Competitors are mandatory.** The existing `skill-agent:` arm offers one skill, which
+  makes selection a binary did-it-load question. The real failure is picking the wrong
+  *sibling*: measured lexically over the 33-skill corpus, every `dpnp-*` skill scored
+  **0.0** recall@1 against its siblings.
+- **The queries must come from outside the artifact**, or it defines both the problem scope
+  and its own relevance. `--queries-from-headings` exists for triage, warns, and stamps
+  `queries_self_derived: true` into the result; corpus-wide those self-derived queries gave
+  recall@1 0.225, and a skill's own bundled `evals/` questions gave 0.667.
+- **The model figure is an upper bound on harness behaviour.** A harness whose own skill
+  listing truncates or omits descriptions selects on less text than this command shows —
+  which has been observed. Only a run inside the harness settles it.
+
+Measured example, `linux-perf` against the other 32 corpus skills with five independently
+written user requests: **recall@1 0.0**, recall@3 0.8, MRR 0.43. It lost every query, three of
+the five to an `xpu-*` skill whose description is phrased the way a user phrases the problem. The content
+is fine; the card is not winning.
 
 ## Do the probes measure anything
 
