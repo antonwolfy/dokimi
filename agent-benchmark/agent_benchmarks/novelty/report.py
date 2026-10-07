@@ -58,6 +58,7 @@ def build_novelty_artifact(
     attribution_summary: dict,
     by_knowledge_kind: dict | None = None,
     probe_fidelity: dict | None = None,
+    bundle: dict | None = None,
     categories: dict[str, int] | None = None,
     faithfulness: dict[str, int] | None = None,
     graph_summary: dict | None = None,
@@ -105,6 +106,7 @@ def build_novelty_artifact(
         "k0": {scoring: row["k0"] for scoring, row in paired.items()},
         "by_knowledge_kind": by_knowledge_kind or {},
         "probes": probe_fidelity or {},
+        "bundle": bundle or {},
         "arms": {
             scoring: measure_result.arm_means(scoring) for scoring in ("lenient", "strict")
         },
@@ -143,6 +145,71 @@ def _order_independent(measure_result) -> bool | None:
     if "shuffled" not in means or measure_result.with_arm not in means:
         return None
     return means["shuffled"] >= means[measure_result.with_arm]
+
+
+def _render_bundle(artifact: dict) -> list[str]:
+    """Which file of the artifact carried the knowledge — and what was not read at all.
+
+    For a progressive-disclosure skill this is the headline, not a footnote: in the study
+    corpus the median skill keeps 0.43 of its words outside `SKILL.md` and the worst keeps
+    0.99, so an entry-point-only run is reported as such rather than as "the artifact".
+    """
+    bundle = artifact.get("bundle") or {}
+    if not bundle:
+        return []
+    lines = ["## Which file carries it", ""]
+    # Measurable words: on disk minus the role decisions (the skill's own evals by default).
+    # `outside_share` in the JSON stays the on-disk figure; the prose must not tell the
+    # user to rerun for words no mode would read.
+    share = bundle.get("measurable_outside_share", bundle.get("outside_share", 0.0))
+    policy = bundle.get("policy_excluded_words", 0)
+    measurable = bundle.get("resource_words_on_disk", 0) - policy
+    decided = f" A further {policy} words are in files not measured by default." if policy else ""
+    if not bundle.get("include_resources"):
+        if measurable:
+            lines += [
+                f"Entry point only. **{share:.0%}** of this artifact's words ({measurable} of "
+                f"{bundle.get('entry_point_words', 0) + measurable}) sit in bundled files "
+                "that were not measured — rerun with `--include-resources` before quoting "
+                f"any rate as a property of the artifact.{decided}",
+                "",
+            ]
+        else:
+            lines += [f"Entry point only; nothing measurable sits outside it.{decided}", ""]
+        return lines
+    lines += [
+        f"{max(bundle.get('n_files', 1) - 1, 0)} resource files measured, "
+        f"{bundle.get('resource_words_measured', 0)} of {measurable} measurable bundled "
+        f"words read ({share:.0%} of the artifact is outside its entry point).{decided}",
+        "",
+        "| file | role | words | atoms | added | already knew |",
+        "|---|---|---|---|---|---|",
+    ]
+    for row in bundle.get("by_source", []):
+        lines.append(
+            f"| `{row['source']}` | {row.get('role', '')} | {row.get('words', 0)} | "
+            f"{row['n_atoms']} | {row.get('added', 0)} | {row.get('redundant', 0)} |"
+        )
+    lines.append("")
+    pointer = bundle.get("pointer_spans") or {}
+    if pointer.get("n"):
+        lines += [
+            f"{pointer['n']} spans ({pointer.get('tokens', 0)} tokens) only name a bundled "
+            "file. They carry no knowledge by design, so they are not waste — but they are "
+            "also not what makes the skill work.",
+            "",
+        ]
+    # Non-text files are not content and carry no words, so they are counted, not listed:
+    # 39 OOXML schemas in one skill would otherwise bury the two references that matter.
+    excluded = [row for row in bundle.get("excluded") or [] if row.get("kind") != "not_text"]
+    not_text = len(bundle.get("excluded") or []) - len(excluded)
+    if excluded:
+        lines += [f"{len(excluded)} files excluded: " + ", ".join(
+            f"`{row['path']}` ({row['reason']})" for row in excluded[:8]
+        ) + ("." if len(excluded) <= 8 else ", …"), ""]
+    if not_text:
+        lines += [f"{not_text} non-text files not read.", ""]
+    return lines
 
 
 def _render_knowledge_kinds(artifact: dict) -> list[str]:
@@ -245,6 +312,7 @@ def render_novelty_markdown(artifact: dict) -> str:
     lines.append("")
 
     lines.extend(_render_knowledge_kinds(artifact))
+    lines.extend(_render_bundle(artifact))
 
     arms = artifact.get("arms", {}).get("lenient", {})
     if len(arms) > 1:

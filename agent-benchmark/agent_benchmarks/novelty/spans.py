@@ -107,6 +107,24 @@ def protection_tags(text: str) -> tuple[str, ...]:
     return tuple(tag for tag, rule in _PROTECTION_RULES if rule.search(text))
 
 
+def dangling_fence(text: str) -> str | None:
+    """The marker of a code fence ``text`` opens and never closes, or ``None``.
+
+    Same rule as :func:`segment`: a fence closes only on a line starting with the marker
+    that opened it, so ```` ``` ```` inside a ``~~~`` block is content. Anything that
+    concatenates texts (the bundle renderer) must use this, not fence-line parity, or the
+    two disagree and the next text is swallowed into one code span.
+    """
+    marker: str | None = None
+    for line in text.splitlines():
+        if marker is None:
+            opened = _FENCE.match(line)
+            marker = opened.group(1) if opened else None
+        elif line.strip().startswith(marker):
+            marker = None
+    return marker
+
+
 def segment(text: str) -> list[Span]:
     """Split artifact text into spans in document order.
 

@@ -292,6 +292,63 @@ re-derive under two independent labellers to within 0.08, but the `motif`-vs-`co
 not (κ 0.32–0.38 on the shape vocabulary), so read the shape rows as "ordered/required content" versus
 "standalone claim" rather than as four distinct classes.
 
+## The artifact is the bundle, not the file
+
+A skill is a thin `SKILL.md` plus `references/`, `scripts/`, `patterns/` and sometimes
+`evals/`. Measured over the 33-skill study corpus with the framework's own loader and
+segmenter:
+
+| | value |
+|---|---|
+| skills with bundled resources | 33 / 33 |
+| corpus words in `SKILL.md` | 36,188 |
+| corpus words outside it | 93,773 (**0.72**) |
+| per-skill outside share | min 0.005, median 0.433, max **0.988** |
+
+The worst case carries 375 words in its body and 30,567 in 30 bundled files. Measuring the
+entry point alone would judge that skill on 1.2% of itself, and its "dead tokens" share
+would be dominated by spans whose only job is to name a file nobody read.
+
+```bash
+python cli.py novelty analyze --artifact skill:path/to/skill --model M --judge-model J \
+    --include-resources                       # measure the bundle
+    # --resource-roles reference pattern      # or only some of it
+    # --max-file-words 4000 --max-resource-words 20000
+```
+
+Three things to know before reading a bundle result:
+
+- **It is an upper bound.** Injecting the whole bundle measures what the artifact *could*
+  deliver if the agent read all of it. Whether the agent chooses to load `references/x.md`
+  at runtime is the agentic track's question (`skill-agent:`), not this one.
+- **The two modes are different cells.** `include_resources` is recorded in `run_config`;
+  an entry-point run and a bundle run of the same skill are not comparable numbers, and an
+  entry-point run whose *measurable* outside share is ≥ 0.5 says so in `warnings`
+  (`measurable_outside_share` nets out the role decisions below; `outside_share` is the
+  on-disk figure, and the two differ for a skill whose only resources are its evals).
+- **A skill's own `evals/` are not content.** They are the question/answer keys for
+  testing the skill, so extracting atoms from them would credit the skill with delivering
+  its own test set. Excluded by default (10 of the 33 corpus skills ship them), with the
+  reason naming the opt-in; `.git/`, `__pycache__/`, `venv/`, hidden files and friends
+  are never walked at all.
+- **Exclusions are reported, never silent.** A file over `--max-file-words` is skipped
+  whole rather than truncated, because a cut reference would be attributed as if complete;
+  every skip, role filter, budget overrun and non-text file appears in `bundle.excluded`
+  with its reason, and a skipped text file's words still count in `resource_words_on_disk`.
+  Whether a file is text is decided by its content (UTF-8, no NUL bytes), not by its
+  suffix: extension-less guides, `.mjs` scripts and `Makefile`s are measured like any other.
+
+The payoff is `bundle.by_source`: the paired 2×2 cut by the file that carried each atom. A
+reference whose atoms are all `redundant` is a file the model already knows; one full of
+`added` is knowledge that may belong where the agent will actually read it; one with zero
+atoms is pointers and prose. **Pointer spans** — spans whose content is just a path into
+the bundle (53 of 2,600 spans in the corpus, 19 of 33 skills), and the per-file headings
+the renderer injects — are named in
+`bundle.pointer_spans` rather than scored, since they carry no knowledge by design. A span that also pins a
+value, a flag, a negation, a version gate or a threshold is knowledge, not a pointer; an
+*ordering* word is not enough, because "read `references/x.md` before editing" orders the
+loading rather than the work.
+
 ## Probe wordings are checked before they are asked
 
 Two of the three probe kinds are written by a model: `paraphrase` rewords the atom's

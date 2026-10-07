@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import atoms as atoms_mod
-from . import attribute, classify, measure, needs, probes, report, retention, shorten, spans
+from . import attribute, bundle as bundle_mod
+from . import classify, measure, needs, probes, report, retention, shorten, spans
 from .client import LLMClient, roll_up_cost
 from .retention import RetentionOracle
 
@@ -53,6 +54,11 @@ class AnalyzeConfig:
     placebo_text: str | None = None
     cache_dir: Path | None = None
     seed: int = 0
+    # Measured over the study corpus, 0.72 of a skill's words live outside `SKILL.md`, so
+    # an entry-point-only run says little about a progressive-disclosure artifact. The
+    # flag is recorded in `run_config` because the two modes are not comparable cells.
+    include_resources: bool = False
+    resource_roles: tuple[str, ...] | None = None
 
 
 def _prompts_sha256() -> str:
@@ -72,6 +78,8 @@ def _run_config(config: "AnalyzeConfig") -> dict:
         "reversals": config.reversals,
         "arms": list(config.arms),
         "budgets": list(config.budgets),
+        "include_resources": config.include_resources,
+        "resource_roles": list(config.resource_roles) if config.resource_roles else None,
         "stages": {
             "verify": config.verify_faithfulness, "classify": config.classify_content,
             "shorten": config.shorten_artifact, "confirm_carriers": config.confirm_carriers,
@@ -100,6 +108,7 @@ def analyze(
     answerer: LLMClient,
     judge: LLMClient,
     ref_digest: str | None = None,
+    artifact_bundle: "bundle_mod.Bundle | None" = None,
 ) -> AnalyzeResult:
     """Run the full pipeline over one artifact's text.
 
@@ -111,6 +120,10 @@ def analyze(
         judge: Grades responses; must differ from ``answerer`` unless allowed.
         ref_digest: Content digest of the artifact, so a stored result can be tied to the
             exact bytes it was measured on.
+        artifact_bundle: The resolved bundle ``text`` was rendered from. Supplying it adds
+            per-file provenance: every span, atom and outcome can then be traced to the
+            file it came from, which is the cut an author needs to decide what belongs in
+            the body. Without it the run is entry-point-only and says so.
     """
     warnings: list[str] = []
     span_list = spans.segment(text)
@@ -234,6 +247,39 @@ def analyze(
                 "so the knowledge-vs-protection gap is visible, not offered as accepted output"
             )
 
+    bundle_summary: dict = {}
+    if artifact_bundle is not None:
+        bundle_summary = artifact_bundle.summary()
+        pointer_ids = bundle_mod.pointer_spans(span_list, artifact_bundle)
+        # Pointer spans carry no knowledge by design ("see `references/x.md`"), so they
+        # are named rather than scored as waste. 53 of 2,600 spans in the study corpus, plus
+        # the per-file headings the bundle renderer injects.
+        bundle_summary["pointer_spans"] = {
+            "n": len(pointer_ids),
+            "ids": sorted(pointer_ids),
+            "tokens": sum(s.tokens for s in span_list if s.id in pointer_ids),
+        }
+        bundle_summary["by_source"] = _outcomes_by_source(
+            span_list, atom_list, outcomes, artifact_bundle
+        )
+        # The measurable share, not the on-disk one: a skill whose resources are all its
+        # own evals has nothing a bundle run would add, so pointing at the flag would be
+        # advice that cannot be followed.
+        measurable = artifact_bundle.measurable_outside_share()
+        if not artifact_bundle.include_resources and measurable >= 0.5:
+            warnings.append(
+                f"{measurable:.0%} of this artifact's words are in bundled files that were "
+                "not measured (--include-resources); every rate here describes the entry "
+                "point only"
+            )
+        content_excluded = artifact_bundle.excluded_content()
+        if artifact_bundle.include_resources and content_excluded:
+            warnings.append(
+                f"{len(content_excluded)} bundled files were excluded from the "
+                "measured text (see bundle.excluded for each reason); they are counted in "
+                "resource_words_on_disk but carry no atoms"
+            )
+
     payload = report.build_novelty_artifact(
         artifact_kind=config.artifact_kind,
         artifact_ref=config.artifact_ref,
@@ -248,6 +294,7 @@ def analyze(
         span_summary=spans.span_summary(span_list, atom_list, atom_cap=config.max_atoms),
         by_knowledge_kind=by_knowledge_kind,
         probe_fidelity=probe_set.as_dict(),
+        bundle=bundle_summary,
         attribution_summary=attribute.attribution_summary(
             attributions, confirmation=confirmation
         ),
@@ -273,6 +320,40 @@ def analyze(
         spans=span_list,
         measure_result=measure_result,
     )
+
+
+def _outcomes_by_source(
+    span_list: list, atom_list: list, outcomes: dict[str, str], artifact_bundle
+) -> list[dict]:
+    """The paired 2x2 cut by which bundle file carried the atom.
+
+    This is the authoring decision the bundle view exists for: a reference file whose
+    atoms are all `redundant` is a file the model already knows, and a reference file full
+    of `added` is knowledge that may belong where the agent will actually read it. An atom
+    is attributed to the file of its first cited span; an atom citing spans in two files
+    is rare and counted once, at the first.
+    """
+    source_of_span = {span.id: artifact_bundle.source_of(span.start) for span in span_list}
+    rows: dict[str, dict] = {}
+    for atom in atom_list:
+        source = next(
+            (source_of_span[sid] for sid in atom.span_ids if sid in source_of_span), ""
+        )
+        row = rows.setdefault(source, {"source": source, "n_atoms": 0})
+        row["n_atoms"] += 1
+        verdict = outcomes.get(atom.id)
+        if verdict:
+            row[verdict] = row.get(verdict, 0) + 1
+    # A measured file that produced no atom is a result, not an absence: it is either
+    # pointers and prose, or knowledge the extractor could not formalize.
+    for item in artifact_bundle.files:
+        rows.setdefault(item.path, {"source": item.path, "n_atoms": 0})
+    by_path = {item.path: item for item in artifact_bundle.files}
+    for source, row in rows.items():
+        item = by_path.get(source)
+        row["role"] = item.role if item else "unknown"
+        row["words"] = item.words if item else 0
+    return sorted(rows.values(), key=lambda r: (-r.get("added", 0), r["source"]))
 
 
 def load_artifact_text(ref: str) -> tuple[str, str, str, str, str]:

@@ -220,6 +220,59 @@ def test_a_generator_that_drops_the_version_bound_is_dropped_and_warned_about(tm
                for w in artifact["warnings"])
 
 
+def test_a_bundle_run_reports_which_file_carried_each_atom(tmp_path):
+    from agent_benchmarks.novelty.bundle import load_bundle
+
+    root = tmp_path / "accel-tuning"
+    (root / "references").mkdir(parents=True)
+    (root / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    (root / "references" / "tuning.md").write_text(
+        "# Tuning\n\nSet `--threads` to the core count.\n", encoding="utf-8")
+
+    bundle = load_bundle(f"skill:{root}", include_resources=True)
+    config = AnalyzeConfig(
+        artifact_ref=f"skill:{root}", artifact_kind=bundle.kind, name=bundle.name,
+        description=bundle.description, frontmatter=bundle.frontmatter, concurrency=1,
+        include_resources=True,
+    )
+    extractor, answerer, judge = _clients()
+    artifact = analyze(bundle.text, config, extractor=extractor, answerer=answerer,
+                       judge=judge, artifact_bundle=bundle).artifact
+
+    reported = artifact["bundle"]
+    assert reported["include_resources"] is True
+    assert reported["n_files"] == 2
+    assert reported["outside_share"] > 0
+    assert {row["source"] for row in reported["by_source"]} <= {"SKILL.md",
+                                                                "references/tuning.md"}
+    assert sum(row["n_atoms"] for row in reported["by_source"]) == artifact["atoms"]["n"]
+    assert artifact["run_config"]["include_resources"] is True
+    validate_artifact("novelty", dict(artifact, schema_version="novelty.v1"))
+
+
+def test_an_entry_point_only_run_says_how_much_of_the_artifact_it_ignored(tmp_path):
+    from agent_benchmarks.novelty.bundle import load_bundle
+
+    root = tmp_path / "accel-tuning"
+    (root / "references").mkdir(parents=True)
+    (root / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    (root / "references" / "big.md").write_text("word " * 500, encoding="utf-8")
+
+    bundle = load_bundle(f"skill:{root}")
+    config = AnalyzeConfig(
+        artifact_ref=f"skill:{root}", artifact_kind=bundle.kind, name=bundle.name,
+        description=bundle.description, frontmatter=bundle.frontmatter, concurrency=1,
+    )
+    extractor, answerer, judge = _clients()
+    artifact = analyze(bundle.text, config, extractor=extractor, answerer=answerer,
+                       judge=judge, artifact_bundle=bundle).artifact
+
+    assert artifact["bundle"]["outside_share"] > 0.5
+    assert artifact["bundle"]["resource_words_measured"] == 0
+    assert any("were not measured (--include-resources)" in w
+               for w in artifact["warnings"])
+
+
 def test_artifact_round_trips_through_save_and_load(tmp_path):
     result = _analyze(tmp_path)
     out = tmp_path / "novelty.json"
@@ -325,3 +378,32 @@ def test_the_cell_records_what_decided_its_numbers(tmp_path, monkeypatch):
     monkeypatch.setattr(measure, "_ANSWER_SYSTEM", measure._ANSWER_SYSTEM + " ")
     third = _analyze(tmp_path / "third", seed=7, classify_content=False).artifact["run_config"]
     assert third["prompts_sha256"] != again["prompts_sha256"]
+
+
+def test_a_skill_s_own_evals_do_not_make_the_entry_point_run_warn(tmp_path):
+    from agent_benchmarks.novelty.bundle import load_bundle
+
+    root = tmp_path / "accel-tuning"
+    (root / "evals").mkdir(parents=True)
+    (root / "SKILL.md").write_text(SKILL, encoding="utf-8")
+    (root / "evals" / "cases.md").write_text("word " * 500, encoding="utf-8")
+
+    bundle = load_bundle(f"skill:{root}")
+    config = AnalyzeConfig(
+        artifact_ref=f"skill:{root}", artifact_kind=bundle.kind, name=bundle.name,
+        description=bundle.description, frontmatter=bundle.frontmatter, concurrency=1,
+    )
+    extractor, answerer, judge = _clients()
+    artifact = analyze(bundle.text, config, extractor=extractor, answerer=answerer,
+                       judge=judge, artifact_bundle=bundle).artifact
+
+    # 90% of the words on disk are outside SKILL.md, but every one of them is the skill's
+    # own answer key: --include-resources would read nothing more, so telling the user to
+    # rerun with it is advice that cannot be followed.
+    assert artifact["bundle"]["outside_share"] > 0.5
+    assert artifact["bundle"]["measurable_outside_share"] == 0.0
+    assert not any("--include-resources" in w for w in artifact["warnings"])
+    rendered = render_novelty_markdown(artifact)
+    assert "rerun with `--include-resources`" not in rendered
+    assert "500" in rendered                      # the decision is still stated
+    validate_artifact("novelty", dict(artifact, schema_version="novelty.v1"))

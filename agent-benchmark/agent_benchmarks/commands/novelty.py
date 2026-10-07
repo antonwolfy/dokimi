@@ -24,8 +24,9 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
     from agent_benchmarks.artifacts import save_artifact
     # Import the symbols, not the module: the package re-exports `analyze` as the
     # function, which shadows the submodule of the same name.
-    from agent_benchmarks.novelty.analyze import AnalyzeConfig, analyze, load_artifact_text
+    from agent_benchmarks.novelty.analyze import AnalyzeConfig, analyze
     from agent_benchmarks.novelty.atoms import ExtractionError
+    from agent_benchmarks.novelty.bundle import load_bundle
     from agent_benchmarks.novelty.measure import SelfJudgeError
     from agent_benchmarks.novelty.report import (
         render_annotated_html,
@@ -34,9 +35,27 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
     )
 
     try:
-        kind, name, description, frontmatter, body = load_artifact_text(args.artifact)
+        artifact_bundle = load_bundle(
+            args.artifact,
+            include_resources=args.include_resources,
+            roles=tuple(args.resource_roles) if args.resource_roles else None,
+            max_file_words=args.max_file_words,
+            max_total_words=args.max_resource_words,
+        )
     except (FileNotFoundError, ValueError) as exc:
         raise SystemExit(f"cannot load --artifact {args.artifact}: {exc}") from None
+    kind, name, description, frontmatter = (
+        artifact_bundle.kind, artifact_bundle.name, artifact_bundle.description,
+        artifact_bundle.frontmatter,
+    )
+    body = artifact_bundle.text
+    if not args.include_resources and artifact_bundle.unmeasured_words():
+        # Measurable words only: a skill's own evals are not measured in either mode, so
+        # counting them here would promise a rerun that reads nothing more.
+        print(f"NOTE: {artifact_bundle.measurable_outside_share():.0%} of this artifact's "
+              f"words are in {len(artifact_bundle.excluded_content())} bundled files that "
+              "will not be measured; pass --include-resources to measure them",
+              file=sys.stderr)
 
     extractor, answerer, judge = _clients(args)
     config = AnalyzeConfig(
@@ -62,12 +81,15 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
         ),
         cache_dir=Path(args.cache_dir) if args.cache_dir else None,
         seed=args.seed,
+        include_resources=args.include_resources,
+        resource_roles=tuple(args.resource_roles) if args.resource_roles else None,
     )
     try:
         result = analyze(
             body, config,
             extractor=extractor, answerer=answerer, judge=judge,
             ref_digest=_digest(args.artifact),
+            artifact_bundle=artifact_bundle,
         )
     except (SelfJudgeError, ExtractionError) as exc:
         raise SystemExit(str(exc)) from None
@@ -281,6 +303,28 @@ def register(sub, positive_int) -> None:
                                 "(0.19 of atoms in the study were not recoverable from it)")
     analyze_p.add_argument("--no-verify", action="store_true", dest="no_verify",
                            help="Skip the per-atom faithfulness check")
+    analyze_p.add_argument("--include-resources", action="store_true",
+                           dest="include_resources",
+                           help="Measure the whole skill bundle, not just SKILL.md. In the "
+                                "33-skill study corpus 0.72 of all words live in bundled "
+                                "references/scripts/patterns (worst skill: 0.99), so an "
+                                "entry-point-only run says little about a "
+                                "progressive-disclosure skill. Costs proportionally more: "
+                                "the bill is ~4 LLM calls per paired probe")
+    analyze_p.add_argument("--resource-roles", nargs="+", default=None,
+                           dest="resource_roles",
+                           choices=["reference", "pattern", "eval", "script", "template",
+                                    "trigger", "data", "top", "other"],
+                           help="Restrict bundled files to these roles (default: every "
+                                "role except eval)")
+    analyze_p.add_argument("--max-file-words", type=positive_int, default=4000,
+                           dest="max_file_words",
+                           help="Skip a bundled file larger than this instead of truncating "
+                                "it; a cut reference would be attributed as if complete")
+    analyze_p.add_argument("--max-resource-words", type=positive_int, default=20000,
+                           dest="max_resource_words",
+                           help="Total budget across bundled files, taken in role order "
+                                "(reference, pattern, eval, rest) and recorded per exclusion")
     analyze_p.set_defaults(func=cmd_novelty_analyze)
 
     atoms_p = novelty_sub.add_parser("atoms", help="Extract knowledge atoms and spans only")
