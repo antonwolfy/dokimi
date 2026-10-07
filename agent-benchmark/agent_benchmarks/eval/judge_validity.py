@@ -47,12 +47,12 @@ reported alongside it:
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from agent_benchmarks.eval.degrade import DEGRADATIONS, NEUTRAL_VARIANTS, build_pairs
+from agent_benchmarks.eval.stats import _wilson
 
 #: Below this, the judge is not usable for arm comparison. A coin flip is 0.50;
 #: 0.80 leaves room for genuinely ambiguous pairs without accepting noise.
@@ -66,9 +66,6 @@ DEFAULT_MIN_ACCURACY = 0.80
 NEUTRAL_TOLERANCE = 2.0
 #: Float slack on that boundary: abs(62.4 - 64.4) is 2.000000000000007.
 _TOLERANCE_SLACK = 1e-9
-
-#: z for a two-sided 95% interval.
-_Z95 = 1.959963984540054
 
 #: Scores an answer. Returns the aggregate 0-100 quality score.
 Scorer = Callable[[str, str, str], float]
@@ -91,17 +88,6 @@ def _accuracy_ci(values: Sequence[float]) -> Tuple[float, float]:
     if not n:
         return (0.0, 0.0)
     return _wilson(sum(values) / n, n)
-
-
-def _wilson(p: float, n: int) -> Tuple[float, float]:
-    """Wilson 95% interval for a mean ``p`` observed over ``n`` pairs."""
-    z2 = _Z95 * _Z95
-    denom = 1.0 + z2 / n
-    centre = (p + z2 / (2 * n)) / denom
-    half = _Z95 * math.sqrt(max(0.0, p * (1.0 - p)) / n + z2 / (4 * n * n)) / denom
-    # Clamped to contain p: at p = 1.0, centre + half is 0.9999999999999999 for
-    # some n, so 10/10 cleared a 1.0 gate while 20/20 straddled it.
-    return (max(0.0, min(p, centre - half)), min(1.0, max(p, centre + half)))
 
 
 #: Search ceiling for `_pairs_for_resolution`; reaching it means "far more pairs

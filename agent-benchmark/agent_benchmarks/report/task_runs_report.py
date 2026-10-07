@@ -26,6 +26,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from agent_benchmarks.eval.binary_stats import PASS_RATE_CI_CONFIDENCE
+
 
 def _md_cell(text: str) -> str:
     """Make text safe for a single Markdown table cell."""
@@ -33,7 +35,17 @@ def _md_cell(text: str) -> str:
 
 
 def _fmt_cost(v: float | None) -> str:
-    return f"${v:.4f}" if isinstance(v, (int, float)) else "—"
+    if not isinstance(v, (int, float)):
+        return "—"
+    # A real but sub-cent per-pass cost is not $0.0000.
+    return "<$0.0001" if 0 < v < 0.00005 else f"${v:.4f}"
+
+
+def _fmt_norm(v: Any, reason: str | None) -> str:
+    """A normalized gain/change cell; a null says why when the reason is known."""
+    if isinstance(v, (int, float)):
+        return f"{v:+.2f}"
+    return f"— ({reason})" if reason else "—"
 
 
 def _self_report(output_dir: str | None) -> tuple[str, int | None]:
@@ -152,20 +164,29 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
     # ── headline ──
     lines.append("## Headline")
     lines.append("")
-    lines.append("| Harness | Pass rate | Errored | Cost (USD) | Wall (min) | "
-                 "Completion tok | Cache read tok | Cost-known |")
-    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    lines.append(f"| Harness | Pass rate | Errored | {PASS_RATE_CI_CONFIDENCE:.0%} CI (Wilson) | "
+                 "Cost (USD) | $/pass | Wall (min) | "
+                 "Completion tok | Cache read tok | Cost-known | Skill invoked (rows reporting) |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
     for h in harnesses:
         s = ph.get(h, {})
         c = s.get("cost", {})
         rate = s.get("pass_rate")
         scored = s.get("scored", s.get("n", 0))
         rate_s = "—" if rate is None else f"{rate*100:.2f}% ({s.get('passed', 0)}/{scored})"
+        ci = s.get("pass_rate_ci") or {}
+        ci_s = (f"{ci['lo']*100:.0f}–{ci['hi']*100:.0f}%"
+                if isinstance(ci.get("lo"), (int, float)) and isinstance(ci.get("hi"), (int, float))
+                else "—")
+        sir = s.get("skill_invocation_rate")
+        sir_s = (f"{sir*100:.0f}% ({s.get('skill_invocation_n', 0)})"
+                 if isinstance(sir, (int, float)) else "—")
         lines.append(
-            f"| `{h}` | {rate_s} | {s.get('errored', 0)} | {_fmt_cost(c.get('total_cost_usd'))} | "
+            f"| `{h}` | {rate_s} | {s.get('errored', 0)} | {ci_s} | {_fmt_cost(c.get('total_cost_usd'))} | "
+            f"{_fmt_cost(c.get('cost_per_pass_usd'))} | "
             f"{s.get('elapsed_sec', 0)/60:.1f} | {c.get('completion_tokens', '—')} | "
             f"{c.get('cache_read_tokens', '—')} | "
-            f"{c.get('cost_known_n', '—')}/{s.get('n', 0)} |"
+            f"{c.get('cost_known_n', '—')}/{s.get('n', 0)} | {sir_s} |"
         )
     lines.append("")
     if any(ph.get(h, {}).get("errored") for h in harnesses):
@@ -228,8 +249,9 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
     if cmp:
         lines.append("## Comparison vs baseline")
         lines.append("")
-        lines.append("| Harness | Pass-rate Δ | Passed Δ | Op-count Δ | Cost Δ (USD) |")
-        lines.append("| --- | ---: | ---: | ---: | ---: |")
+        lines.append("| Harness | Pass-rate Δ | Normalized gain (Hake) | Normalized change | "
+                     "Passed Δ | Op-count Δ | Cost Δ (USD) |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
         for h, cr in cmp.items():
             prd = cr.get("pass_rate_delta")
             withheld = cr.get("passed_delta", 0) is None
@@ -239,11 +261,21 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
                 prd_s = "— (arms lost different cells)"
             else:
                 prd_s = "—"
+            # With a delta in hand, a null gain/change is the formula's own
+            # undefined case; without one, it is withheld with the delta. An
+            # artifact older than these keys has no reason to give.
+            has_delta = isinstance(prd, (int, float))
+            ng_s = _fmt_norm(cr.get("normalized_gain"), "withheld" if withheld else
+                             "baseline at 100%" if has_delta and "normalized_gain" in cr
+                             else None)
+            nc_s = _fmt_norm(cr.get("normalized_change"), "withheld" if withheld else
+                             "both at 0% or 100%" if has_delta and "normalized_change" in cr
+                             else None)
             pd = cr.get("passed_delta", 0)
             pd_s = "—" if pd is None else f"{pd:+}"
             cd = cr.get("cost_delta_usd")
             cd_s = f"{cd:+.4f}" if isinstance(cd, (int, float)) else "—"
-            lines.append(f"| `{h}` | {prd_s} | {pd_s} | "
+            lines.append(f"| `{h}` | {prd_s} | {ng_s} | {nc_s} | {pd_s} | "
                          f"{cr.get('operation_count_delta', 0):+} | {cd_s} |")
         lines.append("")
         lines.extend(_mcnemar_lines(cmp, baseline))

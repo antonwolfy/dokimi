@@ -222,11 +222,13 @@ python cli.py tasks run --tasks <task-name> \
   `total_tokens`, `cache_read_tokens`, `cache_write_tokens`, `latency_sec`,
   `ttft_sec`, `n_calls` (agent turns) — plus `operation_count` /
   `operations_by_type`.
-- `summary.per_harness`: pass rate, elapsed time, operation totals, a rolled-up
-  `cost{}` block (`total_cost_usd` is `null` when no call was priced), and a
-  `per_task{}` pass breakdown.
-- `summary.comparisons`: `pass_rate_delta`, `passed_delta`, `cost_delta_usd`, and
-  a `mcnemar{}` significance block against `--baseline-harness` (below).
+- `summary.per_harness`: pass rate with a `pass_rate_ci{}` interval, elapsed
+  time, operation totals, `skill_invocation_rate` / `skill_invocation_n`, a
+  rolled-up `cost{}` block (`total_cost_usd` is `null` when no call was priced;
+  `cost_per_pass_usd`), and a `per_task{}` pass breakdown.
+- `summary.comparisons`: `pass_rate_delta`, `normalized_gain`,
+  `normalized_change`, `passed_delta`, `cost_delta_usd`, and a `mcnemar{}`
+  significance block against `--baseline-harness` (below).
 
 The artifact is schema-validated on write, like question/answer/eval/arms
 artifacts. Per-run detail (the agent's `claude --output-format json` result, the
@@ -308,6 +310,23 @@ The exact binomial is used rather than the chi-square approximation because the
 discordant count on a suite this size is routinely under 10, where the
 approximation is unreliable. It needs no SciPy, so this test is always available
 — unlike the judged track's `p_ttest`.
+
+Alongside the paired test, each harness and comparison carries per-arm lift
+numbers. They use SkillsBench's lift formula but are not its leaderboard
+numbers, so do not read the two side by side without the caveats below:
+
+| Field | Meaning |
+|---|---|
+| `per_harness.<h>.pass_rate_ci` | Wilson 95% interval on `pass_rate`, over the same scored (non-errored) cells; same independence caveat as McNemar under `--repeats`. SkillsBench does not use Wilson: its paper uses a Wald interval (v4, App. G; a percentile bootstrap in v1) and its leaderboard a task-level `1.96·stdev(per-task means)/√87`, which is wider under repeats |
+| `per_harness.<h>.skill_invocation_rate` | share of the rows reporting `metrics.n_skill_invocations` (errored rows excluded) where it is > 0; `null` when no row reports it. Only harnesses that write `metrics.n_skill_invocations` contribute; the key counts invocations of the treatment skill. Rows marked `metrics.solver_error` are not errored, so they count if they report the key |
+| `per_harness.<h>.skill_invocation_n` | the rows behind `skill_invocation_rate` |
+| `per_harness.<h>.cost.cost_per_pass_usd` | total cost / passes, only when every row, errored rows included, carries `metrics.cost_usd`. A runner-errored row (no `cost_usd`) or an agent timeout whose result was never parsed therefore nulls it for the arm |
+| `comparisons.<h>.normalized_gain` | Hake's `(arm − base) / (1 − base)`, as SkillsBench uses it: the share of the baseline's headroom gained. It equals SkillsBench's per-configuration value only when every cell scored and rewards are binary (they average per-task mean rewards and count a missing cell as 0). Unbounded below (0.5 vs 0.95 is −9), so read regressions from the next field; `null` when the baseline passes everything, or when `pass_rate_delta` is withheld |
+| `comparisons.<h>.normalized_change` | the Marx & Cummings piecewise formula applied to aggregate pass rates, in [−1, 1]: the gain above for a gain, `(arm − base) / base` (share of baseline passes lost) for a loss, 0 when equal. The halves are on different scales — at a 0.8 baseline +0.2 is +4 pp, −0.2 is −16 pp — so compare signs, not magnitudes across signs; `null` when both rates are 0% or both 100% (M&C drop that case), or when `pass_rate_delta` is withheld |
+
+A with-skill arm whose `skill_invocation_rate` is near zero measures the
+listing, not the skill: the lift, if any, did not come from the agent reading
+it.
 
 ## Operation Telemetry
 

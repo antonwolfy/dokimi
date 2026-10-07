@@ -169,6 +169,14 @@
                   "minimum": 0
                 }
               },
+              "n_skill_invocations": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Invocations of the treatment skill in this row's trajectory (not every skill loaded, nor distractor skills). Written only by harnesses that can see skill use (null when they could not count); feeds summary skill_invocation_rate."
+              },
               "exploration_metrics": {
                 "type": "object",
                 "description": "Optional exploration-quality block. Emitted only when the operation stream contains read/search/subagent/edit signal. Metrics that cannot be derived from the available telemetry are null.",
@@ -281,6 +289,13 @@
                   "cost_known_n": {
                     "type": "integer",
                     "minimum": 0
+                  },
+                  "cost_per_pass_usd": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "total_cost_usd / passed, only when every row (errored rows included) carries metrics.cost_usd and at least one passed. Null otherwise: today a runner-errored row (no cost_usd) or an agent timeout whose result was never parsed nulls it for the whole arm."
                   }
                 },
                 "additionalProperties": true
@@ -329,6 +344,58 @@
                 "type": "integer",
                 "minimum": 0,
                 "description": "n - errored: the denominator of pass_rate."
+              },
+              "pass_rate_ci": {
+                "type": "object",
+                "description": "Wilson score interval on pass_rate over the scored rows (errored rows excluded, as in pass_rate). Assumes independent rows, so with repeats > 1 it is too narrow.",
+                "properties": {
+                  "lo": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "hi": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "confidence": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 1
+                  },
+                  "method": {
+                    "enum": [
+                      "wilson"
+                    ]
+                  }
+                },
+                "required": [
+                  "lo",
+                  "hi",
+                  "confidence",
+                  "method"
+                ]
+              },
+              "skill_invocation_rate": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "Share of the rows that report metrics.n_skill_invocations (errored rows excluded) in which it is > 0. The key counts invocations of the treatment skill only. Null when no row reports it. Rows marked metrics.solver_error are not errored, so they count here if they report the key.",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "skill_invocation_n": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Rows behind skill_invocation_rate: non-errored rows that report metrics.n_skill_invocations."
               }
             }
           }
@@ -485,6 +552,23 @@
               "baseline_errored": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "normalized_gain": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "maximum": 1,
+                "description": "Hake's (pass_rate - base) / (1 - base), as SkillsBench uses it: the share of the baseline's headroom gained. Equals SkillsBench's per-configuration value only when every cell scored and rewards are binary. Unbounded below (0.5 vs 0.95 is -9); read regressions from normalized_change. Null when the baseline passes everything, or under the same rule as pass_rate_delta (the arms' errored cells differ)."
+              },
+              "normalized_change": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": -1,
+                "maximum": 1,
+                "description": "The Marx & Cummings (2007) piecewise formula applied to aggregate pass rates, in [-1, 1]: equals normalized_gain for a gain; a loss is (pass_rate - base) / base, the share of the baseline's passes lost; 0 when the rates are equal. The halves are on different scales, so compare sign and bounds, not magnitudes across signs. Null when both rates are 0 or both 1 (M&C drop that case), or under the same rule as pass_rate_delta (the arms' errored cells differ)."
               }
             }
           }

@@ -42,16 +42,21 @@ tail is computable with :func:`math.comb`.
 from __future__ import annotations
 
 import math
+from statistics import NormalDist
 from typing import Any, Dict, List, Optional, Sequence
 
-# _round_p is private to the package, not to this module: both tracks must round
-# p-values the same way or the two reports disagree on what "0.0" means.
-from agent_benchmarks.eval.stats import ALPHA, _round_p, bootstrap_ci
+# _round_p and _wilson are private to the package, not to this module: both
+# tracks must round p-values and bound rates the same way, or the two reports
+# disagree on what "0.0" means.
+from agent_benchmarks.eval.stats import ALPHA, _round_p, _wilson, bootstrap_ci
 
 #: Fewest paired tasks before a result is returned at all. Unlike the judged
 #: track this is not a power threshold — McNemar's exact p is honest at any n —
 #: only a guard against calling a single task a comparison.
 MIN_PAIRS_FOR_TEST = 2
+
+#: Confidence of the per-arm pass-rate interval, here and in the report header.
+PASS_RATE_CI_CONFIDENCE = 0.95
 
 
 def exact_binomial_two_sided(successes: int, trials: int) -> Optional[float]:
@@ -69,6 +74,71 @@ def exact_binomial_two_sided(successes: int, trials: int) -> Optional[float]:
     k = min(successes, trials - successes)
     tail = sum(math.comb(trials, i) for i in range(k + 1)) / (2 ** trials)
     return min(1.0, 2.0 * tail)
+
+
+def wilson_interval(
+    successes: int, trials: int, confidence: float = PASS_RATE_CI_CONFIDENCE,
+) -> tuple[Optional[float], Optional[float]]:
+    """Wilson score interval for one arm's pass rate, ``(None, None)`` at n = 0.
+
+    Wilson rather than the normal approximation because executable suites are
+    small and pass rates sit near 0 or 1, where ``p ± z·sqrt(p(1-p)/n)``
+    collapses to a zero-width interval or leaves [0, 1]. It is **not** what
+    SkillsBench reports, so the two are not directly comparable: their paper
+    uses the Wald interval ``1.96·sqrt(p(1-p)/n)`` (v4, App. G) after a
+    percentile bootstrap in v1, and their leaderboard a task-level
+    ``1.96·stdev(per-task means)/sqrt(87)``, which accounts for repeats. Like
+    McNemar this one assumes independent trials: with repeats of one task it
+    is too narrow.
+    """
+    if trials < 0 or not 0 <= successes <= trials:
+        raise ValueError(f"successes must be in [0, {trials}], got {successes}")
+    if not 0.0 < confidence < 1.0:
+        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+    if trials == 0:
+        return None, None
+    lo, hi = _wilson(successes / trials, trials, NormalDist().inv_cdf(0.5 + confidence / 2))
+    return round(lo, 4), round(hi, 4)
+
+
+def normalized_gain(arm_rate: Optional[float], base_rate: Optional[float]) -> Optional[float]:
+    """Hake's normalized gain ``(arm - base) / (1 - base)``, as SkillsBench uses it.
+
+    The share of the baseline's headroom gained: a +10 pp lift means more on
+    an 85% baseline than on a 30% one. It equals SkillsBench's
+    per-configuration value only when every cell scored and rewards are
+    binary: they average per-task mean *rewards* and count a missing cell as
+    0, where the caller here passes cell-level binary pass rates with shared
+    errored cells dropped. Hake's form is **unbounded below** (``0.5`` vs
+    ``0.95`` is ``-9.0``); read regressions from :func:`normalized_change`.
+    ``None`` when either rate is missing or the baseline passes everything.
+    """
+    if arm_rate is None or base_rate is None or base_rate >= 1.0:
+        return None
+    return round((arm_rate - base_rate) / (1.0 - base_rate), 4)
+
+
+def normalized_change(arm_rate: Optional[float], base_rate: Optional[float]) -> Optional[float]:
+    """Marx & Cummings (2007) piecewise formula applied to aggregate pass rates.
+
+    M&C compute ``c`` per student and average; here it is applied once to the
+    two arms' pass rates, bounded to [-1, 1]. Equal to :func:`normalized_gain`
+    for a gain. A loss is normalised by what the baseline had to lose,
+    ``(arm - base) / base``, so ``-1`` means every baseline pass was lost.
+    Other equal rates give ``0``. The two halves are on different scales — at
+    a 0.8 baseline +0.2 is +4 pp but -0.2 is -16 pp — so compare signs and
+    bounds, not magnitudes across signs. ``None`` when either rate is missing,
+    or when both are 0 or both 1: M&C drop that case rather than score it 0.
+    """
+    if arm_rate is None or base_rate is None:
+        return None
+    if arm_rate == base_rate and base_rate in (0.0, 1.0):
+        return None
+    delta = arm_rate - base_rate
+    if delta == 0:
+        return 0.0
+    room = (1.0 - base_rate) if delta > 0 else base_rate
+    return round(delta / room, 4)
 
 
 def mcnemar_test(

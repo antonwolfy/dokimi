@@ -108,6 +108,8 @@ def summarize_task_results(
                 "_cost_known": 0,
                 "_tokens": {k: 0 for k in _COST_KEYS if k != "cost_usd"},
                 "_by_task": {},   # task -> {"n", "passed", "errored"}
+                "_skill_reported": 0,
+                "_skill_invoked": 0,
             },
         )
         errored = _is_errored(row)
@@ -126,13 +128,20 @@ def summarize_task_results(
             stats["operations_by_type"][op_type] = stats["operations_by_type"].get(op_type, 0) + count
         # Cost/token telemetry (present when an LLM harness emitted a UsageRecord).
         cost = metrics.get("cost_usd")
-        if isinstance(cost, (int, float)):
+        # bool is an int subclass: cost_usd=True is not a price.
+        if isinstance(cost, (int, float)) and not isinstance(cost, bool):
             stats["_cost_sum"] += float(cost)
             stats["_cost_known"] += 1
         for key in stats["_tokens"]:
             val = metrics.get(key)
             if isinstance(val, (int, float)):
                 stats["_tokens"][key] += int(val)
+        # Skill use, for harnesses that write metrics.n_skill_invocations;
+        # rows that do not are left out of the rate, as are errored rows.
+        invocations = _count(metrics.get("n_skill_invocations"))
+        if invocations is not None and not errored:
+            stats["_skill_reported"] += 1
+            stats["_skill_invoked"] += 1 if invocations > 0 else 0
         # Per-task breakdown (which tasks the harness solves).
         task = row.get("task")
         if task is not None:
@@ -147,6 +156,14 @@ def summarize_task_results(
         # treatment, the same reason _outcomes_by_cell drops it from McNemar.
         stats["scored"] = stats["n"] - stats["errored"]
         stats["pass_rate"] = _rate(stats["passed"], stats["scored"])
+        # Same denominator as pass_rate: an errored cell is not a trial.
+        confidence = binary_stats.PASS_RATE_CI_CONFIDENCE
+        lo, hi = binary_stats.wilson_interval(stats["passed"], stats["scored"], confidence)
+        stats["pass_rate_ci"] = {"lo": lo, "hi": hi, "confidence": confidence, "method": "wilson"}
+        reported = stats.pop("_skill_reported")
+        invoked = stats.pop("_skill_invoked")
+        stats["skill_invocation_rate"] = round(invoked / reported, 4) if reported else None
+        stats["skill_invocation_n"] = reported
         stats["avg_reward"] = (
             round(stats["reward_sum"] / stats["reward_n"], 4) if stats["reward_n"] else None
         )
@@ -160,6 +177,12 @@ def summarize_task_results(
         stats["cost"] = {
             "total_cost_usd": round(cost_sum, 6) if cost_known else None,
             "cost_known_n": cost_known,
+            # Only when every row was priced: a partial sum over passes would
+            # understate what a pass costs.
+            "cost_per_pass_usd": (
+                round(cost_sum / stats["passed"], 6)
+                if stats["passed"] and cost_known == stats["n"] else None
+            ),
             **tokens,
         }
         by_task = stats.pop("_by_task")
@@ -188,6 +211,8 @@ def summarize_task_results(
             # the shared scored cells.
             comparable = _errored_cells(outcomes, attempted, harness) == _errored_cells(
                 outcomes, attempted, baseline_harness)
+            arm_exact = _exact_rate(stats["passed"], stats["scored"])
+            base_exact = _exact_rate(base["passed"], base["scored"])
             comparisons[harness] = {
                 "baseline_harness": baseline_harness,
                 "pass_rate_delta": (
@@ -195,6 +220,15 @@ def summarize_task_results(
                     if isinstance(pass_rate, float) and isinstance(base_pass, float)
                     and comparable
                     else None
+                ),
+                # Withheld with pass_rate_delta, for the same reason.
+                "normalized_gain": (
+                    None if not comparable
+                    else binary_stats.normalized_gain(arm_exact, base_exact)
+                ),
+                "normalized_change": (
+                    None if not comparable
+                    else binary_stats.normalized_change(arm_exact, base_exact)
                 ),
                 "errored": stats["errored"],
                 "baseline_errored": base["errored"],
@@ -253,8 +287,23 @@ def _is_errored(row: dict[str, Any]) -> bool:
     return bool(row.get("metrics", {}).get("error"))
 
 
+def _count(value: Any) -> int | None:
+    """A non-negative whole count, else ``None``. A bool is a flag, not a
+    count (bool is an int subclass); ``1.0`` from a JSON round-trip is 1."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value < 0 or not float(value).is_integer():  # also rejects nan / inf
+        return None
+    return int(value)
+
+
 def _rate(passed: int, scored: int) -> float | None:
     return round(passed / scored, 4) if scored else None
+
+
+def _exact_rate(passed: int, scored: int) -> float | None:
+    """Unrounded, for ratios of rates: rounding first skews them (2/3 vs 1/3 gave 0.5001)."""
+    return passed / scored if scored else None
 
 
 def _paired_binary_test(

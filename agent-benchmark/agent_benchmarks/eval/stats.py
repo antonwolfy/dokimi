@@ -48,6 +48,7 @@ instead.
 
 from __future__ import annotations
 
+import math
 import random
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -270,6 +271,25 @@ def _sample_sd(vals: Sequence[float]) -> float:
         return 0.0
     mu = _mean(vals)
     return (sum((x - mu) ** 2 for x in vals) / (len(vals) - 1)) ** 0.5
+
+
+#: z for a two-sided 95% interval.
+_Z95 = 1.959963984540054
+
+
+def _wilson(p: float, n: int, z: float = _Z95) -> Tuple[float, float]:
+    """Wilson interval (95% by default) for a mean ``p`` observed over ``n`` trials.
+
+    Shared by the judge-validity gate and the task track
+    (``binary_stats.wilson_interval``).
+    """
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    centre = (p + z2 / (2 * n)) / denom
+    half = z * math.sqrt(max(0.0, p * (1.0 - p)) / n + z2 / (4 * n * n)) / denom
+    # Clamped to contain p: at p = 1.0, centre + half is 0.9999999999999999 for
+    # some n, so 10/10 cleared a 1.0 gate while 20/20 straddled it.
+    return (max(0.0, min(p, centre - half)), min(1.0, max(p, centre + half)))
 
 
 def _aggregate_of(score: Any) -> Optional[float]:
