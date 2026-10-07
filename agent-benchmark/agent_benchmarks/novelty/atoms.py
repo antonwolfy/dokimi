@@ -262,14 +262,22 @@ def verify_atoms(
 
 def save_atoms(
     atoms: list[Atom], spans: list[Span], path, *,
-    extractor: str | None = None, cap: int | None = None,
+    extractor: str | None = None, cap: int | None = None, bundle: dict | None = None,
 ) -> None:
-    """Write atoms plus their spans as one JSON file (input to ``novelty probe``)."""
+    """Write atoms plus their spans as one JSON file (input to ``novelty probe``).
+
+    ``bundle`` records *which files of the artifact* these atoms came from. Without it a
+    later ``novelty probe`` cannot know whether to inject the entry point or the whole
+    bundle, and would measure atoms extracted from a reference file against a context
+    that never contained it -- every such atom scoring `still_missing` for the wrong
+    reason.
+    """
     from pathlib import Path
 
     payload = {
         "extractor": extractor,
         "cap": cap,
+        "bundle": bundle or {},
         "atoms": [atom.as_dict() for atom in atoms],
         "spans": [span.as_dict() for span in spans],
     }

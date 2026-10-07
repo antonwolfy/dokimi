@@ -41,6 +41,14 @@ def _artifact(**overrides):
         "attribution": {"carrier_confirmation": {"n_atoms": 40, "n_located": 38,
                                                  "n_unlocated": 2, "frac_located": 0.95}},
         "controls": {"order_independent": False},
+        "bundle": {"include_resources": True, "n_files": 3, "entry_point_words": 400,
+                   "resource_words_measured": 900, "resource_words_on_disk": 900,
+                   "outside_share": 0.69, "excluded": [],
+                   "pointer_spans": {"n": 2, "tokens": 18}},
+        "probes": {"n_probes": 110, "malformed_rate": 0.02,
+                   "by_kind": {"paraphrase": {"generated": 40, "kept": 39, "rejected": 1,
+                                              "malformed_rate": 0.025, "reasons":
+                                              {"anchor_dropped": 1}}}},
         "warnings": [],
     }
     artifact.update(overrides)
@@ -62,13 +70,15 @@ def test_a_healthy_artifact_passes_every_check():
 def test_a_run_that_skipped_its_stages_says_so_instead_of_passing():
     # --no-classify --no-shorten --no-confirm-carriers, and no shuffled arm (the default arms).
     verdict = evaluate_novelty(_artifact(
-        categories={}, shortening=[], attribution={}, controls={}, spans={"n": 60}))
+        categories={}, shortening=[], attribution={}, controls={}, spans={"n": 60},
+        bundle={}, probes={}))
     assert verdict.not_measured == [
-        "harmful_atoms", "dead_tokens", "protection_invariant", "span_citations_confirmed",
-        "value_is_measured", "order_independence",
+        "harmful_atoms", "dead_tokens", "artifact_coverage", "probe_wording_fidelity",
+        "protection_invariant", "span_citations_confirmed", "value_is_measured",
+        "order_independence",
     ]
     block = format_novelty_block([verdict])
-    assert "(6 of 7 not measured)" in block
+    assert "(8 of 9 not measured)" in block
     assert "| harmful_atoms | not measured | None |" in block
 
 
@@ -182,3 +192,106 @@ def test_an_attached_artifact_must_validate(tmp_path):
     bad.write_text(json.dumps({"schema_version": "novelty.v1"}), encoding="utf-8")
     with pytest.raises(ArtifactValidationError):
         load_novelty_artifacts([bad])
+
+
+def test_an_entry_point_only_run_of_a_bundle_artifact_is_flagged():
+    verdict = evaluate_novelty(_artifact(bundle={
+        "include_resources": False, "n_files": 1, "entry_point_words": 400,
+        "resource_words_measured": 0, "resource_words_on_disk": 9000,
+        "outside_share": 0.96, "excluded": [{"path": "references/x.md",
+                                             "reason": "resources not requested"}],
+    }))
+    check = _named(verdict, "artifact_coverage")
+    # The value is the share actually not read (9000 of 9400 words), not the reported
+    # outside_share, so the two modes are judged on the same quantity.
+    assert (check.passed, check.measured, check.value) == (False, True, 0.9574)
+    assert "only the entry point was measured" in check.message
+    assert "--include-resources" in check.message
+    assert verdict.status == "WARN"
+
+
+def test_a_run_that_threw_away_its_wordings_cannot_pass_quietly():
+    verdict = evaluate_novelty(_artifact(probes={
+        "n_probes": 60, "malformed_rate": 0.35,
+        "by_kind": {"paraphrase": {"generated": 40, "kept": 38, "rejected": 2,
+                                   "malformed_rate": 0.05, "reasons": {}},
+                    "reversal": {"generated": 40, "kept": 14, "rejected": 26,
+                                 "malformed_rate": 0.65, "reasons":
+                                 {"polarity_not_flipped": 26}}},
+    }))
+    check = _named(verdict, "probe_wording_fidelity")
+    assert (check.passed, check.value) == (False, 0.65)      # judged on the worst kind
+    assert "reversal" in check.message
+
+
+def test_pointer_spans_are_named_where_dead_tokens_are_reported():
+    check = _named(evaluate_novelty(_artifact()), "dead_tokens")
+    assert "only name a bundled file" in check.message
+    plain = _named(evaluate_novelty(_artifact(bundle={})), "dead_tokens")
+    assert "only name a bundled file" not in plain.message
+
+
+def test_a_bundle_run_that_read_a_fraction_of_the_bundle_does_not_clear_coverage():
+    # `performance-patterns` shape: 30k words in 30 files, default 4,000/20,000 budgets.
+    verdict = evaluate_novelty(_artifact(bundle={
+        "include_resources": True, "n_files": 8, "entry_point_words": 375,
+        "resource_words_measured": 6000, "resource_words_on_disk": 30567,
+        "outside_share": 0.9879,
+        "excluded": [{"path": f"patterns/p{i}.md", "role": "pattern",
+                      "reason": "over max_file_words=4000"} for i in range(12)]
+        + [{"path": "logo.png", "role": "top", "reason": "not text"}],
+    }))
+    check = _named(verdict, "artifact_coverage")
+    assert check.passed is False
+    assert check.value == round((30567 - 6000) / (375 + 30567), 4)
+    assert "12 files excluded" in check.message      # the image is not an exclusion
+    assert "--max-file-words" in check.message
+
+
+def test_a_bundle_run_that_read_nearly_all_of_it_clears_coverage():
+    verdict = evaluate_novelty(_artifact(bundle={
+        "include_resources": True, "n_files": 4, "entry_point_words": 400,
+        "resource_words_measured": 880, "resource_words_on_disk": 900,
+        "outside_share": 0.69, "excluded": [],
+        "pointer_spans": {"n": 2, "tokens": 18},
+    }))
+    assert _named(verdict, "artifact_coverage").passed is True
+
+
+def test_an_undecodable_reference_makes_coverage_unmeasurable_not_complete():
+    # Its words never enter the on-disk total, so the arithmetic alone would report full
+    # coverage of a bundle that was never read.
+    verdict = evaluate_novelty(_artifact(bundle={
+        "include_resources": True, "n_files": 1, "entry_point_words": 400,
+        "resource_words_measured": 0, "resource_words_on_disk": 0, "outside_share": 0.0,
+        "unreadable_files": 1,
+        "excluded": [{"path": "references/big.md", "role": "reference",
+                      "reason": "unreadable"}],
+    }))
+    check = _named(verdict, "artifact_coverage")
+    assert (check.measured, check.value) == (False, None)
+    assert "could not be decoded" in check.message
+
+
+def test_a_partial_bundle_record_is_not_read_as_full_coverage():
+    verdict = evaluate_novelty(_artifact(bundle={"outside_share": 0.99}))
+    check = _named(verdict, "artifact_coverage")
+    assert (check.measured, check.value) == (False, None)
+
+
+def test_policy_excluded_words_do_not_count_against_coverage():
+    verdict = evaluate_novelty(_artifact(bundle={
+        "include_resources": True, "n_files": 2, "entry_point_words": 400,
+        "resource_words_measured": 100, "resource_words_on_disk": 900,
+        "policy_excluded_words": 800, "outside_share": 0.69, "excluded": [],
+    }))
+    assert _named(verdict, "artifact_coverage").passed is True
+
+
+def test_the_aggregate_malformed_rate_cannot_be_hidden_by_the_per_kind_rows():
+    verdict = evaluate_novelty(_artifact(probes={
+        "n_probes": 10, "malformed_rate": 0.9,
+        "by_kind": {"paraphrase": {"generated": 10, "rejected": 9}},
+    }))
+    check = _named(verdict, "probe_wording_fidelity")
+    assert (check.passed, check.value) == (False, 0.9)

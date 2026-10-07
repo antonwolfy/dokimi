@@ -369,8 +369,11 @@ def test_text_is_decided_by_content_not_by_suffix(tmp_path):
     assert measured["scripts/tool.mjs"].text.startswith("```")
     assert bundle.resource_words_on_disk == 6 + 5 + 3
     assert bundle.excluded_content() == []
+    # A binary is not text; a prose file that does not decode is text this run did not
+    # read, so it is counted for the coverage gate instead of vanishing.
     assert {row["path"]: row["reason"] for row in bundle.excluded} == {
-        "assets/blob": "not text", "assets/latin1.txt": "not text"}
+        "assets/blob": "not text", "assets/latin1.txt": "unreadable"}
+    assert bundle.unreadable_files == 1
 
 
 def test_a_utf8_bom_does_not_change_a_file_s_digest_or_its_text(tmp_path):
@@ -455,3 +458,30 @@ def test_a_bundle_that_is_only_evals_has_nothing_measurable_outside_its_entry_po
     assert bundle.measurable_outside_share() == 0.0
     assert bundle.unmeasured_words() == 0
     assert bundle.excluded_content() == []
+
+
+@pytest.mark.parametrize("name, raw", [
+    ("references/u.md", "# Guide\nNever exceed 64 threads.\n".encode("utf-16")),
+    ("references/guide", "caf\xe9 Never exceed 64 threads.\n".encode("latin-1")),
+    ("scripts/x.py", "# caf\xe9\nx = 1\n".encode("latin-1")),
+])
+def test_text_in_another_encoding_is_unreadable_not_silently_dropped(tmp_path, name, raw):
+    """A UTF-16 .md, a latin-1 script or an extension-less guide is content the run did not read."""
+    root = tmp_path / "s"
+    (root / "references").mkdir(parents=True)
+    (root / "scripts").mkdir()
+    (root / "SKILL.md").write_text("---\nname: s\ndescription: d\n---\n\n# S\n", encoding="utf-8")
+    (root / name).write_bytes(raw)
+    bundle = load_bundle(f"skill:{root}", include_resources=True)
+    assert bundle.unreadable_files == 1
+    assert [row["kind"] for row in bundle.excluded] == ["unreadable"]
+
+
+def test_a_blob_without_nul_bytes_is_still_not_text(tmp_path):
+    root = tmp_path / "s"
+    (root / "assets").mkdir(parents=True)
+    (root / "SKILL.md").write_text("---\nname: s\ndescription: d\n---\n\n# S\n", encoding="utf-8")
+    (root / "assets" / "logo").write_bytes(bytes(range(128, 256)) * 20)
+    bundle = load_bundle(f"skill:{root}", include_resources=True)
+    assert bundle.unreadable_files == 0
+    assert bundle.excluded[0]["kind"] == "not_text"

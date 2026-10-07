@@ -363,7 +363,7 @@ def test_a_novelty_cell_that_skipped_stages_does_not_render_a_bare_pass(tmp_path
         novelty_artifacts=[_novelty_artifact(categories={})],
     )
     validate_artifact("subject_scorecard", scorecard)
-    assert "| PASS (5 not measured) |" in render_subject_scorecard(scorecard)
+    assert "| PASS (7 not measured) |" in render_subject_scorecard(scorecard)
 
 
 def test_a_novelty_artifact_warning_reaches_the_scorecard_warnings(tmp_path: Path):

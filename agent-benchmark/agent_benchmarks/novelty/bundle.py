@@ -122,13 +122,26 @@ class Bundle:
     text: str
     files: list[BundleFile]
     #: Each row names the file, its role, why it was left out and a ``kind`` the counts are
-    #: derived from: ``symlink`` and ``not_text`` are not content; ``policy`` is a role
+    #: derived from: ``symlink`` and ``not_text`` are not content; ``unreadable`` is text
+    #: that did not decode, counted in ``unreadable_files``; ``policy`` is a role
     #: decision (evals by default, or a ``--resource-roles`` filter); ``budget`` and
     #: ``not_requested`` are content the run could have read.
     excluded: list[dict] = field(default_factory=list)
     include_resources: bool = False
     #: Words outside the entry point in the bundle *on disk*, whether included or not.
     resource_words_on_disk: int = 0
+    #: The budgets this bundle was selected under, recorded so a later command can
+    #: reproduce the same selection instead of guessing it from the result.
+    max_file_words: int = DEFAULT_MAX_FILE_WORDS
+    max_total_words: int = DEFAULT_MAX_TOTAL_WORDS
+    #: Files that are text by extension but could not be decoded or opened. Their words are
+    #: unknown, so a coverage figure computed without them is a lower bound on what was
+    #: missed, not a measurement -- which is why the count travels with the summary.
+    unreadable_files: int = 0
+    #: The roles the walk was asked to measure (the default set, or ``--resource-roles``),
+    #: recorded because the roles of the files that happened to be selected are not the
+    #: same thing: a role whose files were all over budget selects nothing.
+    resource_roles: tuple[str, ...] = ()
 
     @property
     def body(self) -> str:
@@ -167,6 +180,18 @@ class Bundle:
         """
         return [row for row in self.excluded if row["kind"] in ("budget", "not_requested")]
 
+    def measured_digest(self) -> str:
+        """Digest of exactly the files this bundle measured, and of nothing else.
+
+        Hashing the artifact's directory cannot separate an entry-point run from a bundle
+        run of the same skill, and for a file ref it would cover siblings that were never
+        read. This covers each measured file's path and the digest of the text that was
+        measured, in order -- so two results carry the same digest only when they measured
+        the same bytes of the same files.
+        """
+        rows = "\n".join(f"{item.path}:{item.sha256}" for item in self.files)
+        return "sha256:" + hashlib.sha256(rows.encode("utf-8")).hexdigest()
+
     def outside_share(self) -> float:
         """Share of the bundle's on-disk words that are not in the entry point."""
         body_words = len(self.body.split())
@@ -197,6 +222,10 @@ class Bundle:
             "resource_words_on_disk": self.resource_words_on_disk,
             "outside_share": self.outside_share(),
             "measurable_outside_share": self.measurable_outside_share(),
+            "max_file_words": self.max_file_words,
+            "max_total_words": self.max_total_words,
+            "unreadable_files": self.unreadable_files,
+            "resource_roles": list(self.resource_roles),
             "policy_excluded_words": self.policy_excluded_words(),
             "unmeasured_words": self.unmeasured_words(),
             "roles": roles,
@@ -268,8 +297,16 @@ def load_bundle(
                 continue
             text = _read(path)
             if text is None:
-                excluded.append({"path": relative, "role": role, "reason": "not text",
-                                 "kind": "not_text"})
+                if _is_binary(path) or (
+                    path.suffix.lower() not in PROSE_SUFFIXES and not _looks_like_text(path)
+                ):
+                    excluded.append({"path": relative, "role": role, "reason": "not text",
+                                     "kind": "not_text"})
+                else:
+                    # A prose file that does not decode (latin-1, say) is content this
+                    # run did not read, not a binary: the gate reports coverage unmeasured.
+                    excluded.append({"path": relative, "role": role, "reason": "unreadable",
+                                     "kind": "unreadable"})
                 continue
             words = len(text.split())
             on_disk += words
@@ -311,7 +348,11 @@ def load_bundle(
     text = _stitch(files)
     return Bundle(kind=kind, name=name, description=description, frontmatter=frontmatter,
                   text=text, files=files, excluded=excluded,
-                  include_resources=include_resources, resource_words_on_disk=on_disk)
+                  include_resources=include_resources, resource_words_on_disk=on_disk,
+                  max_file_words=max_file_words, max_total_words=max_total_words,
+                  resource_roles=tuple(selected_roles),
+                  unreadable_files=sum(
+                      1 for row in excluded if row["reason"] == "unreadable"))
 
 
 def pointer_spans(spans: list, bundle: Bundle) -> set[str]:
@@ -389,6 +430,41 @@ def _role_of(relative: Path) -> str:
     if len(parts) == 1:
         return "top"
     return ROLE_BY_DIR.get(parts[0].lower(), "other")
+
+
+_UTF16_BOMS = (b"\xff\xfe", b"\xfe\xff")
+
+
+def _is_binary(path: Path) -> bool:
+    """A NUL byte in the head of the file, unless it is UTF-16 text (BOM, NULs throughout).
+
+    PowerShell's `>` and Notepad's "Unicode" write UTF-16: a document in an encoding this
+    run does not read, so it is reported unreadable rather than dropped as a binary.
+    """
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(8192)
+    except OSError:
+        return False
+    return b"\0" in head and not head.startswith(_UTF16_BOMS)
+
+
+def _looks_like_text(path: Path) -> bool:
+    """Whether a file that failed UTF-8 is still text (latin-1, cp1252) rather than a blob.
+
+    Without this a latin-1 `scripts/x.py` or an extension-less guide was dropped from the
+    words on disk with no warning, while the same bytes in a `.md` were reported. Mostly
+    printable ASCII (or a UTF-16 BOM) is text; a blob without NULs in its head is not.
+    """
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(8192)
+    except OSError:
+        return False
+    if head.startswith(_UTF16_BOMS):
+        return True
+    printable = sum(1 for byte in head if byte in (9, 10, 13) or 32 <= byte < 127)
+    return bool(head) and printable / len(head) >= 0.9
 
 
 def _read(path: Path) -> str | None:

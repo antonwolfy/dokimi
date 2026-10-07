@@ -37,6 +37,14 @@ DEFAULTS: dict[str, Any] = {
     "min_frac_located": 0.80,
     # Below this, a candidate's `value` is atom coverage per token wearing a value label.
     "min_value_coverage": 0.50,
+    # Share of an artifact's words that may sit in unmeasured bundled files before the run
+    # stops describing the artifact. Measured: the study corpus keeps 0.72 of its words
+    # outside SKILL.md, per skill median 0.43 and worst 0.99, so an entry-point-only run of
+    # a progressive-disclosure skill is a run about a fraction of it.
+    "max_unmeasured_outside_share": 0.50,
+    # Share of generated probe wordings dropped by the fidelity check. Above this, the kind
+    # that hit it covered materially fewer atoms than `atoms.n` suggests.
+    "max_probe_malformed_rate": 0.20,
 }
 
 # Every check ships at one of these severities. "fail" is unused on purpose (see module docstring).
@@ -168,6 +176,8 @@ def evaluate_novelty(artifact: dict, thresholds: dict[str, Any] | None = None) -
 
     # ── 3. Dead weight, only when the atom set behind it was not capped ──────
     frac_dead = spans.get("frac_carrying_nothing")
+    pointers = ((artifact.get("bundle") or {}).get("pointer_spans") or {})
+    pointer_n, pointer_tokens = pointers.get("n", 0), pointers.get("tokens", 0)
     if frac_dead is None:
         checks.append(NoveltyCheck(
             name="dead_tokens", passed=True, value=None,
@@ -193,6 +203,114 @@ def evaluate_novelty(artifact: dict, thresholds: dict[str, Any] | None = None) -
                 f"{frac_dead:.3f} of tokens carry no extracted atom (ceiling "
                 f"{cfg['max_frac_carrying_nothing']}); an upper bound on waste, not a measurement "
                 "of it"
+                + (
+                    f". {pointer_n} of those spans ({pointer_tokens} tokens) only name a bundled "
+                    "file, which is a loading instruction rather than waste"
+                    if pointer_n else ""
+                )
+            ),
+        ))
+
+    # ── 3b. Was the whole artifact measured, or only its entry point? ───────
+    bundle = artifact.get("bundle") or {}
+    # Presence is keyed on the fields the arithmetic actually reads, not on one sentinel:
+    # a partial block used to produce "0% was not read" from a record that said 0.99.
+    has_counts = all(
+        key in bundle for key in
+        ("entry_point_words", "resource_words_on_disk", "resource_words_measured")
+    )
+    if not bundle or not has_counts:
+        checks.append(NoveltyCheck(
+            name="artifact_coverage", passed=True, value=None,
+            threshold=cfg["max_unmeasured_outside_share"], severity="info", measured=False,
+            message=(
+                "this run does not record which files of the artifact it read, so whether it "
+                "measured the whole artifact is unknown"
+            ),
+        ))
+    elif bundle.get("unreadable_files"):
+        checks.append(NoveltyCheck(
+            name="artifact_coverage", passed=True, value=None,
+            threshold=cfg["max_unmeasured_outside_share"], severity="info", measured=False,
+            message=(
+                f"{bundle['unreadable_files']} bundled files could not be decoded, so their "
+                "word counts are unknown and the share of this artifact that was read "
+                "cannot be computed; fix the encoding, or exclude them explicitly, before "
+                "reading any coverage figure"
+            ),
+        ))
+    else:
+        # The share of the artifact's words that were NOT read, in either mode. An
+        # entry-point run leaves all of them out; a bundle run leaves out whatever the
+        # role filter and the word budgets dropped -- which on a 30k-word bundle is most
+        # of it at the default 4,000/20,000 caps. The check that exists to catch a
+        # measurement of a fraction of an artifact must catch both.
+        on_disk = bundle.get("resource_words_on_disk", 0)
+        measured = bundle.get("resource_words_measured", 0)
+        total = bundle.get("entry_point_words", 0) + on_disk
+        # Files excluded by policy (a skill's own `evals/`) are a decision, not a gap, so
+        # they do not count against coverage.
+        policy = bundle.get("policy_excluded_words", 0)
+        unmeasured = max(0.0, (on_disk - measured - policy) / total) if total else 0.0
+        excluded_content = [
+            row for row in (bundle.get("excluded") or [])
+            if row.get("reason") != "not text"
+        ]
+        mode = (
+            f"the bundle was measured ({bundle.get('n_files')} files, {measured} of "
+            f"{on_disk} bundled words, {len(excluded_content)} files excluded)"
+            if bundle.get("include_resources")
+            else "only the entry point was measured"
+        )
+        advice = (
+            "raise --max-file-words / --max-resource-words, or narrow --resource-roles, "
+            "before reading these rates as a property of the artifact"
+            if bundle.get("include_resources")
+            else "re-run with --include-resources before reading these rates as a "
+                 "property of the artifact"
+        )
+        checks.append(NoveltyCheck(
+            name="artifact_coverage",
+            passed=unmeasured <= cfg["max_unmeasured_outside_share"],
+            value=round(unmeasured, 4), threshold=cfg["max_unmeasured_outside_share"],
+            message=(
+                f"{mode}: {unmeasured:.0%} of this artifact's words were not read "
+                f"(ceiling {cfg['max_unmeasured_outside_share']:.0%}); {advice}. A bundle "
+                "run is an upper bound on what the artifact can deliver -- whether the "
+                "agent loads a file is the agentic track's question"
+            ),
+        ))
+
+    # ── 3c. Was the answer key the judge graded against intact? ─────────────
+    probe_stats = artifact.get("probes") or {}
+    malformed = probe_stats.get("malformed_rate")
+    if not probe_stats or malformed is None:
+        checks.append(NoveltyCheck(
+            name="probe_wording_fidelity", passed=True, value=None,
+            threshold=cfg["max_probe_malformed_rate"], severity="info", measured=False,
+            message=(
+                "no generated probe wordings were checked on this run (direct probes only, or a "
+                "run that predates the check)"
+            ),
+        ))
+    else:
+        worst = max(
+            ((kind, row.get("malformed_rate", 0.0))
+             for kind, row in (probe_stats.get("by_kind") or {}).items()),
+            key=lambda pair: pair[1], default=("", malformed),
+        )
+        # The aggregate counts too: a record whose per-kind rows are missing or
+        # inconsistent used to pass on `0.0` while the message quoted 90%.
+        judged = max(worst[1], malformed)
+        checks.append(NoveltyCheck(
+            name="probe_wording_fidelity",
+            passed=judged <= cfg["max_probe_malformed_rate"],
+            value=round(judged, 4), threshold=cfg["max_probe_malformed_rate"],
+            message=(
+                f"{malformed:.0%} of generated probe wordings were dropped as malformed "
+                f"(worst kind: {worst[0] or 'n/a'} at {worst[1]:.0%}); those atoms were probed by "
+                "fewer kinds than the run's budget implies. The check is mechanical, so this is "
+                "a floor on corruption, not a wording-quality score"
             ),
         ))
 
@@ -245,11 +363,11 @@ def evaluate_novelty(artifact: dict, thresholds: dict[str, Any] | None = None) -
         ))
     else:
         coverages = [c.get("value_coverage") for c in candidates if c.get("value_coverage") is not None]
-        worst = min(coverages) if coverages else None
+        lowest = min(coverages) if coverages else None
         checks.append(NoveltyCheck(
             name="value_is_measured",
             passed=not proxies,
-            value=None if worst is None else round(worst, 4),
+            value=None if lowest is None else round(lowest, 4),
             threshold=cfg["min_value_coverage"], severity="warn",
             message=(
                 f"{len(proxies)} of {len(candidates)} candidates rank by value with value defined "

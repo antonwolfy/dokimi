@@ -110,8 +110,12 @@ tokens, invisible to any frequency or perplexity ranking, expensive to lose. Tha
 
 ```bash
 python cli.py novelty analyze --artifact skill:path/to/skill --model claude-opus-5 \
-    --judge-model gpt-5.6-luna
+    --judge-model gpt-5.6-luna [--include-resources]
 ```
+
+Without `--include-resources` this measures `SKILL.md` alone and prints, before spending
+anything, what share of the artifact that leaves out — see
+[the artifact is the bundle](#the-artifact-is-the-bundle-not-the-file).
 
 Reports the 2×2, `K0`, the five-category content breakdown, the span statistics (how many tokens
 carry no knowledge at all, how many spans are the sole carrier of something, how many are
@@ -337,6 +341,9 @@ Three things to know before reading a bundle result:
   with its reason, and a skipped text file's words still count in `resource_words_on_disk`.
   Whether a file is text is decided by its content (UTF-8, no NUL bytes), not by its
   suffix: extension-less guides, `.mjs` scripts and `Makefile`s are measured like any other.
+  A file that is mostly printable text but does not decode as UTF-8 (latin-1, cp1252, UTF-16)
+  is reported `unreadable` whatever its suffix, and the coverage check then says `measured=False`;
+  only a NUL-bearing non-UTF-16 file, or a blob that is not mostly printable, is silently "not text".
 
 The payoff is `bundle.by_source`: the paired 2×2 cut by the file that carried each atom. A
 reference whose atoms are all `redundant` is a file the model already knows; one full of
@@ -471,7 +478,30 @@ scorecard's top-level `warnings`.
 
 ## Cost, and how it is kept down
 
-The measurement is LLM-call bound: `atoms × probes × arms × (answer + grade)`. Defaults therefore
+The measurement is LLM-call bound: `atoms × probes × arms × (answer + grade)` — instrumented
+over three real skills, that is **≈4 model calls per paired probe**, with grading and answering
+each half the bill and every other stage under 5% of it. A full-tier `analyze` of a 1,700-word
+skill came to 1,078 calls; the same skill at a triage budget (25 atoms, direct probes only, no
+classification or carrier confirmation) came to 103.
+
+Atoms are model-independent, so extraction amortizes across models:
+
+```bash
+python cli.py novelty atoms --artifact skill:path/to/skill --extract-model E \
+    [--include-resources] --out atoms.json      # once
+python cli.py novelty probe --artifact skill:path/to/skill --atoms atoms.json --model M1
+python cli.py novelty probe --artifact skill:path/to/skill --atoms atoms.json --model M2
+```
+
+`atoms.json` records which files it was extracted from, and `probe` rebuilds exactly that file
+set rather than trusting flags: probing bundle-derived atoms against an entry-point-only context
+would score every atom from a reference file `still_missing` for the wrong reason. If the
+artifact's files changed since extraction — edited, removed, or a new text file added —
+`probe` refuses instead of mis-scoring. The entry point alone may change (that is the
+re-measure step); the result's `ref_digest` and `bundle` then describe the text that was
+probed, and `atoms_ref_digest` the text the atoms came from. `shorten`
+rewrites one file, so with a bundle-derived atom set it scores only the entry point's spans and
+says so. Defaults therefore
 sample — atoms are capped per artifact and each atom gets two paraphrases — and the artifact records
 exactly what was sampled, so a number is never quoted as if it were a full sweep. The retention
 oracle runs retrieval → NLI locally and escalates to an LLM only for the ambiguous band, with a

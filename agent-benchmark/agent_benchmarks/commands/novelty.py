@@ -26,7 +26,6 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
     # function, which shadows the submodule of the same name.
     from agent_benchmarks.novelty.analyze import AnalyzeConfig, analyze
     from agent_benchmarks.novelty.atoms import ExtractionError
-    from agent_benchmarks.novelty.bundle import load_bundle
     from agent_benchmarks.novelty.measure import SelfJudgeError
     from agent_benchmarks.novelty.report import (
         render_annotated_html,
@@ -34,28 +33,12 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
         render_novelty_markdown,
     )
 
-    try:
-        artifact_bundle = load_bundle(
-            args.artifact,
-            include_resources=args.include_resources,
-            roles=tuple(args.resource_roles) if args.resource_roles else None,
-            max_file_words=args.max_file_words,
-            max_total_words=args.max_resource_words,
-        )
-    except (FileNotFoundError, ValueError) as exc:
-        raise SystemExit(f"cannot load --artifact {args.artifact}: {exc}") from None
+    artifact_bundle = _bundle_from_args(args)
     kind, name, description, frontmatter = (
         artifact_bundle.kind, artifact_bundle.name, artifact_bundle.description,
         artifact_bundle.frontmatter,
     )
     body = artifact_bundle.text
-    if not args.include_resources and artifact_bundle.unmeasured_words():
-        # Measurable words only: a skill's own evals are not measured in either mode, so
-        # counting them here would promise a rerun that reads nothing more.
-        print(f"NOTE: {artifact_bundle.measurable_outside_share():.0%} of this artifact's "
-              f"words are in {len(artifact_bundle.excluded_content())} bundled files that "
-              "will not be measured; pass --include-resources to measure them",
-              file=sys.stderr)
 
     extractor, answerer, judge = _clients(args)
     config = AnalyzeConfig(
@@ -88,7 +71,7 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
         result = analyze(
             body, config,
             extractor=extractor, answerer=answerer, judge=judge,
-            ref_digest=_digest(args.artifact),
+            ref_digest=_digest(args.artifact, bundle=artifact_bundle),
             artifact_bundle=artifact_bundle,
         )
     except (SelfJudgeError, ExtractionError) as exc:
@@ -113,7 +96,6 @@ def cmd_novelty_analyze(args: argparse.Namespace) -> None:
 
 def cmd_novelty_atoms(args: argparse.Namespace) -> None:
     """Extract atoms and spans only — the expensive stage, cached for reuse."""
-    from agent_benchmarks.novelty.analyze import load_artifact_text
     from agent_benchmarks.novelty.atoms import (
         ExtractionError,
         extract_atoms,
@@ -122,7 +104,8 @@ def cmd_novelty_atoms(args: argparse.Namespace) -> None:
     )
     from agent_benchmarks.novelty.spans import segment, span_summary
 
-    _kind, _name, _description, _frontmatter, body = load_artifact_text(args.artifact)
+    artifact_bundle = _bundle_from_args(args)
+    body = artifact_bundle.text
     extractor = _client(args.extract_model or args.model, args.provider, "extractor", args)
     spans = segment(body)
     cap = None if args.all_atoms else args.max_atoms
@@ -133,22 +116,26 @@ def cmd_novelty_atoms(args: argparse.Namespace) -> None:
     if not args.no_verify:
         verify_atoms(atoms, spans, client=extractor)
     out = Path(args.out) if args.out else _default_dir(args.artifact) / "atoms.json"
-    save_atoms(atoms, spans, out, extractor=extractor.model, cap=cap)
+    save_atoms(atoms, spans, out, extractor=extractor.model, cap=cap,
+               bundle=dict(artifact_bundle.summary(),
+                           artifact_name=artifact_bundle.name,
+                           artifact_ref=args.artifact,
+                           measured_digest=artifact_bundle.measured_digest()))
     print(f"OK Saved {len(atoms)} atoms over {len(spans)} spans: {out}")
     print(json.dumps(span_summary(spans, atoms), indent=2))
 
 
 def cmd_novelty_probe(args: argparse.Namespace) -> None:
     """Run the paired probes against a saved atom set and print the 2×2."""
-    from agent_benchmarks.novelty.analyze import load_artifact_text
     from agent_benchmarks.novelty.atoms import load_atoms
     from agent_benchmarks.novelty.measure import SelfJudgeError, run_measurement
     from agent_benchmarks.novelty.probes import build_probe_set
 
     atoms, _spans = load_atoms(args.atoms)
-    _kind, _name, _description, _frontmatter, body = load_artifact_text(args.artifact)
+    saved = json.loads(Path(args.atoms).read_text(encoding="utf-8"))
+    body, probed = _saved_atoms_bundle(args, saved)
     extractor, answerer, judge = _clients(args)
-    if json.loads(Path(args.atoms).read_text(encoding="utf-8")).get("extractor") == answerer.model:
+    if saved.get("extractor") == answerer.model:
         print(f"WARNING: {answerer.model} extracted these atoms, so the model under measurement "
               "wrote its own answer key; extract with a different --extract-model",
               file=sys.stderr)
@@ -179,6 +166,17 @@ def cmd_novelty_probe(args: argparse.Namespace) -> None:
         "artifact": args.artifact,
         "model": answerer.model,
         "judge_model": judge.model,
+        # Which files this cell measured, so a probe result is as readable as an `analyze`
+        # one -- the coverage check needs this block. Both it and the digest describe the
+        # text this run injected, not the text the atoms were extracted from: the
+        # re-measure step probes an edited SKILL.md with the original atoms, and a digest
+        # copied from extraction would make the two runs look like the same text.
+        "bundle": {} if probed is None else {
+            k: v for k, v in dict(probed.summary(), artifact_name=probed.name,
+                                  measured_digest=probed.measured_digest()).items()
+            if k != "files"},
+        "ref_digest": None if probed is None else probed.measured_digest(),
+        "atoms_ref_digest": (saved.get("bundle") or {}).get("measured_digest"),
         "probes": probe_set.as_dict(),
         "paired": {scoring: result.paired(scoring) for scoring in ("lenient", "strict")},
         "arms": {scoring: result.arm_means(scoring) for scoring in ("lenient", "strict")},
@@ -209,6 +207,7 @@ def cmd_novelty_shorten(args: argparse.Namespace) -> None:
 
     atoms, spans = load_atoms(args.atoms)
     _kind, _name, _description, frontmatter, _body = load_artifact_text(args.artifact)
+    spans, atoms = _entry_point_only(args.atoms, spans, atoms)
     client = _client(args.extract_model or args.model, args.provider, "oracle", args) \
         if not args.lexical_only else None
     oracle = RetentionOracle(
@@ -275,6 +274,193 @@ def cmd_novelty_view(args: argparse.Namespace) -> None:
     )
 
 
+def _bundle_from_args(args: argparse.Namespace):
+    """Resolve `--artifact` to a bundle, with the note that keeps a cheap run honest."""
+    from agent_benchmarks.novelty.bundle import load_bundle
+
+    try:
+        artifact_bundle = load_bundle(
+            args.artifact,
+            include_resources=args.include_resources,
+            roles=tuple(args.resource_roles) if args.resource_roles else None,
+            max_file_words=args.max_file_words,
+            max_total_words=args.max_resource_words,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise SystemExit(f"cannot load --artifact {args.artifact}: {exc}") from None
+    skipped = artifact_bundle.excluded_content()
+    if args.include_resources and skipped:
+        print(f"NOTE: {len(skipped)} bundled files will not be measured "
+              f"({artifact_bundle.unmeasured_words()} words over the budgets or filtered "
+              "by role); see bundle.excluded in the result for each reason",
+              file=sys.stderr)
+    elif not args.include_resources and artifact_bundle.unmeasured_words():
+        # Measurable words only: a skill's own evals are not measured in either mode, so
+        # counting them here would promise a rerun that reads nothing more.
+        print(f"NOTE: {artifact_bundle.measurable_outside_share():.0%} of this artifact's "
+              f"words are in {len(skipped)} bundled files that "
+              "will not be measured; pass --include-resources to measure them",
+              file=sys.stderr)
+    return artifact_bundle
+
+
+def _artifact_text_for_saved_atoms(args: argparse.Namespace, saved: dict) -> str:
+    """The text :func:`_saved_atoms_bundle` rebuilds, for callers that need only that."""
+    return _saved_atoms_bundle(args, saved)[0]
+
+
+def _saved_atoms_bundle(args: argparse.Namespace, saved: dict):
+    """Rebuild the exact text the saved atoms were extracted from, and the bundle it is.
+
+    Returns ``(text, bundle)``; the bundle is None for an atoms.json that predates bundle
+    provenance.
+
+    `novelty probe` injects this as the artifact arm. If the atoms came from a bundle and
+    the probe injected only `SKILL.md`, every atom extracted from a reference file would
+    score `still_missing` because the context never contained it -- a measurement error
+    that looks like a result. So the bundle mode is taken from `atoms.json`, not from
+    flags, and a mismatch is refused rather than reconciled.
+    """
+    from agent_benchmarks.novelty.bundle import load_bundle
+
+    recorded = saved.get("bundle") or {}
+    if not recorded:
+        print("WARNING: this atoms.json predates bundle provenance; assuming the entry point "
+              "only. Re-run `novelty atoms` if the atoms came from bundled files.",
+              file=sys.stderr)
+        from agent_benchmarks.novelty.analyze import load_artifact_text
+        return load_artifact_text(args.artifact)[4], None
+
+    recorded_files = recorded.get("files", [])
+    if not recorded_files or any("role" not in row or "path" not in row
+                                 for row in recorded_files):
+        raise SystemExit(
+            f"{args.atoms} records a bundle without usable file rows; re-run "
+            "`novelty atoms` rather than probing against an answer key whose provenance "
+            "cannot be checked"
+        )
+    # The roles the extraction asked for, not the roles of the files it happened to select:
+    # a role whose files were all over budget selects nothing, and a rebuild narrowed to the
+    # selected roles would call those files policy and lose the gap.
+    requested = recorded.get("resource_roles")
+    if requested is None:       # an atoms.json from before the roles were recorded
+        requested = sorted({row["role"] for row in recorded_files[1:]}) or None
+    # Prefer the budgets the extraction actually used. Older files do not record them, and
+    # for those the selection is reproduced from its result: capping at the largest
+    # selected file and at the selected total makes the same greedy pick.
+    if recorded.get("max_file_words") and recorded.get("max_total_words"):
+        budgets = {"max_file_words": int(recorded["max_file_words"]),
+                   "max_total_words": int(recorded["max_total_words"])}
+    elif recorded.get("include_resources") and all("words" in r for r in recorded_files[1:]):
+        selected = [int(row["words"]) for row in recorded_files[1:]]
+        budgets = {"max_file_words": max(selected, default=0),
+                   "max_total_words": sum(selected)}
+    else:
+        budgets = {}
+    artifact_bundle = load_bundle(
+        args.artifact,
+        include_resources=bool(recorded.get("include_resources")),
+        roles=tuple(requested) if requested is not None
+        and recorded.get("include_resources") else None,
+        **budgets,
+    )
+    # An answer key is for one artifact. Without this, skill A's atoms were accepted
+    # against skill B whenever the relative paths lined up -- unconditionally so for
+    # entry-point-only recordings, where both sides are just ["SKILL.md"].
+    recorded_name = recorded.get("artifact_name")
+    if recorded_name and recorded_name != artifact_bundle.name:
+        raise SystemExit(
+            f"these atoms were extracted from `{recorded_name}` and --artifact is "
+            f"`{artifact_bundle.name}`: an answer key belongs to one artifact. Extract "
+            "atoms for this one instead."
+        )
+    measured = [row["path"] for row in recorded_files]
+    rebuilt = [item.path for item in artifact_bundle.files]
+    # A bundled file with the same path but different bytes was edited: still a stale
+    # answer key, and a word count cannot see it (`64` to `128` keeps the count). The
+    # digest does; the word count stays as the fallback for an atoms.json written before
+    # digests were recorded. The entry point is exempt on purpose -- re-measuring a
+    # shortened SKILL.md against the original atoms is the authoring path's last step.
+    edited = [
+        row["path"]
+        for row, item in zip(recorded_files[1:], artifact_bundle.files[1:], strict=False)
+        if (row.get("sha256") and item.sha256 and row["sha256"] != item.sha256)
+        or (not row.get("sha256") and "words" in row and row["words"] != item.words)
+    ]
+    # The rebuild is filtered to the roles the extraction measured, so a file added since
+    # in a role that had no file then (a top-level notes.md, a first scripts/run.sh) is
+    # filtered out of `rebuilt` and would pass unnoticed. Compare every path the walk saw
+    # against every path the extraction saw instead. Images and other non-text files are
+    # never content, so a new one is not a change to the answer key.
+    seen = set(measured) | {row.get("path") for row in recorded.get("excluded") or []}
+    # A new file in a role nobody asked for (an `evals/` case, by default) cannot change the
+    # measured text, and re-extracting would measure it no differently.
+    asked = recorded.get("resource_roles")
+    added = sorted(
+        {row["path"] for row in artifact_bundle.excluded
+         if row["path"] not in seen and row["reason"] != "not text"
+         and not (asked is not None and row.get("kind") == "policy"
+                  and row["role"] not in asked)}
+        | (set(rebuilt) - set(measured))
+    ) if recorded.get("include_resources") and "excluded" in recorded else []
+    if rebuilt != measured or edited or added:
+        raise SystemExit(
+            "the artifact's files changed since these atoms were extracted "
+            f"(atoms.json: {measured}; now: {rebuilt}; edited: {edited}; "
+            f"added: {added}). Re-run "
+            "`novelty atoms`; probing a "
+            "different file set against this answer key would mis-score every moved atom."
+        )
+    # The entry point is allowed to differ -- that is the re-measure step -- but it is not
+    # allowed to differ silently: atoms extracted from text that is gone will read as
+    # `still_missing`, which is a result about the edit and must be recognisable as one.
+    entry_recorded = recorded_files[0].get("sha256")
+    if entry_recorded and entry_recorded != artifact_bundle.files[0].sha256:
+        print(f"NOTE: {artifact_bundle.files[0].path} has changed since these atoms were "
+              "extracted. That is the re-measure step, so the run proceeds; atoms whose "
+              "text was removed will score `still_missing` because of the edit, not because "
+              "of the model.", file=sys.stderr)
+    if recorded.get("include_resources"):
+        print(f"Measuring the bundle recorded in {args.atoms}: {len(measured)} files, "
+              f"{recorded.get('resource_words_measured', 0)} bundled words", file=sys.stderr)
+    return artifact_bundle.text, artifact_bundle
+
+
+def _entry_point_only(atoms_path: str, spans: list, atoms: list) -> tuple[list, list]:
+    """Restrict shortening to the entry point when the atoms came from a bundle.
+
+    Shortening rewrites one file. A candidate built over bundle spans would propose
+    dropping sentences that live in `references/`, and `--out` would render them into the
+    shortened `SKILL.md`. So bundle spans are dropped here, loudly: shortening a bundle is
+    a different question than shortening a file, and it is not the one this answers.
+    """
+    saved = json.loads(Path(atoms_path).read_text(encoding="utf-8"))
+    recorded = saved.get("bundle") or {}
+    if not recorded.get("include_resources"):
+        return spans, atoms
+    if not recorded.get("files"):
+        raise SystemExit(
+            f"{atoms_path} records a bundle run without file rows; re-run `novelty atoms`"
+        )
+    entry = recorded["files"][0]
+    if "end" not in entry:
+        raise SystemExit(f"{atoms_path} records no span range for {entry.get('path')}")
+    kept = [span for span in spans if span.start < entry["end"]]
+    kept_ids = {span.id for span in kept}
+    # Every cited span must be inside the entry point. An atom with evidence in two files
+    # cannot be scored against a candidate that can hold only half of it.
+    kept_atoms = [atom for atom in atoms
+                  if atom.span_ids and all(sid in kept_ids for sid in atom.span_ids)]
+    print(
+        f"NOTE these atoms were extracted from a {recorded['n_files']}-file bundle. Shortening "
+        f"rewrites one file, so only the {len(kept)} spans of {entry['path']} and the "
+        f"{len(kept_atoms)} atoms they carry are scored ({len(spans) - len(kept)} bundle spans "
+        "and their atoms dropped); knowledge scores here say nothing about the bundled files.",
+        file=sys.stderr,
+    )
+    return kept, kept_atoms
+
+
 def register(sub, positive_int) -> None:
     """Add the `novelty` subcommand group."""
     novelty_p = sub.add_parser(
@@ -303,28 +489,7 @@ def register(sub, positive_int) -> None:
                                 "(0.19 of atoms in the study were not recoverable from it)")
     analyze_p.add_argument("--no-verify", action="store_true", dest="no_verify",
                            help="Skip the per-atom faithfulness check")
-    analyze_p.add_argument("--include-resources", action="store_true",
-                           dest="include_resources",
-                           help="Measure the whole skill bundle, not just SKILL.md. In the "
-                                "33-skill study corpus 0.72 of all words live in bundled "
-                                "references/scripts/patterns (worst skill: 0.99), so an "
-                                "entry-point-only run says little about a "
-                                "progressive-disclosure skill. Costs proportionally more: "
-                                "the bill is ~4 LLM calls per paired probe")
-    analyze_p.add_argument("--resource-roles", nargs="+", default=None,
-                           dest="resource_roles",
-                           choices=["reference", "pattern", "eval", "script", "template",
-                                    "trigger", "data", "top", "other"],
-                           help="Restrict bundled files to these roles (default: every "
-                                "role except eval)")
-    analyze_p.add_argument("--max-file-words", type=positive_int, default=4000,
-                           dest="max_file_words",
-                           help="Skip a bundled file larger than this instead of truncating "
-                                "it; a cut reference would be attributed as if complete")
-    analyze_p.add_argument("--max-resource-words", type=positive_int, default=20000,
-                           dest="max_resource_words",
-                           help="Total budget across bundled files, taken in role order "
-                                "(reference, pattern, eval, rest) and recorded per exclusion")
+    _add_bundle_args(analyze_p, positive_int)
     analyze_p.set_defaults(func=cmd_novelty_analyze)
 
     atoms_p = novelty_sub.add_parser("atoms", help="Extract knowledge atoms and spans only")
@@ -336,6 +501,7 @@ def register(sub, positive_int) -> None:
     atoms_p.add_argument("--max-tokens", type=positive_int, default=None, dest="max_tokens")
     atoms_p.add_argument("--no-verify", action="store_true", dest="no_verify")
     atoms_p.add_argument("--out", default=None)
+    _add_bundle_args(atoms_p, positive_int)
     atoms_p.set_defaults(func=cmd_novelty_atoms)
 
     probe_p = novelty_sub.add_parser("probe", help="Run paired probes against a saved atom set")
@@ -368,6 +534,35 @@ def register(sub, positive_int) -> None:
     view_p.add_argument("--format", default="html", choices=["html", "md"])
     view_p.add_argument("--out", default=None)
     view_p.set_defaults(func=cmd_novelty_view)
+
+
+def _add_bundle_args(parser: argparse.ArgumentParser, positive_int) -> None:
+    """Flags that decide *which files of the artifact* are measured.
+
+    On `atoms` as well as `analyze`: the cheap path is `novelty atoms` once and
+    `novelty probe --atoms` per model, so the bundle decision has to be makeable at
+    extraction time or the reuse path can only ever see the entry point.
+    """
+    parser.add_argument("--include-resources", action="store_true", dest="include_resources",
+                        help="Measure the whole skill bundle, not just SKILL.md. In the "
+                             "33-skill study corpus 0.72 of all words live in bundled "
+                             "references/scripts/patterns (worst skill: 0.99), so an "
+                             "entry-point-only run says little about a progressive-disclosure "
+                             "skill. Costs proportionally more: the bill is ~4 LLM calls per "
+                             "paired probe")
+    parser.add_argument("--resource-roles", nargs="+", default=None, dest="resource_roles",
+                        choices=["reference", "pattern", "eval", "script", "template",
+                                 "trigger", "data", "top", "other"],
+                        help="Restrict bundled files to these roles (default: every "
+                             "role except eval)")
+    parser.add_argument("--max-file-words", type=positive_int, default=4000,
+                        dest="max_file_words",
+                        help="Skip a bundled file larger than this instead of truncating it; a "
+                             "cut reference would be attributed as if complete")
+    parser.add_argument("--max-resource-words", type=positive_int, default=20000,
+                        dest="max_resource_words",
+                        help="Total budget across bundled files, taken in role order "
+                             "(reference, pattern, eval, rest) and recorded per exclusion")
 
 
 def _add_common(parser: argparse.ArgumentParser, positive_int) -> None:
@@ -455,8 +650,17 @@ def _arms(spec: str) -> list[str]:
     return arms
 
 
-def _digest(ref: str) -> str | None:
-    """The subject scorecard's ``ref_digest``, so one field name means one hash."""
+def _digest(ref: str, *, bundle=None) -> str | None:
+    """Digest of what a run measured, so one field name means one hash.
+
+    With a bundle in hand this is the digest of exactly the measured files, which is the
+    only form that can separate an entry-point run from a bundle run of the same skill
+    (hashing the directory gives both the same hash) and that never covers sibling files a
+    file-ref run never read. Without one it falls back to the subject scorecard's
+    path-based digest, so a `text:` artifact and the older call sites keep working.
+    """
+    if bundle is not None:
+        return bundle.measured_digest()
     from agent_benchmarks.subjects.scorecard import _digest_ref
 
     path = Path(ref.removeprefix("skill:").removeprefix("text:"))
