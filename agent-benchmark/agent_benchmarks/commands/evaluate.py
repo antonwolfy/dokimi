@@ -273,11 +273,59 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
         print(f"Error: unknown degradation(s): {unknown}; known: {sorted(DEGRADATIONS)}", file=sys.stderr)
         sys.exit(2)
 
-    judge = Judge(model=args.judge_model, provider=args.judge_provider)
-    # Built once and passed to both modes, so a new scorer kind (e.g. a typed
-    # baseline arm) is a change to these two lines, not to each run path.
-    scorer = judge_scorer(judge)
-    label = f"{args.judge_provider}/{args.judge_model}"
+    # The default arm is the shipped judge. A typed arm is a local baseline that
+    # reads the answer but generates nothing — a second reference line next to
+    # the length-only one, not a judge replacement.
+    # Built once and passed to both modes, so a new scorer kind is a change to
+    # this block, not to each run path.
+    typed = None
+    if args.scorer == "judge":
+        judge = Judge(model=args.judge_model, provider=args.judge_provider)
+        scorer = judge_scorer(judge)
+        label = f"{args.judge_provider}/{args.judge_model}"
+    elif args.scorer != "typed" and not args.scorer.startswith("typed:"):
+        print(f"Error: unknown --scorer {args.scorer!r}; use 'judge' or 'typed:<backend>'", file=sys.stderr)
+        sys.exit(2)
+    elif args.mode == "pairwise":
+        # _score_pairs gives pair_scorer precedence, so the pairwise judge would grade
+        # the pairs and the report would carry the typed arm's label.
+        print("Error: a typed scorer reads one answer at a time; it has no --mode pairwise",
+              file=sys.stderr)
+        sys.exit(2)
+    else:
+        from agent_benchmarks.eval.degrade import build_pairs
+        from agent_benchmarks.eval.typed_scorer import parse_spec, typed_scorer
+
+        spec = args.scorer.partition(":")[2] or "laya"
+        try:
+            parse_spec(spec)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(2)
+        # Loading the model takes longer than building every pair, so find out
+        # first whether there is anything to score.
+        noop: dict = {}
+        if not build_pairs(answers, n_bases=args.max_bases if args.sequential else args.bases,
+                           seed=args.seed,
+                           variants=variants, library=library, noop=noop):
+            why = (f"every degradation left the answer unchanged (no-op pairs: {noop})"
+                   if noop else "too few answers, or all too short")
+            print(f"Error: the answers file yields no usable degradation pairs ({why})",
+                  file=sys.stderr)
+            sys.exit(2)
+        try:
+            typed = typed_scorer(
+                spec,
+                max_len=args.typed_max_len,
+                threads=args.typed_threads,
+            )
+        except (ImportError, ValueError, OSError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(2)
+        scorer = typed
+        # The budget is part of what was measured: one checkpoint at 512 and at
+        # 2048 tokens is two arms.
+        label = typed.name + (f" max_len={typed.effective_max_len}" if typed.effective_max_len else "")
     pair_scorer = None
     if args.mode == "pairwise":
         from agent_benchmarks.commands.judge_reliability import pairwise_judge
@@ -296,7 +344,10 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
 
     common = dict(
         judge=label, seed=args.seed, variants=variants, library=library,
-        min_accuracy=args.min_accuracy, progress=progress, concurrency=args.concurrency,
+        min_accuracy=args.min_accuracy, progress=progress,
+        # One model is shared, and usage["seconds"] is summed over calls: on a pool it
+        # overstates the cost per score by the pool size.
+        concurrency=1 if typed is not None else args.concurrency,
         pair_scorer=pair_scorer,
     )
     if args.sequential:
@@ -314,10 +365,14 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
         # Which answers the gate was measured on: a judge that passes on one
         # answer model's output is not thereby validated on another's.
         result["summary"]["answers_model"] = data.get("model") if isinstance(data, dict) else None
+        if typed is not None:
+            result["summary"]["typed_arm"] = typed.report_fields()
         out.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     print()
     print(report.format_summary())
+    if typed is not None:
+        print(f"\n  arm cost: {typed.usage_summary()}")
     if args.output:
         print(f"\n✅ Validity report saved to {out}")
 
@@ -343,6 +398,17 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
             )
         if args.strict:
             sys.exit(1)
+
+
+def _non_negative_int(value: str) -> int:
+    """argparse type: an int >= 0 (0 means "the checkpoint's own default")."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from None
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"must be >= 0, got {n}")
+    return n
 
 
 def register(sub, positive_int) -> None:
@@ -418,6 +484,16 @@ def register(sub, positive_int) -> None:
                             help=f"Parallel judge calls (default: {DEFAULT_CONCURRENCY})")
     validity_p.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="LLM model for judging")
     validity_p.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=JUDGE_PROVIDERS)
+    validity_p.add_argument("--scorer", default="judge",
+                            help="Arm to grade: 'judge' (default, the shipped LLM judge) or "
+                                 "'typed:<backend>[:<repo>]' for a local typed-decision "
+                                 "baseline arm — needs the [typed-scorer] extra")
+    validity_p.add_argument("--typed-max-len", type=_non_negative_int, default=0, dest="typed_max_len",
+                            help="Token budget for a typed arm's state (default: the "
+                                 "checkpoint's own, 512 for laya English — answers are "
+                                 "longer than that and get truncated)")
+    validity_p.add_argument("--typed-threads", type=positive_int, default=None, dest="typed_threads",
+                            help="CPU threads for a typed arm (default: torch's own)")
     validity_p.add_argument("--output", default=None, help="Output JSON report path")
     validity_p.set_defaults(func=cmd_eval_judge_validity)
 
