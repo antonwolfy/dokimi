@@ -190,7 +190,10 @@ jobs:
       # pip-audit skips a pin whose marker is false on this 3.11 runner (the 3.10
       # pins, for one), so markers are stripped and a name pinned twice goes to
       # a second file.
+      # !cancelled(): a bandit finding must not hide an advisory. Without it a
+      # failing bandit step skips this one and the job reports one problem of two.
       - name: pip-audit
+        if: ${{ !cancelled() }}
         run: |
           sed 's/ *;.*//' requirements.lock.txt \
             | awk -F'==' '/^[A-Za-z0-9]/ { print > (ENVIRON["RUNNER_TEMP"] "/pins" seen[$1]++ ".txt") }'

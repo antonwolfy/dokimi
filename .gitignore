@@ -5,6 +5,10 @@ __pycache__/
 .coverage
 coverage.xml
 coverage.json
+# Written by the CI steps (and `make ci-local`)
+/agent-benchmark/diff-cover.json
+/agent-benchmark/diff-cover.md
+/agent-benchmark/compat.txt
 
 # Local environments and credentials
 .venv/

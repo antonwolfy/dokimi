@@ -22,6 +22,7 @@ python cli.py --help                     # single CLI entry point
 
 CI also runs `ruff check .`, `mypy`, and `python -m agent_benchmarks.schema_check`.
 See `agent-benchmark/CONTRIBUTING.md` for the full set of checks to run before a PR.
+Before pushing: `make dev` once (repo root, builds CI's `.venv`), then `make ci-local` (every PR CI step).
 
 - The Python package is `agent_benchmarks/` (note: plural), organized by
   pipeline stage (`metrics/`, `questions/`, `eval/`, `gate/`, `treatments/`, …).

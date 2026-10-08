@@ -1,0 +1,274 @@
+#!/usr/bin/env python
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Run the pull-request CI locally, from the workflow files themselves.
+
+`make ci-local` (top-level Makefile) runs this. It reads every workflow under
+.github/workflows/ that triggers on pull_request, in file order, and executes
+each job's `run:` steps with bash, from the step's working directory, with the
+`${{ ... }}` expressions those steps use filled in as a PR against BASE_REF
+would see them. Reading the workflows instead of restating them is the point:
+a step added to CI is run here without anyone editing this file.
+
+Differences from CI, all printed as notices:
+
+- `uses:` steps (checkout, setup-python, upload-artifact) are skipped, and so
+  are `pip install` steps: the tools come from the venv `make dev` builds,
+  which installs exactly what those steps install (`tools` subcommand below).
+  Jobs that install the package itself (package-smoke) run in a throwaway venv
+  on a copy of the tracked tree instead, so the dev venv stays as CI's.
+- Every step runs even when an earlier one fails, so one failure does not hide
+  the next (CI stops a job at its first failing step).
+- A matrix runs one leg: the dev venv's Python.
+- Steps that need the network are skipped when PyPI is unreachable or with
+  --offline; the docker job runs only with --with-docker.
+- Semgrep Secrets is an org-level check with no workflow file here; it runs as
+  `semgrep scan --config p/secrets` when semgrep is on PATH, else is skipped.
+
+Usage:
+  python scripts/ci_local.py tools                # pip specs `make dev` installs
+  python scripts/ci_local.py run [--jobs a,b] [--offline] [--with-docker]
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+
+import yaml
+
+REPO = Path(__file__).resolve().parents[2]
+WORKFLOWS = REPO / ".github" / "workflows"
+
+# Jobs or steps that cannot run offline. Keyed by job id, or (job id, step name).
+NEEDS_NETWORK = {"package-smoke", ("security", "pip-audit")}
+NEEDS_DOCKER = {"external-catalog-smoke"}
+# Jobs that `pip install .`: run on a copy of the tree in a throwaway venv.
+ISOLATED = {"package-smoke"}
+PIP_INSTALL = re.compile(r"^\s*(python -m )?pip install\b")
+
+
+def load_workflows() -> list[tuple[str, dict]]:
+    """The pull_request workflows, in file-name order."""
+    out = []
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        wf = yaml.safe_load(path.read_text(encoding="utf-8"))
+        on = wf.get("on", wf.get(True))  # YAML 1.1 reads a bare `on` as True
+        triggers = on if isinstance(on, (list, dict)) else [on]
+        if "pull_request" in triggers:
+            out.append((path.name, wf))
+    return out
+
+
+def tool_specs() -> list[str]:
+    """pip arguments of every `pip install` step outside the isolated jobs."""
+    specs: list[str] = []
+    for _, wf in load_workflows():
+        default_wd = wf.get("defaults", {}).get("run", {}).get("working-directory", ".")
+        for job_id, job in wf["jobs"].items():
+            if job_id in ISOLATED or "schedule" in str(job.get("if", "")):
+                continue
+            wd = job.get("defaults", {}).get("run", {}).get("working-directory", default_wd)
+            for step in job.get("steps", []):
+                for line in str(step.get("run", "")).splitlines():
+                    if not PIP_INSTALL.match(line):
+                        continue
+                    args = shlex.split(PIP_INSTALL.sub("", line))
+                    for i, a in enumerate(args):
+                        if i and args[i - 1] in ("-r", "--requirement"):
+                            a = str(REPO / wd / a)
+                        if a not in specs:
+                            specs.append(a)
+    return specs
+
+
+class Context:
+    def __init__(self, base: str, py: str, tmp: Path) -> None:
+        self.tmp = tmp
+        self.values = {
+            "github.event.pull_request.base.ref": base,
+            "github.event_name": "pull_request",
+            "matrix.python-version": py,
+            "runner.temp": str(tmp),
+            "github.workspace": str(REPO),
+            "needs.changes.outputs.code": "true",
+            "contains(github.event.pull_request.labels.*.name, 'schema-break-ok')": "false",
+        }
+
+    def expand(self, text: str) -> str:
+        def sub(m: re.Match) -> str:
+            key = m.group(1).strip()
+            if key not in self.values:
+                raise KeyError(key)
+            return self.values[key]
+
+        return re.sub(r"\$\{\{(.*?)\}\}", sub, text)
+
+    def condition(self, expr: str) -> bool:
+        expr = expr.strip()
+        if expr.startswith("${{"):
+            expr = expr[3:-2]
+        for fn in ("always()", "success()", "!cancelled()"):
+            expr = expr.replace(fn, "True")
+        for key, val in sorted(self.values.items(), key=lambda kv: -len(kv[0])):
+            expr = expr.replace(key, repr(val))
+        expr = expr.replace("&&", " and ").replace("||", " or ")
+        expr = re.sub(r"!(?!=)", " not ", expr)
+        try:
+            return bool(eval(expr, {"__builtins__": {}}, {"True": True}))  # nosec B307
+        except (NameError, SyntaxError, TypeError):
+            print(f"NOTICE: cannot evaluate `if: {expr.strip()}`; running the step")
+            return True
+
+
+def network_ok() -> bool:
+    try:
+        urllib.request.urlopen("https://pypi.org/simple/pip/", timeout=8)  # nosec B310
+        return True
+    except Exception:
+        return False
+
+
+def make_isolated_env(tmp: Path, py: str) -> tuple[Path, dict]:
+    """A fresh venv and a copy of the tracked tree, for jobs that `pip install .`."""
+    src = tmp / "src"
+    files = subprocess.run(
+        ["git", "ls-files", "-co", "--exclude-standard", "-z"],
+        cwd=REPO, check=True, capture_output=True,
+    ).stdout.decode().split("\0")
+    for f in filter(None, files):
+        if (REPO / f).is_file():
+            (src / f).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO / f, src / f)
+    venv = tmp / "venv"
+    subprocess.run(["uv", "venv", "-q", "--seed", "--python", py, str(venv)], check=True)
+    env = dict(os.environ, VIRTUAL_ENV=str(venv))
+    env["PATH"] = f"{venv / 'bin'}{os.pathsep}{env['PATH']}"
+    return src, env
+
+
+def run(args: argparse.Namespace) -> int:
+    py = f"{sys.version_info.major}.{sys.version_info.minor}"
+    want = set(args.jobs.split(",")) if args.jobs else None
+    online = not args.offline and network_ok()
+    if not args.offline and not online:
+        print("NOTICE: PyPI unreachable -- network steps will be skipped")
+    results: list[tuple[str, str, float]] = []
+
+    def record(name: str, status: str, secs: float = 0.0) -> None:
+        results.append((name, status, secs))
+        if status.startswith("skip"):
+            print(f"\n--- {name}: {status}")
+
+    with tempfile.TemporaryDirectory(prefix="ci-local-") as t:
+        tmp = Path(t)
+        ctx = Context(args.base, py, tmp)
+        summary = tmp / "step-summary.md"
+        base_env = dict(os.environ, RUNNER_TEMP=str(tmp), GITHUB_STEP_SUMMARY=str(summary),
+                        GITHUB_OUTPUT=str(tmp / "github-output"), GITHUB_WORKSPACE=str(REPO),
+                        CI="true")
+        for wf_name, wf in load_workflows():
+            default_wd = wf.get("defaults", {}).get("run", {}).get("working-directory", ".")
+            for job_id, job in wf["jobs"].items():
+                label = f"{wf_name}:{job_id}"
+                if want is not None and job_id not in want:
+                    continue
+                if "if" in job and not ctx.condition(str(job["if"])):
+                    record(label, "skip (job condition false on a PR)")
+                    continue
+                if job_id in NEEDS_DOCKER and not args.with_docker:
+                    record(label, "skip (needs docker + network; pass --with-docker)")
+                    continue
+                if job_id in NEEDS_NETWORK and not online:
+                    record(label, "skip (needs network)")
+                    continue
+                wd = job.get("defaults", {}).get("run", {}).get("working-directory", default_wd)
+                root, env = REPO, base_env
+                if job_id in ISOLATED:
+                    root, iso_env = make_isolated_env(tmp / job_id, py)
+                    env = {**iso_env, **{k: base_env[k] for k in ("RUNNER_TEMP", "CI")}}
+                for i, step in enumerate(job.get("steps", [])):
+                    if "run" not in step:
+                        continue
+                    name = f"{label} / {step.get('name', step.get('id', f'step {i}'))}"
+                    script = str(step["run"])
+                    if job_id not in ISOLATED:  # provided by `make dev`
+                        lines = [x for x in script.splitlines() if not PIP_INSTALL.match(x)]
+                        if not any(x.strip() for x in lines):
+                            continue
+                        script = "\n".join(lines)
+                    if (job_id, step.get("name")) in NEEDS_NETWORK and not online:
+                        record(name, "skip (needs network)")
+                        continue
+                    if "if" in step and not ctx.condition(str(step["if"])):
+                        record(name, "skip (step condition false)")
+                        continue
+                    try:
+                        script = ctx.expand(script)
+                        step_env = {k: ctx.expand(str(v)) for src in (wf, job, step)
+                                    for k, v in (src.get("env") or {}).items()}
+                    except KeyError as e:
+                        record(name, f"skip (unknown expression {e})")
+                        continue
+                    cwd = root / step.get("working-directory", wd)
+                    print(f"\n=== {name}  (cwd {cwd.relative_to(root)})", flush=True)
+                    t0 = time.monotonic()
+                    rc = subprocess.run(
+                        ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script],
+                        cwd=cwd, env={**env, **step_env},
+                    ).returncode
+                    record(name, "pass" if rc == 0 else f"FAIL (exit {rc})", time.monotonic() - t0)
+
+        if want is None or "semgrep" in want:
+            if shutil.which("semgrep") and online:
+                print("\n=== Semgrep Secrets (approximation: p/secrets)", flush=True)
+                t0 = time.monotonic()
+                rc = subprocess.run(["semgrep", "scan", "--config", "p/secrets", "--error",
+                                     "--metrics", "off", "--quiet"], cwd=REPO).returncode
+                record("semgrep secrets", "pass" if rc == 0 else f"FAIL (exit {rc})",
+                       time.monotonic() - t0)
+            else:
+                record("semgrep secrets (org-level check, not in workflows)",
+                       "skip (semgrep not on PATH or offline; runs on the PR)")
+
+    print("\n================ ci-local summary ================")
+    for name, status, secs in results:
+        print(f"{status:<52} {secs:6.0f}s  {name}")
+    failed = [r for r in results if r[1].startswith("FAIL")]
+    print(f"\n{len(failed)} failed, "
+          f"{sum(r[1] == 'pass' for r in results)} passed, "
+          f"{sum(r[1].startswith('skip') for r in results)} skipped")
+    print("Not covered locally: the other legs of the test matrix (3.10-3.13), "
+          "and CI's merge commit (this runs your working tree).")
+    return 1 if failed else 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("tools", help="print the pip specs the CI install steps use, one per line")
+    r = sub.add_parser("run", help="run the PR workflows' steps")
+    r.add_argument("--jobs", help="comma-separated job ids to run (default: all)")
+    r.add_argument("--base", default=os.environ.get("BASE_REF", "main"),
+                   help="base branch, compared as origin/<base> (default: main)")
+    r.add_argument("--offline", action="store_true", help="skip steps that need the network")
+    r.add_argument("--with-docker", action="store_true", help="also run the docker job")
+    args = ap.parse_args()
+    if args.cmd == "tools":
+        print("\n".join(tool_specs()))
+        return 0
+    return run(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -13,7 +13,14 @@
 #   make benchmark-compare                      # or: make benchmark-compare BASE=<path>
 BASE ?= baselines/baseline.json
 
-.PHONY: validate-benchmark-spec benchmark-run benchmark-compare
+.PHONY: validate-benchmark-spec benchmark-run benchmark-compare dev ci-local hooks
+
+# `make dev` venv: at the repo root, outside this directory, so `bandit -r .`
+# and the docs benchmark (both run from here) do not scan it. CI's Python.
+VENV ?= ../.venv
+PYTHON_VERSION ?= 3.11
+VENV_ABS := $(abspath $(VENV))
+VPY := $(VENV_ABS)/bin/python
 
 benchmark-run:
 	python cli.py run --root . --spec benchmarks/spec.v1.yaml --out-json baselines/current.json --out-md reports/current.md
@@ -42,3 +49,27 @@ validate-benchmark-spec:
 	fi
 	@rm -f benchmarks/.spec.v1.tmp.json
 	@echo "✅ Benchmark spec is valid"
+
+# A venv matching CI: the same Python, the same lock, and every tool the CI
+# install steps name (read from the workflows by scripts/ci_local.py, so a tool
+# added to CI is picked up here). The lock goes first: ci_local.py needs PyYAML.
+dev:
+	uv venv --python $(PYTHON_VERSION) --seed --allow-existing $(VENV_ABS)
+	uv pip install --python $(VPY) -r requirements.lock.txt
+	uv pip install --python $(VPY) $$($(VPY) scripts/ci_local.py tools)
+
+# Every step of the PR workflows, in file order, from each step's own cwd. It
+# runs every step even after a failure and ends with a pass/fail/skip table.
+ci-local:
+	@test -x $(VPY) || { echo "ERROR: $(VENV_ABS) not found -- run 'make dev' first"; exit 1; }
+	PATH="$(VENV_ABS)/bin:$$PATH" VIRTUAL_ENV="$(VENV_ABS)" \
+		$(VPY) scripts/ci_local.py run $(CI_LOCAL_ARGS)
+
+# pre-push: lint, mypy, schema/registry checks, workflow lint, bandit. No pytest
+# (minutes), no network. Skip once with `git push --no-verify`.
+hooks:
+	@hook="$$(git rev-parse --git-path hooks)/pre-push"; \
+	if [ -e "$$hook" ] && ! grep -q '^# ci-local pre-push hook' "$$hook"; then \
+		echo "ERROR: $$hook exists and is not ours; remove it first"; exit 1; fi; \
+	printf '#!/bin/sh\n# ci-local pre-push hook\nexec make -C "$$(git rev-parse --show-toplevel)/agent-benchmark" ci-local CI_LOCAL_ARGS="--offline --jobs lint,typecheck,schema,workflow-lint,security"\n' \
+		> "$$hook" && chmod +x "$$hook" && echo "installed $$hook"

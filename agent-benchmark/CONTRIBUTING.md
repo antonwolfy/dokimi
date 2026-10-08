@@ -27,7 +27,11 @@ Optional feature sets are available as extras: `ocr` (Docling ingestion),
 
 ## Before you open a PR
 
-Run the same checks CI runs:
+From the repo root, `make dev` builds `.venv` with CI's Python, the lock and
+every CI tool; `make ci-local` then runs every PR workflow step (read from
+`.github/workflows/`, so it cannot drift) and prints a pass/fail/skip table.
+`make hooks` adds a pre-push hook with the fast offline subset. By hand,
+the same checks CI runs are:
 
 ```bash
 ruff check .                              # lint
