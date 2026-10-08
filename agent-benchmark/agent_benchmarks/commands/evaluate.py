@@ -247,6 +247,18 @@ def cmd_eval_grounding(args: argparse.Namespace) -> None:
 
 def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
     """Measure whether the judge can order pairs whose ordering is known."""
+    if args.mode != "pairwise" and (args.escalate_model or args.escalate_ties):
+        # Silently ignoring it would report an absolute run as if escalation had been asked for.
+        print("Error: --escalate-model / --escalate-ties need --mode pairwise", file=sys.stderr)
+        sys.exit(2)
+    if args.sequential:
+        from agent_benchmarks.eval.judge_sequential import sprt_bounds
+
+        try:
+            sprt_bounds(args.min_accuracy)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(2)
     from agent_benchmarks.eval.degrade import DEGRADATIONS
     from agent_benchmarks.eval.judge import Judge
     from agent_benchmarks.eval.judge_validity import judge_scorer, run_validity
@@ -262,30 +274,47 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
         sys.exit(2)
 
     judge = Judge(model=args.judge_model, provider=args.judge_provider)
+    # Built once and passed to both modes, so a new scorer kind (e.g. a typed
+    # baseline arm) is a change to these two lines, not to each run path.
+    scorer = judge_scorer(judge)
     label = f"{args.judge_provider}/{args.judge_model}"
-    print(f"Judge validity check: {label}, {args.bases} base answers x {len(variants)} variants")
+    pair_scorer = None
+    if args.mode == "pairwise":
+        from agent_benchmarks.commands.judge_reliability import pairwise_judge
+
+        pairwise, label = pairwise_judge(args)
+        pair_scorer = pairwise.pair_scorer()
+    if args.sequential:
+        print(f"Judge validity check: {label}, sequential — up to {args.max_bases} base answers "
+              f"x {len(variants)} variants, stopping each when decided")
+    else:
+        print(f"Judge validity check: {label}, {args.bases} base answers x {len(variants)} variants")
 
     def progress(done: int, total: int) -> None:
         if done % 10 == 0 or done == total:
             print(f"  [{done}/{total}]", flush=True)
 
-    report = run_validity(
-        answers,
-        judge_scorer(judge),
-        judge=label,
-        n_bases=args.bases,
-        seed=args.seed,
-        variants=variants,
-        library=library,
-        min_accuracy=args.min_accuracy,
-        progress=progress,
+    common = dict(
+        judge=label, seed=args.seed, variants=variants, library=library,
+        min_accuracy=args.min_accuracy, progress=progress, concurrency=args.concurrency,
+        pair_scorer=pair_scorer,
     )
+    if args.sequential:
+        from agent_benchmarks.eval.judge_sequential import run_sequential
+
+        report = run_sequential(answers, scorer, max_bases=args.max_bases, **common)
+    else:
+        report = run_validity(answers, scorer, n_bases=args.bases, **common)
 
     # Written before anything is printed: a console that cannot encode the summary must not lose the run.
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        result = report.to_dict()
+        # Which answers the gate was measured on: a judge that passes on one
+        # answer model's output is not thereby validated on another's.
+        result["summary"]["answers_model"] = data.get("model") if isinstance(data, dict) else None
+        out.write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     print()
     print(report.format_summary())
@@ -299,9 +328,11 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
     # default so this stays usable as a check; --strict makes it a failure.
     if not summary["conclusive"]:
         if summary["inconclusive_variants"]:
+            # --sequential ignores --bases, so pointing at it would send the user nowhere.
+            more = "Raise --max-bases or add answers (see above)." if args.sequential else "Re-run with more --bases."
             print(
                 "\n⚠️  Pass is inconclusive at this sample size: "
-                f"{', '.join(summary['inconclusive_variants'])}. Re-run with more --bases.",
+                f"{', '.join(summary['inconclusive_variants'])}. {more}",
                 file=sys.stderr,
             )
         if summary["unmeasured_variants"]:
@@ -364,14 +395,35 @@ def register(sub, positive_int) -> None:
                             help="Comma-separated degradations (default: all)")
     validity_p.add_argument("--seed", type=int, default=0, help="Seed for the degradations (default: 0)")
     validity_p.add_argument("--min-accuracy", type=float, default=DEFAULT_MIN_ACCURACY, dest="min_accuracy",
-                            help=f"Pairwise accuracy gate, per degradation (default: {DEFAULT_MIN_ACCURACY})")
+                            help=f"Pairwise accuracy gate, per degradation (default: {DEFAULT_MIN_ACCURACY}); "
+                                 "with --sequential it must lie in 0.03-0.97")
     validity_p.add_argument("--strict", action="store_true",
                             help="Also exit 1 when a PASS is inconclusive — its 95%% CI "
                                  "straddles the gate, so the run cannot tell it from a FAIL")
+    validity_p.add_argument("--sequential", action="store_true",
+                            help="Add bases in rounds and stop each degradation once an SPRT can call "
+                                 "it PASS or FAIL (ignores --bases; see --max-bases)")
+    validity_p.add_argument("--max-bases", type=positive_int, default=120, dest="max_bases",
+                            help="Cap on base answers in --sequential mode (default: 120)")
+    validity_p.add_argument("--mode", choices=["absolute", "pairwise"], default="absolute",
+                            help="absolute: score each member 0-100 (the shipped judge); pairwise: show "
+                                 "the judge both members, in both orders, and ask which is better")
+    validity_p.add_argument("--escalate-model", default=None, dest="escalate_model",
+                            help="With --mode pairwise: re-ask pairs the judge answered inconsistently across the two orders with this model")
+    validity_p.add_argument("--escalate-provider", default=None, dest="escalate_provider", choices=JUDGE_PROVIDERS,
+                            help="Provider for --escalate-model (default: --judge-provider)")
+    validity_p.add_argument("--escalate-ties", action="store_true", dest="escalate_ties",
+                            help="Also escalate pairs called TIE in both orders (default: only order-inconsistent)")
+    validity_p.add_argument("--concurrency", type=positive_int, default=DEFAULT_CONCURRENCY,
+                            help=f"Parallel judge calls (default: {DEFAULT_CONCURRENCY})")
     validity_p.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="LLM model for judging")
     validity_p.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=JUDGE_PROVIDERS)
     validity_p.add_argument("--output", default=None, help="Output JSON report path")
     validity_p.set_defaults(func=cmd_eval_judge_validity)
+
+    from agent_benchmarks.commands import judge_reliability
+
+    judge_reliability.register(eval_sub, positive_int)  # eval checklist, eval judge-wording
 
     # eval panel-score
     panel_p = eval_sub.add_parser("panel-score", help="Score answers using a multi-judge panel")

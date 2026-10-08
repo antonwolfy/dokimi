@@ -974,6 +974,11 @@ class TestStrictCli:
         assert code == 0
         assert "Pass is inconclusive at this sample size: truncate_20" in err
 
+    def test_the_hint_names_the_knob_the_mode_reads(self, tmp_path, monkeypatch, capsys):
+        assert "more --bases" in self._run(tmp_path, monkeypatch, capsys, 5)[1]
+        err = self._run(tmp_path, monkeypatch, capsys, 5, "--sequential")[1]
+        assert "inconclusive" in err and "--max-bases" in err and "more --bases" not in err
+
     def test_strict_turns_an_inconclusive_pass_into_a_failure(self, tmp_path, monkeypatch, capsys):
         assert self._run(tmp_path, monkeypatch, capsys, 5, "--strict")[0] == 1
 

@@ -193,7 +193,7 @@ def effect_label(d: Optional[float]) -> str:
 
 
 def adjust_pvalues(
-    pvals: Sequence[Optional[float]], method: str = "holm"
+    pvals: Sequence[Optional[float]], method: str = "holm", *, rounded: bool = True
 ) -> List[Optional[float]]:
     """Return multiplicity-adjusted p-values, preserving input order.
 
@@ -210,10 +210,15 @@ def adjust_pvalues(
     quantization error by the family size: a true p of 0.016666 in a family of
     three has an exact Holm p of 0.049998 (significant), but
     ``3 * round(0.016666, 4) = 0.0501`` (not significant). The correction math
-    runs at full precision and only the returned values are rounded.
+    runs at full precision and only the returned values are rounded;
+    ``rounded=False`` returns them unrounded, for a decision against alpha —
+    the rounded 0.049998 displays as 0.05.
     """
     if method not in CORRECTIONS:
         raise ValueError(f"method must be one of {CORRECTIONS}, got {method!r}")
+
+    def finish(p: float) -> Optional[float]:
+        return _round_p(p) if rounded else p
 
     indexed = [(i, p) for i, p in enumerate(pvals) if p is not None]
     out: List[Optional[float]] = [None] * len(pvals)
@@ -228,7 +233,7 @@ def adjust_pvalues(
         for rank, (idx, p) in enumerate(indexed):
             adj = min(1.0, (m - rank) * p)
             running = max(running, adj)
-            out[idx] = _round_p(running)
+            out[idx] = finish(running)
     else:
         # Step-up: descending p, multiplier m / rank, enforce monotonicity.
         indexed.sort(key=lambda t: t[1], reverse=True)
@@ -237,7 +242,7 @@ def adjust_pvalues(
             rank = m - pos
             adj = min(1.0, p * m / rank)
             running = min(running, adj)
-            out[idx] = _round_p(running)
+            out[idx] = finish(running)
 
     return out
 

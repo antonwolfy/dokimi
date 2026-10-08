@@ -43,6 +43,12 @@ reported alongside it:
   inconclusive with the number of bases that would settle it. (Wilson, not a
   percentile bootstrap: the bootstrap has zero width on an all-correct run, so a
   3-pair pass would read as conclusive.)
+
+Fixed sample sizes waste calls in both directions — 20 bases leaves most
+variants inconclusive, while a variant at 0.98 was settled after a handful —
+so :func:`run_sequential` adds bases in batches and stops each variant as soon
+as a sequential probability ratio test (Wald's SPRT) can call it PASS or FAIL
+at the configured error rates.
 """
 
 from __future__ import annotations
@@ -52,23 +58,19 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from agent_benchmarks.eval.degrade import DEGRADATIONS, NEUTRAL_VARIANTS, build_pairs
-from agent_benchmarks.eval.stats import _wilson
+from agent_benchmarks.eval.validity_scoring import (  # noqa: F401  (re-exported)
+    NEUTRAL_TOLERANCE,
+    PairScorer,
+    Scorer,
+    ValidityRow,
+    _score_pairs,
+)
+from agent_benchmarks.eval.stats import _Z95, _wilson  # noqa: F401  (re-exported)
 
 #: Below this, the judge is not usable for arm comparison. A coin flip is 0.50;
 #: 0.80 leaves room for genuinely ambiguous pairs without accepting noise.
 DEFAULT_MIN_ACCURACY = 0.80
 
-#: Aggregate points within which a neutral variant counts as "did not move".
-#: The aggregate is a weighted mean rounded to 0.1 (weights sum to 5 without
-#: grounding), so 2.0 is exactly what one weight-1 dimension moving 10 points
-#: produces: a single coarse rubric step on one dimension still counts as no
-#: movement, a step on `correctness` (weight 2) or on two dimensions does not.
-NEUTRAL_TOLERANCE = 2.0
-#: Float slack on that boundary: abs(62.4 - 64.4) is 2.000000000000007.
-_TOLERANCE_SLACK = 1e-9
-
-#: Scores an answer. Returns the aggregate 0-100 quality score.
-Scorer = Callable[[str, str, str], float]
 
 
 def _accuracy_ci(values: Sequence[float]) -> Tuple[float, float]:
@@ -137,73 +139,6 @@ def _move(mean_drop: float) -> str:
 
 
 @dataclass
-class ValidityRow:
-    """One judged pair."""
-
-    base_id: str
-    arm: str
-    variant: str
-    intact_score: Optional[float] = None
-    degraded_score: Optional[float] = None
-    error: Optional[str] = None
-    #: Character counts of the two answers, so the length-only baseline can be
-    #: evaluated on exactly the same pairs without re-reading the answer set.
-    intact_chars: int = 0
-    degraded_chars: int = 0
-
-    @property
-    def neutral(self) -> bool:
-        """True when the correct outcome is *no movement*, not a win."""
-        return self.variant in NEUTRAL_VARIANTS
-
-    @property
-    def correct(self) -> Optional[float]:
-        """1.0 if ordered right, 0.0 if wrong, 0.5 on a tie, None on error."""
-        if self.intact_score is None or self.degraded_score is None:
-            return None
-        if self.intact_score == self.degraded_score:
-            return 0.5
-        return 1.0 if self.intact_score > self.degraded_score else 0.0
-
-    @property
-    def length_correct(self) -> float:
-        """The same call made by ``len(answer)`` alone — the null judge.
-
-        Made on an errored pair too, which the gate counts as misordered, so
-        the baseline covers the same pairs as the gate accuracy beside it.
-        """
-        if self.intact_chars == self.degraded_chars:
-            return 0.5
-        return 1.0 if self.intact_chars > self.degraded_chars else 0.0
-
-    @property
-    def unmoved(self) -> Optional[float]:
-        """1.0 when the judge scored both members the same, within tolerance.
-
-        This is the right outcome for a neutral variant, where the degraded copy
-        has the same content and only more of it.
-        """
-        if self.intact_score is None or self.degraded_score is None:
-            return None
-        return 1.0 if abs(self.intact_score - self.degraded_score) <= NEUTRAL_TOLERANCE + _TOLERANCE_SLACK else 0.0
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "base_id": self.base_id,
-            "arm": self.arm,
-            "variant": self.variant,
-            "neutral": self.neutral,
-            "intact_score": self.intact_score,
-            "degraded_score": self.degraded_score,
-            "correct": self.correct,
-            "length_correct": self.length_correct,
-            "intact_chars": self.intact_chars,
-            "degraded_chars": self.degraded_chars,
-            "error": self.error,
-        }
-
-
-@dataclass
 class ValidityReport:
     """Per-variant and overall validity of one judge configuration."""
 
@@ -215,6 +150,9 @@ class ValidityReport:
     seed: int = 0
     #: The variants asked for, so one that produced no pair at all is still reported.
     variants: List[str] = field(default_factory=list)
+    #: Set by :func:`run_sequential`: per graded variant, its SPRT decision,
+    #: log-likelihood ratio and the pairs it took. ``None`` for a fixed-n run.
+    sequential: Optional[Dict[str, Dict[str, Any]]] = None
 
     @property
     def scored(self) -> List[ValidityRow]:
@@ -274,6 +212,13 @@ class ValidityReport:
                 # judge rewarding the padded copy shows up as unmoved_rate low
                 # with accuracy below 0.5.
                 stats["unmoved_rate"] = sum(r.unmoved or 0.0 for r in subset) / d
+            elif self.sequential is not None:
+                seq = self.sequential.get(variant, {"decision": "continue", "llr": 0.0})
+                stats["sequential"] = seq
+                # The test, not the interval, decides here: a variant stopped
+                # early has a wide interval by design.
+                stats["straddles_gate"] = seq["decision"] == "continue"
+                stats["bases_for_resolution"] = None
             else:
                 stats["straddles_gate"] = ci_low < self.min_accuracy <= ci_high
                 stats["bases_for_resolution"] = (
@@ -300,11 +245,15 @@ class ValidityReport:
         # A fail is settled by one variant whose whole interval sits under the
         # gate, whatever the others straddle.
         settled_fail = any(v["accuracy_ci"][1] < self.min_accuracy for v in gated.values())
+        # The sequential test decides, not the interval: its FAIL settles the run
+        # exactly as a whole-interval-below-gate variant does, so an open variant
+        # beside it does not make the result inconclusive.
+        settled_fail |= any(v.get("sequential", {}).get("decision") == "FAIL" for v in gated.values())
         # A requested variant with no pair (every degradation was a no-op) was
         # not measured: the gate says nothing about it, so a pass cannot be settled.
         measured = {r.variant for r in self.rows}
         unmeasured = sorted(set(self.variants or self.n_noop) - measured)
-        return {
+        summary = {
             "judge": self.judge,
             # Pooled over the graded variants only; neutral variants have no
             # "intact wins" target and would bias the pool either way.
@@ -322,7 +271,8 @@ class ValidityReport:
             "tie_rate": tie_rate,
             "min_accuracy": self.min_accuracy,
             # No pairs scored fails; so does any variant below the gate, which a pooled mean hides.
-            "passed": bool(n) and all(v["gate_accuracy"] >= self.min_accuracy for v in gated.values()),
+            "passed": bool(n) and all(_variant_passes(v, self.min_accuracy) for v in gated.values()),
+            "mode": "sequential" if self.sequential is not None else "fixed",
             # A pass whose interval straddles the threshold is not reproducible:
             # the gate cannot tell the configuration from one that fails.
             "conclusive": bool(n) and (not (inconclusive or unmeasured) or settled_fail),
@@ -332,9 +282,40 @@ class ValidityReport:
             "n_noop": dict(sorted(self.n_noop.items())),
             "wall_seconds": self.wall_seconds,
         }
+        if self.sequential is not None:
+            from agent_benchmarks.eval.judge_sequential import SPRT_ALPHA, SPRT_BETA, sprt_bounds
+
+            # The hypotheses actually tested, so the printed error rates are the real ones.
+            p0, p1 = sprt_bounds(self.min_accuracy)
+            summary["sprt"] = {"p0": p0, "p1": p1, "alpha": SPRT_ALPHA, "beta": SPRT_BETA}
+        return summary
 
     def to_dict(self) -> Dict[str, Any]:
         return {"summary": self.summary(), "rows": [r.to_dict() for r in self.rows]}
+
+    def _format_inconclusive(self, s: Dict[str, Any]) -> List[str]:
+        lines = ["", "  INCONCLUSIVE — these intervals straddle the gate, so this",
+                 "  run cannot tell a pass from a fail on them:"]
+        for variant in s["inconclusive_variants"]:
+            v = s["per_variant"][variant]
+            if "sequential" in v:
+                why = (
+                    "answer pool exhausted — more answers, not a higher --max-bases, would settle it"
+                    if v["sequential"].get("stopped_by") == "pool"
+                    else "cap reached — true accuracy is inside the gate's indifference band"
+                )
+                lines.append(
+                    f"    {variant:20s} {v['gate_accuracy']:.2f} after {int(v['n'] + v['n_errors'])} pairs ({why})"
+                )
+                continue
+            need = v["bases_for_resolution"]
+            lines.append(
+                f"    {variant:20s} {v['gate_accuracy']:.2f} vs gate {s['min_accuracy']:.2f}"
+                + (f" — needs {'over ' if need >= PAIRS_SEARCH_LIMIT else '~'}{need} pairs "
+                   f"({need / max(1, int(v['n']) + int(v['n_errors'])):.1f}x this run)"
+                   if need else " — on the gate exactly; add pairs, no count follows from a zero margin")
+            )
+        return lines
 
     def format_summary(self) -> str:
         s = self.summary()
@@ -350,12 +331,22 @@ class ValidityReport:
             f"  length-only  : {s['length_accuracy']:.3f}   (len(answer) alone — not a judge)",
             f"  tie rate     : {s['tie_rate']:.3f}   (saturated scale if high)",
             f"  no-op pairs  : {sum(s['n_noop'].values())} dropped (degradation left the text unchanged)",
+        ]
+        if s["mode"] == "sequential":
+            t = s["sprt"]
+            lines.append(
+                f"  mode         : sequential (SPRT {t['p0']:.3g} vs {t['p1']:.3g}, "
+                f"alpha=beta={t['alpha']}) — each variant stops when decided"
+            )
+        lines += [
             "",
             f"  {'degradation':20s} {'n':>4s} {'err':>4s} {'gate':>6s} {'95% CI':>13s} "
             f"{'len':>6s} {'ties':>6s} {'drop':>7s} {'intact':>7s} {'damaged':>8s}",
         ]
         for variant, v in s["per_variant"].items():
             flag = "  neutral" if v["neutral"] else ("" if v["beats_length"] else "  <= length")
+            if "sequential" in v:
+                flag = f"  {v['sequential']['decision']:8s}" + flag
             vci = v["accuracy_ci"]
             lines.append(
                 f"  {variant:20s} {int(v['n']):4d} {int(v['n_errors']):4d} "
@@ -375,18 +366,7 @@ class ValidityReport:
                     "Not gated."
                 )
         if s["inconclusive_variants"]:
-            lines.append("")
-            lines.append("  INCONCLUSIVE — these intervals straddle the gate, so this")
-            lines.append("  run cannot tell a pass from a fail on them:")
-            for variant in s["inconclusive_variants"]:
-                v = s["per_variant"][variant]
-                need = v["bases_for_resolution"]
-                lines.append(
-                    f"    {variant:20s} {v['gate_accuracy']:.2f} vs gate {s['min_accuracy']:.2f}"
-                    + (f" — needs {'over ' if need >= PAIRS_SEARCH_LIMIT else '~'}{need} pairs "
-                       f"({need / max(1, int(v['n']) + int(v['n_errors'])):.1f}x this run)"
-                       if need else " — on the gate exactly; add pairs, no count follows from a zero margin")
-                )
+            lines.extend(self._format_inconclusive(s))
         lines.append("")
         result = "PASS" if s["passed"] else "FAIL"
         if not s["n_pairs"]:
@@ -397,6 +377,15 @@ class ValidityReport:
         return "\n".join(lines)
 
 
+def _variant_passes(v: Dict[str, Any], min_accuracy: float) -> bool:
+    """One gated variant's verdict. A sequential FAIL fails even above the gate."""
+    if v.get("sequential", {}).get("decision") == "FAIL":
+        return False
+    if v.get("sequential", {}).get("decision") == "PASS":
+        return True
+    return v["gate_accuracy"] >= min_accuracy
+
+
 def evaluate_pairs(
     scorer: Scorer,
     pairs: Sequence[Dict[str, Any]],
@@ -405,6 +394,8 @@ def evaluate_pairs(
     min_accuracy: float = DEFAULT_MIN_ACCURACY,
     seed: int = 0,
     progress: Optional[Callable[[int, int], None]] = None,
+    concurrency: int = 1,
+    pair_scorer: Optional[PairScorer] = None,
 ) -> ValidityReport:
     """Score every pair and report validity.
 
@@ -413,38 +404,15 @@ def evaluate_pairs(
     intact member per variant would multiply the cost for nothing.
     """
     report = ValidityReport(judge=judge, min_accuracy=min_accuracy, seed=seed)
-    intact_cache: Dict[tuple, float] = {}
     started = time.time()
-
-    for index, pair in enumerate(pairs, 1):
-        row = ValidityRow(
-            base_id=pair["base_id"],
-            arm=pair.get("arm", ""),
-            variant=pair["variant"],
-            intact_chars=len(pair["intact"]),
-            degraded_chars=len(pair["degraded"]),
-        )
-        key = (pair["base_id"], pair.get("arm", ""))
-        try:
-            if key not in intact_cache:
-                intact_cache[key] = float(
-                    scorer(pair["library"], pair["question"], pair["intact"])
-                )
-            row.intact_score = intact_cache[key]
-            row.degraded_score = float(
-                scorer(pair["library"], pair["question"], pair["degraded"])
-            )
-        except Exception as exc:  # one bad pair must not lose the whole run
-            row.error = f"{type(exc).__name__}: {exc}"[:200]
-        report.rows.append(row)
-        if progress:
-            progress(index, len(pairs))
-
+    report.rows = _score_pairs(
+        scorer, pairs, {}, concurrency=concurrency, progress=progress, pair_scorer=pair_scorer
+    )
     report.wall_seconds = time.time() - started
     return report
 
 
-def judge_scorer(judge: Any) -> Scorer:
+def judge_scorer(judge: Any, *, draw: int = 0) -> Scorer:
     """Adapt a :class:`~agent_benchmarks.eval.judge.Judge` to :data:`Scorer`.
 
     Ground truth is deliberately not passed: the pair differs only in the
@@ -453,7 +421,10 @@ def judge_scorer(judge: Any) -> Scorer:
     """
 
     def score(library: str, question: str, answer: str) -> float:
-        scores = judge.score_answer(library_name=library, question=question, answer=answer)
+        if draw:
+            scores = judge.score_answer(library_name=library, question=question, answer=answer, draw=draw)
+        else:
+            scores = judge.score_answer(library_name=library, question=question, answer=answer)
         return float(scores["aggregate"])
 
     return score
@@ -470,16 +441,29 @@ def run_validity(
     library: str = "the library",
     min_accuracy: float = DEFAULT_MIN_ACCURACY,
     progress: Optional[Callable[[int, int], None]] = None,
+    concurrency: int = 1,
+    pair_scorer: Optional[PairScorer] = None,
 ) -> ValidityReport:
     """Build degradation pairs from ``answers`` and measure the judge on them."""
     noop: Dict[str, int] = {}
     variants = list(variants or DEGRADATIONS)
+    pairs = _build(answers, noop, n_bases=n_bases, seed=seed, variants=variants, library=library)
+    report = evaluate_pairs(
+        scorer, pairs, judge=judge, min_accuracy=min_accuracy, seed=seed, progress=progress,
+        concurrency=concurrency, pair_scorer=pair_scorer,
+    )
+    report.n_noop = noop
+    report.variants = variants
+    return report
+
+
+def _build(answers, noop, *, n_bases, seed, variants, library) -> List[Dict[str, Any]]:
     pairs = build_pairs(
         answers,
         noop=noop,
         n_bases=n_bases,
         seed=seed,
-        variants=variants,
+        variants=variants or tuple(DEGRADATIONS),
         library=library,
     )
     if not pairs and noop:
@@ -489,9 +473,4 @@ def run_validity(
             "No usable answers found — need answers longer than the minimum "
             "length with a question_id and question text"
         )
-    report = evaluate_pairs(
-        scorer, pairs, judge=judge, min_accuracy=min_accuracy, seed=seed, progress=progress
-    )
-    report.n_noop = noop
-    report.variants = variants
-    return report
+    return pairs

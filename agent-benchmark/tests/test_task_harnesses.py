@@ -615,3 +615,15 @@ def test_an_arm_that_hangs_is_not_scored_above_one_that_fails_fast(tmp_path):
     assert cmp["errored"] == 0 and cmp["baseline_errored"] == 0
     hung = {r["task"]: r for r in output["results"] if r["harness"] == hang}
     assert hung["hard-1"]["returncode"] == 124
+
+
+def test_harness_significance_uses_the_unrounded_adjusted_p():
+    from agent_benchmarks.harnesses.runner import _correct_across_harnesses
+
+    # Holm over three: 3 x 0.0166662 = 0.0499986 is significant, though it
+    # is recorded to 4 decimals as 0.05.
+    comparisons = {h: {"mcnemar": {"p_exact": 0.0166662}} for h in ("a", "b", "c")}
+    _correct_across_harnesses(comparisons)
+    for cr in comparisons.values():
+        assert cr["mcnemar"]["p_adjusted"] == 0.05
+        assert cr["mcnemar"]["significant_adjusted"] is True

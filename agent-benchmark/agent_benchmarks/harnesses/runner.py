@@ -358,10 +358,11 @@ def _correct_across_harnesses(
     two drift, so a reader could be told "holm" while BH was applied.
     """
     tested = [h for h, cr in comparisons.items() if cr.get("mcnemar")]
-    adjusted = adjust_pvalues(
-        [comparisons[h]["mcnemar"]["p_exact"] for h in tested], method=correction
-    )
-    for harness, adj in zip(tested, adjusted, strict=True):
+    raw = [comparisons[h]["mcnemar"]["p_exact"] for h in tested]
+    adjusted = adjust_pvalues(raw, method=correction)
+    # The decision uses the unrounded adjusted p; the rounded one is recorded.
+    exact = adjust_pvalues(raw, method=correction, rounded=False)
+    for harness, adj, adj_exact in zip(tested, adjusted, exact, strict=True):
         mc = comparisons[harness]["mcnemar"]
         mc["p_adjusted"] = adj
         mc["correction"] = correction
@@ -370,7 +371,7 @@ def _correct_across_harnesses(
         mc["correction_family"] = "harnesses"
         mc["family_size"] = len(tested)
         mc["significant_adjusted"] = (
-            None if adj is None else bool(adj < binary_stats.ALPHA)
+            None if adj_exact is None else bool(adj_exact < binary_stats.ALPHA)
         )
 
 

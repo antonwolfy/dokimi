@@ -173,3 +173,38 @@ def test_judge_draws_are_distinct_per_attempt():
     judge.llm.invoke.side_effect = [MagicMock(content="not json"), MagicMock(content=GOOD)]
     judge.score_answer(library_name="L", question="q", answer="a", draw=2)
     assert [c.kwargs["draw"] for c in judge.llm.invoke.call_args_list] == [6, 7]
+
+
+def _asker(llm):
+    # As `commands/judge_reliability.py` builds it.
+    return lambda prompt, draw=0, cache_if=None: llm.invoke(prompt, draw=draw, cache_if=cache_if).content
+
+
+def test_pairwise_retries_an_unparseable_reply_and_never_caches_it(cache_dir, monkeypatch):
+    """A cached "Verdict:" was replayed on every later run: the question was lost
+    again with 0 live calls."""
+    from agent_benchmarks.eval.pairwise import PairwiseJudge
+
+    completion, calls = _completion(["Verdict:", "A", "B", "A"])
+    monkeypatch.setattr("litellm.completion", completion)
+    judge = PairwiseJudge(ask=_asker(get_llm("amazon-bedrock", "m.x")))
+    assert judge.compare("L", "q", "x", "y").score == 1
+    assert len(calls) == 3
+    assert calls[1]["messages"] == calls[0]["messages"]  # the same prompt, a new draw
+    assert len(list(cache_dir.glob("*.json"))) == 2  # "Verdict:" was not stored
+    # The re-run asks draw 0 live (nothing usable stored there); the rest replays.
+    assert judge.compare("L", "q", "x", "y").score == 1
+    assert len(calls) == 4
+
+
+def test_checklist_retries_an_unparseable_reply_and_never_caches_it(cache_dir, monkeypatch):
+    from agent_benchmarks.eval import checklist as ck
+
+    completion, calls = _completion(["Verdict:", "YES", "NO", "YES"])
+    monkeypatch.setattr("litellm.completion", completion)
+    ask = _asker(get_llm("amazon-bedrock", "m.x"))
+    (v,) = ck.check_answer(ask, "q", "a", ["point"])
+    assert (v.covered, v.absent, len(calls)) == (True, False, 3)
+    assert len(list(cache_dir.glob("*.json"))) == 2
+    (v,) = ck.check_answer(ask, "q", "a", ["point"])
+    assert (v.covered, v.absent, len(calls)) == (True, False, 4)

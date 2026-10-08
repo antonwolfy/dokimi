@@ -221,12 +221,16 @@ class Judge:
         provider: str = "anthropic",
         api_key: Optional[str] = None,
         run_metadata: Optional[Dict[str, Any]] = None,
+        prompt_template: Optional[str] = None,
     ):
         """
         Args:
             model: LLM model for judging (should differ from answerer model)
             provider: "openai" or "anthropic"
             api_key: Optional API key
+            prompt_template: Replaces :data:`JUDGE_PROMPT` on the ungrounded
+                path. Exists so the judge can be measured under a rewording of
+                its own prompt; production scoring leaves it unset.
         """
         if not LANGCHAIN_AVAILABLE:
             raise ImportError(
@@ -238,6 +242,7 @@ class Judge:
         self.provider = provider
         self.api_key = api_key
         self.run_metadata = dict(run_metadata) if run_metadata else {}
+        self.prompt_template = prompt_template
         # Accumulate judge-side token/cost telemetry across all judge calls
         # (Phase-C.0 covered answering; the judge path was untracked).
         self._usage_lock = threading.Lock()
@@ -457,7 +462,7 @@ class Judge:
             )
         else:
             prompt = (
-                JUDGE_PROMPT
+                (getattr(self, "prompt_template", None) or JUDGE_PROMPT)
                 .replace("__QUESTION__", question)
                 .replace("__ANSWER__", answer)
                 .replace("__CONTEXT__", context)

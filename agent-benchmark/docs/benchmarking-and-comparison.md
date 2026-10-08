@@ -280,6 +280,102 @@ execution-verified task track (`cli.py tasks run`) has a binary outcome per task
 and uses McNemar's exact test instead — see
 [coding-harnesses.md](coding-harnesses.md).
 
+### Trusting the judge
+
+A significance table says the delta is unlikely under *this judge's* noise. It
+does not say another judge would agree, and on the perf golden set it did not:
+the same skill-vs-baseline answers scored +1.7 under the stored judge and −3.4
+under Haiku 4.5 (both significant). Four commands make that visible.
+
+**1. Gate the judge first.** `eval judge-validity` checks that the judge orders
+answers whose order is known (an answer above its own damaged copy).
+`--sequential` adds bases until each degradation is decided instead of stopping
+at a fixed 20, which is usually inconclusive: across five seeds the fixed gate
+said PASS once and FAIL four times, all inconclusive; the sequential gate said
+FAIL five times.
+
+The sequential test separates accuracy `gate - 0.08` from `gate + 0.08` at 5%
+error each way (the default 0.80 gate tests 0.72 against 0.88). Above a gate of
+0.91 the band narrows so the upper hypothesis stays at 0.99 (gate 0.95 tests 0.91
+against 0.99), and `--sequential` exits 2 for a gate outside 0.03 to 0.97, where
+no feasible number of pairs decides; the report prints the pair it used. Near
+the top of that range the cap matters: a judge at 0.99 ends inconclusive in
+about 7% of runs at gate 0.96 and 29% at gate 0.97 with the default
+`--max-bases 120`, and about 5% at gate 0.97 with 240. A
+sequential FAIL on one degradation settles the run (`conclusive` is true) even
+while another is still undecided; `inconclusive_variants` still names it.
+
+`--concurrency` (default 5) runs judge calls in parallel; before it the check was
+serial. The verdict does not depend on it: each intact answer is scored once, a
+failed intact score is retried up to three times before its variants are scored,
+and rows keep pair order. A throttled call that still fails becomes an errored
+pair, which counts as a miss, so lower it when the summary shows errors.
+
+```bash
+python cli.py eval judge-validity --answers run.json --sequential \
+  --judge-provider amazon-bedrock --judge-model openai.gpt-oss-120b-1:0 \
+  --mode pairwise --output validity_pairwise.json
+```
+
+The report gives, per
+degradation, the pairs scored, the gate accuracy with its 95% CI and PASS or
+FAIL; `--sequential` adds a `mode` line and marks a degradation still undecided
+at the stop `continue`, with the reason under INCONCLUSIVE (cap reached, or the
+answer pool exhausted). Exit 1 on FAIL, and on an inconclusive pass with
+`--strict`.
+
+`--mode pairwise` shows the judge both answers, in both orders, and asks which
+is better. On the perf gate gpt-oss-120b pairwise passed every degradation
+(pooled 0.96, $0.47 measured) where absolute gpt-oss, Haiku 4.5 and Opus 5.5
+each failed one; absolute Opus 4.6 also passed, at about 26× the cost per pair.
+`--escalate-model` re-asks the pairs the cheap judge answered inconsistently
+across the two orders with a stronger one (0.99 pooled, 38 of 355 pairs
+escalated). A gate pass is a floor, not a guarantee: gpt-oss was
+order-consistent on 95% of gate pairs but on only 44% of real skill-vs-baseline
+comparisons, which are much closer calls.
+
+**2. Compare arms the same way.** `eval pairwise` puts each arm's answer next
+to the baseline's; `--escalate-model` is the same cheap-then-expensive cascade.
+
+**3. Check the verdict across judges.** `eval cross-judge` re-scores an arms run
+under several judges (absolute, and with `--grounded` against each question's
+`expected_topics`), takes `eval pairwise` and `eval checklist` reports as more
+measures, and labels each arm `CONSISTENT ±`, `LEANING ±`, `JUDGE-DEPENDENT` or
+`NO DETECTABLE EFFECT`, on Holm-adjusted p over the measures that vote. With
+`--validity` reports, a judge that failed its gate is shown but does not vote
+(its grounded and checklist measures included); `--require-validated` leaves
+only judges that passed. The stored scores are labelled from the file's
+`judge_provider`/`judge_model` (`provider/model (stored)`), so a `--validity`
+report for that judge reaches them and a verdict resting on it alone reads
+`(one judge)`. Re-scoring resolves each arm's context the way the arms run does;
+from a file that is the report snippets. Since `judge_context` the stored judge
+saw each treatment's full material, which the file does not keep, so with
+`--judges`, `--pairwise` or `--checklist` and stored scores for such an arm the
+command refuses (exit 2): the other judges see only snippets or answers.
+`--no-stored` compares those judges with each other. The gate itself (and `eval pairwise` / `eval checklist`) passes no
+context, so it validates a judge only in the no-context setting. A label whose significant measures all rest on one judge says `(one judge)`; an escalated pairwise measure counts as its cheap judge's. Gate a judge on
+answers from the same answer model it will judge: `cross-judge` warns when the
+validity report was measured on another model's answers.
+
+```bash
+python cli.py eval cross-judge --answers run.json --questions golden.json --grounded --both \
+  --judges amazon-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0,amazon-bedrock/openai.gpt-oss-120b-1:0 \
+  --pairwise run_pairwise.json --validity validity_haiku.json --validity validity_pairwise.json
+```
+
+**4. When changing the judge prompt**, `eval judge-wording` re-runs the gate
+under meaning-preserving rewrites of it and flags a degradation FRAGILE when a
+rewrite moves it on the same pairs: a paired sign test against the original
+prompt, Holm-adjusted over every rewrite and variant. Re-draws of the original
+are shown as a noise floor but do not decide the flag. Use at least 30 bases; at
+20 bases only a large wording effect is detectable.
+
+`eval checklist` asks, per expected topic and in both polarities, whether the
+answer covers it. Its sign was stable across judges, but it is the weakest of
+the measures (p ≈ 0.05 where pairwise reached 0.002) and costs about 2.7× an
+absolute judgement (Haiku, measured: $0.015 vs $0.0055 per answer); its value is
+the list of points an arm added or lost.
+
 ## Multi-model comparison
 
 Use `report model-compare` to compare judged treatment-arm JSON files from
