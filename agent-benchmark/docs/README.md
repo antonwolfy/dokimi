@@ -173,6 +173,9 @@ CLI surface. The files in this directory go deeper:
   what a repository provides to be evaluated as a whole: `repo-eval.yaml`,
   `task.json`, the `grade` entry point and `grade.json`, harness profiles, and
   the guidance reach probe. Tasks and graders stay in the scanned repository.
+- [repo-evaluation-agent-modes.md](repo-evaluation-agent-modes.md) —
+  *(proposed)* how a repository task states its agent mode, effort, perf
+  protocol and team rules, split from the mergeability proposal (#67).
 
 ## Reference
 
