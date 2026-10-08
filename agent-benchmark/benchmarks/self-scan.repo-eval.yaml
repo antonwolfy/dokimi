@@ -1,0 +1,17 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+# The framework's own agent guidance, scanned by L0 in CI (`repo scan .. --manifest-file`).
+# eval_dir and tasks are required by repo_manifest.v1 and unused by a scan; this file is for
+# `repo scan` only (`repo validate` would refuse it: the framework has no repository tasks).
+schema: repo_manifest.v1
+id: agent-benchmark
+eval_dir: agent-benchmark/tests
+guidance:
+  globs: ["**/AGENTS.md", "**/CLAUDE.md"]
+  # CLAUDE.md is listed as well as globbed: a glob that matches nothing is only a warning, so
+  # deleting the root guidance would otherwise leave the gate green.
+  also_scan: ["CLAUDE.md", "agent-benchmark/CONTRIBUTING.md", "agent-benchmark/README.md", "README.md"]
+entry_points: {grade: "true"}
+tasks: agent-benchmark/tests
+build_systems: [pytest]

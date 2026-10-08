@@ -51,6 +51,56 @@ def cmd_repo_validate(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_repo_scan(args: argparse.Namespace) -> None:
+    """L0: check every mechanically checkable claim in the guidance against the same tree."""
+    from agent_benchmarks.artifacts import save_artifact, stamp
+    from agent_benchmarks.repos import ManifestError, RepoSource, SourceError, open_source
+    from agent_benchmarks.repos.l0 import scan_repo
+
+    try:
+        tree = open_source(RepoSource.parse(args.source), _cache_dir(args))
+        manifest = _load_manifest(tree, args)
+        static = json.loads(Path(args.static).read_text(encoding="utf-8")) if args.static else None
+    except (SourceError, ManifestError, OSError, json.JSONDecodeError) as exc:
+        print(f"✗ {exc}", file=sys.stderr)
+        sys.exit(1)
+    payload = scan_repo(tree, manifest, static)
+    if args.out:
+        try:
+            save_artifact("repo_readiness", payload, Path(args.out))
+        except OSError as exc:
+            print(f"✗ cannot write {args.out}: {exc}", file=sys.stderr)
+            sys.exit(1)
+    static_info = payload["static"]
+    static_errors = static_info["errors"] if static_info is not None else []
+    for problem in static_errors:  # on stderr in --json mode too
+        print(f"✗ --static output not merged: {problem}", file=sys.stderr)
+    if args.json:
+        print(json.dumps(stamp("repo_readiness", dict(payload)), indent=2))
+    else:
+        c = payload["counts"]
+        detected = " (detected)" if payload["adapters_detected"] else ""
+        print(f"{manifest.id}: {len(payload['files'])} guidance files in {payload['repo']['tree']}; "
+              f"adapters: {', '.join(payload['adapters']) or 'none'}{detected}")
+        print(f"  claims: {c['total']} (ok {c['ok']}, unresolved {c['unresolved']}, fail {c['fail']})")
+        for warning in payload["warnings"]:
+            print(f"  warning: {warning}")
+        if static_info is not None and not static_errors:
+            r = payload["by_source"]["repository"]
+            print(f"  repository static: {r['total']} claims, {r['fail']} fail; "
+                  f"{static_info['superseded']} framework claims replaced")
+        for claim in payload["claims"]:
+            if claim["status"].split("_", 1)[0] == "fail":
+                print(f"  FAIL {claim['file']}:{claim['line']} [{claim.get('kind')}] "
+                      f"{str(claim.get('claim'))[:90]} -- {claim.get('why')}")
+        if args.out:
+            print(f"wrote {args.out}")
+    if static_errors:
+        sys.exit(1)
+    if args.fail_on_fail and (payload["counts"]["fail"] or payload["incomplete"]):
+        sys.exit(1)
+
+
 def cmd_repo_fetch(args: argparse.Namespace) -> None:
     """Clone (once) and fetch a pinned remote source into the cache; print the SHA."""
     from agent_benchmarks.repos import RepoSource, SourceError, open_source
@@ -148,11 +198,12 @@ def register(sub, positive_int) -> None:
     """Add the `repo` subcommand group."""
     repo_p = sub.add_parser(
         "repo",
-        help="Repositories as evaluation subjects: validate repo-eval.yaml, fetch sources, reach probe",
+        help="Repositories as evaluation subjects: validate repo-eval.yaml, L0 scan, fetch sources, reach probe",
     )
     repo_sub = repo_p.add_subparsers(dest="repo_cmd", required=True)
     source_help = (
-        "Repository source: a local directory (read as it is), <dir>@<rev>, or "
+        "Repository source: a local directory (read as it is; in a git working tree, files git ignores are "
+        "left out), <dir>@<rev>, or "
         "<https-or-ssh-url>@<rev> (cloned bare into the cache)"
     )
     cache_help = "Clone cache directory (default: $AGENT_BENCHMARK_REPO_CACHE or ~/.cache/agent-benchmark/repos)"
@@ -172,6 +223,29 @@ def register(sub, positive_int) -> None:
     validate_p.add_argument("--cache-dir", default=None, dest="cache_dir", help=cache_help)
     validate_p.add_argument("--json", action="store_true", help="Print the full report as JSON")
     validate_p.set_defaults(func=cmd_repo_validate)
+
+    scan_p = repo_sub.add_parser(
+        "scan",
+        help="L0: check the links, paths, identifiers, commands and build labels the guidance names "
+        "against the same tree (repo_readiness.v1). No LLM call.",
+    )
+    scan_p.add_argument("source", help=source_help)
+    scan_p.add_argument("--manifest", default=".agent-eval/repo-eval.yaml",
+                        help="Manifest path relative to the repository root")
+    scan_p.add_argument("--manifest-file", default=None, dest="manifest_file",
+                        help="Read the manifest from this local file instead of from the tree, as if it were "
+                        "at --manifest (for a repository that has not added it yet)")
+    scan_p.add_argument("--static", default=None,
+                        help="repo_static.v1 document the repository's `static` entry point wrote; merged into "
+                        "the report, its claims replacing the framework's on the same file, line and text. "
+                        "An invalid document is reported and makes the command exit 1")
+    scan_p.add_argument("--out", default=None, help="Write the repo_readiness.v1 report to this file")
+    scan_p.add_argument("--json", action="store_true", help="Print the full report as JSON")
+    scan_p.add_argument("--fail-on-fail", action="store_true", dest="fail_on_fail",
+                        help="Exit 1 when any claim fails, an also_scan file is missing, a guidance file "
+                        "cannot be read, or no guidance file matched (for a CI gate)")
+    scan_p.add_argument("--cache-dir", default=None, dest="cache_dir", help=cache_help)
+    scan_p.set_defaults(func=cmd_repo_scan)
 
     fetch_p = repo_sub.add_parser("fetch", help="Clone/fetch a pinned source and print its commit SHA")
     fetch_p.add_argument("source", help=source_help)

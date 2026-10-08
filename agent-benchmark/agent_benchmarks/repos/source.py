@@ -30,6 +30,7 @@ _REV_RE = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._^~-]*$")
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
 _REMOTE_PREFIXES = ("https://", "ssh://", "file://", "git@")
 _GIT_TIMEOUT_S = 1800
+READ_MANY_LIMIT = 2 * 1024 * 1024  # bytes; larger files are not text guidance or code to search
 
 
 class SourceError(ValueError):
@@ -79,10 +80,16 @@ class RepoTree(Protocol):
 
     def read_text(self, path: str) -> str: ...
 
-    def resolve(self, path: str) -> str:
+    def resolve(self, path: str, dirs: bool = False) -> str:
         """The file ``path`` names once symlinks are followed, as in a checkout; ``path`` itself
         if it is not a link. :class:`SourceError` if it escapes the tree, dangles, loops or
-        names a directory."""
+        names a directory (with ``dirs``, a link to a directory gives the directory)."""
+        ...
+
+    def read_many(self, paths: list[str], max_bytes: int = ...,
+                  skipped: dict[str, str] | None = None) -> dict[str, str]:
+        """Text of each path, links followed. A path left out (binary, over ``max_bytes``, a link
+        that dangles or escapes) is added to ``skipped`` with the reason."""
         ...
 
 
@@ -101,6 +108,15 @@ class WorkTree:
         return target
 
     def files(self) -> list[str]:
+        """Every file, or inside a git working tree the files git would show: tracked or not ignored.
+
+        The root may be a subdirectory of the working tree; ``ls-files -C`` lists paths relative to it.
+        """
+        if self._files is None and _git(self.root, "rev-parse", "--is-inside-work-tree", check=False).strip() == "true":
+            listed = _git(self.root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", check=False)
+            if listed:  # a link is an entry even when it dangles or names a directory, as in git
+                self._files = sorted({p for p in listed.split("\0")
+                                      if p and ((self.root / p).is_file() or (self.root / p).is_symlink())})
         if self._files is None:
             out: list[str] = []
             for dirpath, dirnames, filenames in os.walk(self.root):
@@ -121,16 +137,36 @@ class WorkTree:
     def read_text(self, path: str) -> str:
         return self._resolve(path).read_text(encoding="utf-8")
 
-    def resolve(self, path: str) -> str:
+    def resolve(self, path: str, dirs: bool = False) -> str:
         try:
             target = self._resolve(path)
         except (RuntimeError, OSError) as exc:  # a link loop (RuntimeError before Python 3.13)
             raise SourceError(f"too many levels of symbolic links: {path}") from exc
+        if target.is_dir() and dirs:
+            return target.relative_to(self.root).as_posix()
         if target.is_dir():
             raise SourceError(f"{path} links to a directory: {target.relative_to(self.root).as_posix()}")
         if not target.is_file():
             raise SourceError(f"{path} links to nothing: {target.relative_to(self.root).as_posix()}")
         return target.relative_to(self.root).as_posix()
+
+    def read_many(self, paths: list[str], max_bytes: int = READ_MANY_LIMIT,
+                  skipped: dict[str, str] | None = None) -> dict[str, str]:
+        out = {}
+        skipped = {} if skipped is None else skipped
+        for path in paths:
+            try:
+                target = self.root / self.resolve(path)
+                size = target.stat().st_size
+                if size > max_bytes:
+                    skipped[path] = _too_big(size, max_bytes)
+                elif (text := _text(target.read_bytes())) is None:
+                    skipped[path] = "binary (a NUL byte)"
+                else:
+                    out[path] = text
+            except (OSError, SourceError) as exc:
+                skipped[path] = str(exc)
+        return out
 
 
 class GitTree:
@@ -175,10 +211,12 @@ class GitTree:
         """The file's text; a symlink is followed, as it is in a checkout."""
         return _git(self.git_dir, "show", f"{self.sha}:{self.resolve(path)}")
 
-    def resolve(self, path: str) -> str:
+    def resolve(self, path: str, dirs: bool = False) -> str:
         start = path = _norm(path)
         for _ in range(40):
             if path not in self._links():
+                if path in self._dir_set() and dirs:
+                    return path
                 if path in self._dir_set():
                     raise SourceError(f"{start} links to a directory: {path}" if path != start
                                       else f"{path} is a directory")
@@ -191,6 +229,91 @@ class GitTree:
                 raise SourceError(f"path escapes the repository: {path} -> {text}")
             path = target
         raise SourceError(f"too many levels of symbolic links: {start}")
+
+    def read_many(self, paths: list[str], max_bytes: int = READ_MANY_LIMIT,
+                  skipped: dict[str, str] | None = None) -> dict[str, str]:
+        """Read in one ``git cat-file --batch``; in a blob-less clone the missing blobs are
+        fetched first in one request, not one by one."""
+        skipped = {} if skipped is None else skipped
+        # No `-l`: listing sizes makes git fetch every missing blob of a partial clone, one by one.
+        listing = _git(self.git_dir, "ls-tree", "-r", "-z", self.sha)
+        oid_of: dict[str, str] = {}
+        for entry in listing.split("\0"):
+            meta, _, path = entry.partition("\t")
+            parts = meta.split()
+            if len(parts) == 3 and parts[1] == "blob":
+                oid_of[path] = parts[2]
+        by_oid: dict[str, list[str]] = {}  # oid -> requested paths (identical files and links share one blob)
+        for requested in dict.fromkeys(paths):
+            try:
+                real = self.resolve(requested)
+            except SourceError as exc:
+                skipped[requested] = str(exc)
+                continue
+            if real not in oid_of:
+                skipped[requested] = f"not a file in {self.sha[:12]}: {real}"
+                continue
+            by_oid.setdefault(oid_of[real], []).append(requested)
+        if not by_oid:
+            return {}
+        _prefetch(self.git_dir, self.sha, set(by_oid))
+        sizes = _git_bytes(self.git_dir, ["cat-file", "--batch-check"], "".join(f"{o}\n" for o in by_oid).encode())
+        blobs = {}
+        for line in sizes.decode().splitlines():
+            oid, _, rest = line.partition(" ")
+            kind, _, size = rest.partition(" ")
+            if kind == "blob" and size.isdigit() and int(size) <= max_bytes:
+                blobs[oid] = by_oid[oid]
+            elif oid in by_oid:
+                reason = _too_big(int(size), max_bytes) if size.isdigit() else f"blob {oid} {rest or 'missing'}"
+                skipped.update(dict.fromkeys(by_oid[oid], reason))
+        if not blobs:
+            return {}
+        data = _git_bytes(self.git_dir, ["cat-file", "--batch"], "".join(f"{o}\n" for o in blobs).encode())
+        out, pos = {}, 0
+        while pos < len(data):
+            end = data.index(b"\n", pos)
+            header = data[pos:end].decode().split()
+            if len(header) != 3:  # "<oid> missing"
+                skipped.update(dict.fromkeys(blobs.get(header[0], []), f"blob {header[0]} missing"))
+                pos = end + 1
+                continue
+            oid, kind, size = header
+            body = data[end + 1:end + 1 + int(size)]
+            pos = end + 1 + int(size) + 1
+            text = _text(body) if kind == "blob" else None
+            if text is not None:
+                out.update(dict.fromkeys(blobs[oid], text))
+            else:
+                skipped.update(dict.fromkeys(blobs[oid], "binary (a NUL byte)"))
+        return out
+
+
+def _too_big(size: int, limit: int) -> str:
+    return f"{size} bytes, over the {limit // (1024 * 1024)} MB read limit"
+
+
+def _text(data: bytes) -> str | None:
+    """``data`` as UTF-8 text, or ``None`` for a binary file (a NUL byte, as git decides)."""
+    if b"\0" in data[:8000]:
+        return None
+    return data.decode("utf-8", "replace")
+
+
+def _prefetch(git_dir: Path, sha: str, oids: set[str]) -> None:
+    """Fetch the missing ``oids`` of a partial clone in one request, as git's own lazy fetch does.
+
+    ``rev-list --missing=print`` lists what is absent without fetching it; ``cat-file``
+    would fetch each absent object on its own.
+    """
+    if not _git(git_dir, "config", "--get", "remote.origin.promisor", check=False).strip():
+        return
+    listed = _git(git_dir, "rev-list", "--objects", "--no-walk", "--missing=print", sha)
+    absent = [line[1:] for line in listed.splitlines() if line.startswith("?") and line[1:] in oids]
+    if absent:
+        _git_bytes(git_dir, ["-c", "fetch.negotiationAlgorithm=noop", "fetch", "origin", "--no-tags",
+                             "--no-write-fetch-head", "--recurse-submodules=no", "--filter=blob:none",
+                             "--stdin"], "".join(f"{o}\n" for o in absent).encode())
 
 
 def default_cache_dir() -> Path:
@@ -302,7 +425,7 @@ def _norm(path: str) -> str:
     return PurePosixPath(path).as_posix().removeprefix("./").rstrip("/") or "."
 
 
-def _git(git_dir: Path | None, *args: str) -> str:
+def _git(git_dir: Path | None, *args: str, check: bool = True) -> str:
     cmd = ["git"] + (["-C", str(git_dir)] if git_dir is not None else []) + list(args)
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
     try:
@@ -310,7 +433,21 @@ def _git(git_dir: Path | None, *args: str) -> str:
                               timeout=_GIT_TIMEOUT_S, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise SourceError(f"git {args[0]} failed: {exc}") from exc
-    if proc.returncode != 0:
+    if proc.returncode != 0 and check:
         detail = proc.stderr.strip().splitlines()[-1:] or [f"exit {proc.returncode}"]
+        raise SourceError(f"git {args[0]} failed: {detail[0]}")
+    return proc.stdout
+
+
+def _git_bytes(git_dir: Path, args: list[str], stdin: bytes) -> bytes:
+    """``git -C git_dir *args`` with binary stdin and stdout."""
+    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+    try:
+        proc = subprocess.run(["git", "-C", str(git_dir), *args], input=stdin, capture_output=True, env=env,
+                              timeout=_GIT_TIMEOUT_S, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SourceError(f"git {args[0]} failed: {exc}") from exc
+    if proc.returncode != 0:
+        detail = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [f"exit {proc.returncode}"]
         raise SourceError(f"git {args[0]} failed: {detail[0]}")
     return proc.stdout

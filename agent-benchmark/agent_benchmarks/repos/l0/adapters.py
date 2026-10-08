@@ -1,0 +1,475 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Build-system adapters for L0: Bazel, make, CMake, pytest and pre-commit (contract §8).
+
+Each adapter checks the commands and labels the guidance names against the
+build files of the same snapshot. ``repo-eval.yaml`` ``build_systems`` picks
+the adapters; without it they are detected from the files. Rules that are one
+repository's policy (oneDAL refuses ``//...``, for example) stay in that
+repository's ``static`` entry point.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import posixpath
+import re
+from typing import Callable, Iterator
+
+import yaml
+
+from .core import Scan, dynamic
+from .markdown import Fence
+
+ADAPTERS = ("bazel", "make", "cmake", "pytest", "pre-commit")
+_DETECT = {
+    "bazel": ("MODULE.bazel", "WORKSPACE", "WORKSPACE.bazel", ".bazelrc"),
+    "make": ("Makefile", "makefile", "GNUmakefile"),
+    "cmake": ("CMakeLists.txt",),
+    "pytest": ("pytest.ini", "conftest.py", "tox.ini"),
+    "pre-commit": (".pre-commit-config.yaml",),
+}
+BAZEL_NATIVE = frozenset({
+    "load", "package", "glob", "select", "cc_library", "cc_binary", "cc_test", "cc_import", "filegroup", "genrule",
+    "exports_files", "alias", "config_setting", "test_suite", "py_library", "py_binary", "py_test", "sh_binary",
+    "sh_test", "sh_library", "java_library", "java_binary", "java_test", "bazel_dep", "module", "use_extension",
+    "use_repo", "http_archive", "git_override", "local_path_override", "archive_override", "register_toolchains",
+    "workspace", "constraint_setting", "constraint_value", "platform", "toolchain", "licenses", "package_group",
+})
+# A label starts a word: `https://host/x` and `// comment` are not labels.
+_LABEL_RE = re.compile(r"(?<![\w:/])(?:@@?[\w.~+-]*)?//[\w/.\-+]*(?::[\w.\-+/=,@~]+)?")
+_LABEL_PARTS = re.compile(r"^(@@?[\w.~+-]*)?//([\w/.\-+]*?)(?::([\w.\-+/=,@~]+))?$")
+STARLARK_BUILTINS = frozenset({
+    "all", "any", "bool", "dict", "enumerate", "fail", "float", "getattr", "hasattr", "int", "len", "list", "max",
+    "min", "print", "range", "repr", "reversed", "set", "sorted", "str", "tuple", "type", "zip", "depset", "struct",
+    "Label", "existing_rule", "existing_rules", "package_name", "repository_name", "subpackages",
+})
+# One Starlark token: a comment, a string (either quote, a prefix, triple quotes), a word, a line end, or one other
+# character.
+_TOKEN = re.compile(r"""(?P<comment>\#[^\n]*)
+    |(?P<str>[rRbB]{0,2}(?:\"\"\"(?:\\.|[^\\])*?\"\"\"|'''(?:\\.|[^\\])*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'))
+    |(?P<id>[A-Za-z_]\w*)|(?P<nl>\n)|(?P<op>\S)""", re.X | re.S)
+_MAKE_RULE = re.compile(r"^([^\s:#=][^:#=]*?)\s*::?(?!=)", re.M)
+_MAKE_OPT_ARG = frozenset({"-f", "-C", "-I", "-o", "-W", "--file", "--directory", "--makefile"})
+_MAKE_OPT_NUM = frozenset({"-j", "-l", "--jobs", "--load-average"})  # take a number, which may be left out
+_PYTEST_OPT_ARG = frozenset({"-k", "-m", "-p", "-c", "-o", "-W", "-r", "--rootdir", "--confcutdir", "--basetemp", "-n",
+                             "--cov", "--cov-report", "--cov-config", "--log-level", "--import-mode", "--timeout",
+                             "--deselect", "--ignore", "--junitxml", "--durations", "--maxfail", "--tb"})
+
+Handler = Callable[[Scan, str, int, list[str], str], None]
+
+
+def detect(scan: Scan) -> list[str]:
+    """Adapters whose marker files exist at the repository root (any ``conftest.py`` for pytest)."""
+    found = [a for a in ADAPTERS if any(m in scan.file_set for m in _DETECT[a])]
+    if "pytest" not in found and (
+            "conftest.py" in scan.by_name or "[tool.pytest" in scan.text("pyproject.toml")
+            or "[tool:pytest]" in scan.text("setup.cfg")):
+        found.append("pytest")
+    return [a for a in ADAPTERS if a in found]
+
+
+# ---------------------------------------------------------------- bazel
+def _bazel_facts(scan: Scan) -> dict:
+    def make() -> dict:
+        configs: set[str] = set()
+        aliases: set[str] = set()
+        todo, seen = [".bazelrc"], set()
+        while todo:
+            rc = todo.pop()
+            if rc in seen:
+                continue
+            seen.add(rc)
+            text = scan.text(rc)
+            configs |= set(re.findall(r"^\s*\w+:([\w.-]+)", text, re.M))
+            aliases |= set(re.findall(r"--flag_alias=([\w-]+)=", text))
+            todo += [m.replace("%workspace%/", "") for m in re.findall(r"^\s*(?:try-)?import\s+(\S+)", text, re.M)]
+        module = re.search(r'module\(\s*name\s*=\s*"([^"]+)"', scan.text("MODULE.bazel"))
+        bzl = [f for f in scan.files if f.endswith(".bzl")]
+        scan.preload(bzl)
+        defs: dict[str, tuple[str, list[str]]] = {}
+        twice: set[str] = set()  # defined in more than one .bzl file: which one a BUILD loads is not known here
+        for f in bzl:
+            for m in re.finditer(r"^def (\w+)\(", scan.text(f), re.M):
+                params = _def_params(scan.text(f), m.end())
+                if m.group(1) in defs:
+                    twice.add(m.group(1))
+                defs.setdefault(m.group(1), (f, params))
+        return {"configs": configs, "aliases": aliases, "module": module.group(1) if module else None, "defs": defs,
+                "twice": twice}
+    return scan.cached("bazel", make)
+
+
+def _tokens(text: str, pos: int = 0) -> Iterator[tuple[str, str, bool]]:
+    """``(kind, value, first_on_line)`` per token of Starlark ``text`` from ``pos``; comments and blanks are skipped.
+
+    The value of a string is its body without the quotes; escapes stay as written.
+    """
+    first = True
+    for m in _TOKEN.finditer(text, pos):
+        kind = m.lastgroup or "op"
+        if kind == "nl":
+            first = True
+        elif kind != "comment":
+            val = m.group()
+            if kind == "str":
+                val = val.lstrip("rRbB")
+                val = val[3:-3] if val[:3] in ('"""', "'''") else val[1:-1]
+            yield kind, val, first
+            first = False
+
+
+def _def_params(text: str, pos: int) -> list[str]:
+    """Parameter names of a ``def`` whose ``(`` ends just before ``pos``. Names are taken at the top level only, so
+    a comment, a string or a bracketed default (``flags = {"a": 1, "b": 2}``) neither adds nor hides a parameter."""
+    params: list[str] = []
+    depth, stars, seen = 0, "", False
+    for kind, val, _ in _tokens(text, pos):
+        if kind == "op" and val in "([{":
+            depth += 1
+        elif kind == "op" and val in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif depth == 0 and kind == "op" and val == ",":
+            stars, seen = "", False
+        elif depth == 0 and not seen and kind == "op" and val == "*":
+            stars += "*"
+        elif depth == 0 and not seen and kind == "id":
+            params.append(stars + val)
+            seen = True
+    return params
+
+
+def _literal(value: list[tuple[str, str]], list_ok: bool) -> bool:
+    """``value`` is one string, or (``list_ok``) a list of strings."""
+    if not list_ok:
+        return len(value) == 1 and value[0][0] == "str"
+    return bool(value) and value[0] == ("op", "[") and value[-1] == ("op", "]") and all(
+        k == "str" or v in "[]," for k, v in value)
+
+
+def _build_names(text: str) -> tuple[set[str], bool]:
+    """The target and output names a BUILD file spells out, and whether it also makes names it does not spell out.
+
+    Spelled out: ``name = "x"`` or ``out = "x"`` (either quote), ``outs = ["x.h", ...]``. Computed: any other value
+    of those arguments (``"t_" + s``, ``"t_%s" % s``, a variable), a call at the start of a line, or in a comprehension
+    that starts a line, to anything but a native rule or a builtin (a macro, which may generate targets).
+    """
+    names: set[str] = set()
+    computed = False
+    toks = list(_tokens(text))
+    stack: list[str] = []
+    comp = False  # inside a `[...]` or `{...}` at the top level that starts a line
+    for i, (kind, val, first) in enumerate(toks):
+        prev = toks[i - 1] if i else ("", "", False)
+        nxt = toks[i + 1] if i + 1 < len(toks) else ("", "", False)
+        if kind == "op" and val in "([{":
+            comp = comp or (not stack and first and val in "[{")
+            stack.append(val)
+        elif kind == "op" and val in ")]}":
+            if stack:
+                stack.pop()
+            comp = comp and bool(stack)
+        elif kind == "id" and nxt[1] == "(" and nxt[0] == "op" and prev[1] != ".":
+            if ((not stack and first) or comp) and val not in BAZEL_NATIVE and val not in STARLARK_BUILTINS:
+                computed = True
+        elif (kind == "op" and val == "=" and prev[0] == "id" and prev[1] in ("name", "out", "outs")
+              and stack[-1:] == ["("] and toks[i - 2][1] in ("(", ",") and nxt[1] != "="):
+            depth, value, j = 0, [], i + 1
+            while j < len(toks):
+                k, v, _ = toks[j]
+                j += 1
+                if k == "op" and v in "([{":
+                    depth += 1
+                elif k == "op" and v in ")]}":
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif depth == 0 and k == "op" and v == ",":
+                    break
+                value.append((k, v))
+            if _literal(value, prev[1] == "outs"):
+                names.update(v for k, v in value if k == "str")
+            else:
+                computed = True
+    return names, computed
+
+
+def check_label(scan: Scan, file: str, line: int, label: str, ctx: str) -> None:
+    m = _LABEL_PARTS.match(label.lstrip("-"))
+    if not m:
+        return
+    repo, pkg, target = m.groups()
+    if not repo and pkg in ("conditions", "visibility"):  # //conditions:default, //visibility:public
+        return
+    facts = _bazel_facts(scan)
+    if repo and repo.lstrip("@") not in ("", facts["module"]):
+        scan.add(file, line, "bazel_label", label, "unresolved", f"external repository {repo}", ctx)
+        return
+    if pkg == "..." or pkg.endswith("/..."):
+        base = pkg[:-3].rstrip("/") or "."
+        scan.add(file, line, "bazel_label", label, "ok" if scan.exists(base) else "fail",
+                 f"package tree {base}" + ("" if scan.exists(base) else " does not exist"), ctx)
+        return
+    build = next((posixpath.join(pkg, b) for b in ("BUILD.bazel", "BUILD") if posixpath.join(pkg, b) in scan.file_set),
+                 None)  # Bazel reads BUILD.bazel before BUILD
+    if build is None:
+        scan.add(file, line, "bazel_label", label, "fail", f"no BUILD file in package '{pkg or '//'}'", ctx)
+        return
+    name = target or posixpath.basename(pkg)
+    names, computed = scan.cached(f"bazel_build:{build}", lambda: _build_names(scan.text(build)))
+    if name in names or name in ("all", "*", "all-targets"):
+        scan.add(file, line, "bazel_label", label, "ok", f'name = "{name}" in {build}', ctx)
+    elif posixpath.join(pkg, name) in scan.file_set:
+        scan.add(file, line, "bazel_label", label, "ok", f"file in package {pkg}", ctx)
+    elif computed:
+        scan.add(file, line, "bazel_label", label, "unresolved",
+                 f"no literal name = \"{name}\" in {build}; a macro or a computed name there may generate it", ctx)
+    else:
+        scan.add(file, line, "bazel_label", label, "fail", f'no target "{name}" in {build}', ctx)
+
+
+def label_claims(scan: Scan, file: str, line: int, text: str) -> bool:
+    """Check every Bazel label in ``text``; ``True`` if it held any."""
+    labels = [m.group() for m in _LABEL_RE.finditer(text)
+              if _is_label(m.group()) and text[m.end():m.end() + 1] not in ("$", "`")]  # `//:t_$X` names no target
+    if labels and "bazel" in scan.adapters:
+        for label in labels:
+            check_label(scan, file, line, label, text)
+    return bool(labels)
+
+
+def _is_label(label: str) -> bool:
+    """A package or a target, and no host name (`//github.com/x` is a protocol-relative URL)."""
+    m = _LABEL_PARTS.match(label.lstrip("-"))
+    if not m:
+        return False
+    _, pkg, target = m.groups()
+    return bool(pkg or target) and "." not in pkg.split("/", 1)[0]
+
+
+def _bazel(scan: Scan, file: str, line: int, toks: list[str], text: str) -> None:
+    args = list(toks[1:])
+    while args and args[0].startswith("-"):  # startup options
+        args.pop(0)
+    if len(args) < 2:
+        return  # `bazel test` in prose names the verb only
+    facts = _bazel_facts(scan)
+    rest = args[1:]
+    if "--" in rest:  # what follows goes to the built binary, not to bazel
+        rest = rest[:rest.index("--")]
+    for i, t in enumerate(rest):
+        if t.startswith("--config"):
+            value = t.split("=", 1)[1] if "=" in t else (rest[i + 1] if i + 1 < len(rest) else "")
+            if dynamic(value):
+                continue
+            ok = value in facts["configs"]
+            scan.add(file, line, "bazel_config", value, "ok" if ok else "fail",
+                     "config in .bazelrc" if ok else "no such config in .bazelrc or its imports", text)
+        elif t.startswith("--") and t[2:].split("=")[0] in facts["aliases"]:
+            scan.add(file, line, "bazel_flag", t, "ok", "flag_alias in .bazelrc", text)
+        elif "//" in t and _is_label(t.lstrip("-")):
+            check_label(scan, file, line, t, text)
+
+
+def check_starlark(scan: Scan, file: str, fence: Fence) -> None:
+    code = "\n".join(text for _, text in fence.lines)
+    facts = _bazel_facts(scan)
+    for m in re.finditer(r"^(\w+)\(", code, re.M):
+        name = m.group(1)
+        line = fence.lines[code[:m.start()].count("\n")][0]
+        snippet = code[m.start():m.start() + 80]
+        if name in BAZEL_NATIVE:
+            continue
+        if name not in facts["defs"]:
+            scan.add(file, line, "starlark_macro", name, "unresolved",
+                     "not defined in a tracked .bzl file; it may come from an external rule set", snippet)
+            continue
+        where, params = facts["defs"][name]
+        scan.add(file, line, "starlark_macro", name, "ok", f"defined in {where}", snippet)
+        kwargs = any(p.startswith("**") for p in params) or name in facts["twice"]
+        for kw in re.findall(r"^\s{4}(\w+)\s*=", _call_body(code, m.end() - 1), re.M):
+            if kw not in params:
+                scan.add(file, line, "starlark_kwarg", f"{name}({kw}=)", "unresolved" if kwargs else "fail",
+                         f"{name} is defined more than once or takes **kwargs" if kwargs
+                         else f"not a parameter of {name} in {where}", snippet)
+    for n, text in fence.lines:
+        for label in re.findall(r'"((?:@@?[\w.~+-]*)?//[^"]*)"', text):
+            check_label(scan, file, n, label, text)
+
+
+def _call_body(code: str, open_paren: int) -> str:
+    depth = 0
+    for k in range(open_paren, len(code)):
+        depth += (code[k] == "(") - (code[k] == ")")
+        if depth == 0:
+            return code[open_paren + 1:k]
+    return code[open_paren + 1:]
+
+
+# ---------------------------------------------------------------- make
+def _make_facts(scan: Scan) -> dict:
+    def make() -> dict:
+        files = [f for f in scan.files if posixpath.basename(f) in ("Makefile", "makefile", "GNUmakefile")
+                 or f.endswith(".mk")]
+        scan.preload(files)
+        targets: set[str] = set()
+        patterns: set[str] = set()
+        computed = False
+        text = ""
+        for f in files:
+            body = scan.text(f)
+            text += body + "\n"
+            for m in _MAKE_RULE.finditer(body):
+                for t in m.group(1).split():
+                    if "$" in t:
+                        computed = True
+                    elif "%" in t:
+                        patterns.add(t)
+                    else:
+                        targets.add(t)
+        return {"files": files, "targets": targets, "patterns": patterns, "computed": computed, "text": text}
+    return scan.cached("make", make)
+
+
+def _make(scan: Scan, file: str, line: int, toks: list[str], text: str) -> None:
+    facts = _make_facts(scan)
+    args = iter(toks[1:])
+    for t in args:
+        if t in _MAKE_OPT_ARG:
+            next(args, None)
+            continue
+        if t in _MAKE_OPT_NUM:
+            t = next(args, "")
+            if not t or t.isdigit() or t.replace(".", "", 1).isdigit():
+                continue
+        if t.startswith("-") or (dynamic(t) and "=" not in t) or dynamic(t.split("=", 1)[0]):
+            continue  # an expansion (`$(nproc)`, `$TARGET`, `FOO_$X=1`) is not a name to look up
+        if "=" in t:
+            key = t.split("=", 1)[0].rstrip("+:?")
+            ok = re.search(rf"\b{re.escape(key)}\b", facts["text"]) is not None
+            scan.add(file, line, "make_var", t, "ok" if ok else "fail",
+                     "variable used in the makefiles" if ok else f"{key} appears in no makefile", text)
+        elif not facts["files"]:
+            scan.add(file, line, "make_target", t, "fail", "the repository has no makefile", text)
+        elif t in facts["targets"]:
+            scan.add(file, line, "make_target", t, "ok", "rule in the makefiles", text)
+        elif any(fnmatch.fnmatchcase(t, p.replace("%", "*")) for p in facts["patterns"]):
+            status = "unresolved" if "%" in facts["patterns"] else "ok"
+            scan.add(file, line, "make_target", t, status, "matched by a pattern rule", text)
+        elif facts["computed"]:
+            scan.add(file, line, "make_target", t, "unresolved",
+                     "no literal rule; some rule names are built from variables and not expanded here", text)
+        else:
+            scan.add(file, line, "make_target", t, "fail", "no rule for it in the makefiles", text)
+
+
+# ---------------------------------------------------------------- cmake
+_CMAKE_BUILTIN = re.compile(r"^(CMAKE_|CTEST_|CPACK_|Python3?_|BUILD_SHARED_LIBS$|BUILD_TESTING$)|_(DIR|ROOT)$")
+
+
+def _cmake(scan: Scan, file: str, line: int, toks: list[str], text: str) -> None:
+    def make() -> dict:
+        files = [f for f in scan.files if posixpath.basename(f) == "CMakeLists.txt" or f.endswith((".cmake", ".cmake.in"))]
+        scan.preload(files)
+        presets: set[str] = set()
+        for name in ("CMakePresets.json", "CMakeUserPresets.json"):
+            try:
+                doc = json.loads(scan.text(name) or "{}")
+            except json.JSONDecodeError:
+                continue
+            for key, value in (doc.items() if isinstance(doc, dict) else ()):
+                if key.endswith("Presets") and isinstance(value, list):
+                    presets |= {p["name"] for p in value if isinstance(p, dict) and isinstance(p.get("name"), str)}
+        return {"sources": "\n".join(scan.text(f) for f in files), "presets": presets}
+    facts = scan.cached("cmake", make)
+    for i, t in enumerate(toks):
+        nxt = toks[i + 1] if i + 1 < len(toks) else ""
+        if t.startswith("-D"):
+            var = (t[2:] or nxt).split("=")[0].split(":")[0]
+            if not var or dynamic(var):
+                continue
+            if _CMAKE_BUILTIN.search(var):
+                scan.add(file, line, "cmake_var", var, "ok", "CMake built-in or package variable", text)
+            else:
+                ok = re.search(rf"\b{re.escape(var)}\b", facts["sources"]) is not None
+                scan.add(file, line, "cmake_var", var, "ok" if ok else "fail",
+                         "used in the CMake sources" if ok else "appears in no CMakeLists.txt or .cmake file", text)
+        elif t == "--preset" and nxt or t.startswith("--preset="):
+            name = t.split("=", 1)[1] if "=" in t else nxt
+            if dynamic(name):
+                continue
+            ok = name in facts["presets"]
+            scan.add(file, line, "cmake_preset", name, "ok" if ok else "fail",
+                     "preset in CMakePresets.json" if ok else "no such preset in CMake(User)Presets.json", text)
+
+
+# ---------------------------------------------------------------- pytest
+def _pytest(scan: Scan, file: str, line: int, toks: list[str], text: str) -> None:
+    args = iter(toks[1:])
+    for t in args:
+        if t in _PYTEST_OPT_ARG:
+            next(args, None)
+            continue
+        if t.startswith("-"):
+            continue
+        path, _, node = t.partition("::")
+        r = scan.resolve_path(file, path)
+        if r is None:
+            continue
+        scan.add(file, line, "pytest_path", path, r[0], r[1], text)
+        if node and r[0] == "ok" and r[1] in scan.file_set and not dynamic(node):
+            name = node.split("[")[0].split("::")[-1]  # a parameter id may hold `::`
+            ok = re.search(rf"^\s*(?:async\s+)?(?:def|class)\s+{re.escape(name)}\b", scan.text(r[1]), re.M)
+            scan.add(file, line, "pytest_node", t, "ok" if ok else "fail",
+                     f"{'defined' if ok else 'not defined'} in {r[1]}", text)
+
+
+def _python(scan: Scan, file: str, line: int, toks: list[str], text: str) -> None:
+    if toks[1:3] == ["-m", "pytest"]:
+        _pytest(scan, file, line, ["pytest", *toks[3:]], text)
+
+
+# ---------------------------------------------------------------- pre-commit
+def _pre_commit(scan: Scan, file: str, line: int, toks: list[str], text: str) -> None:
+    if len(toks) < 3 or toks[1] != "run" or toks[2].startswith("-"):
+        return
+    hook = toks[2]
+    if dynamic(hook):
+        return
+
+    def make() -> set[str] | None:
+        if ".pre-commit-config.yaml" not in scan.file_set:
+            return None
+        try:
+            cfg = yaml.safe_load(scan.text(".pre-commit-config.yaml")) or {}
+        except yaml.YAMLError:
+            return set()
+        ids: set[str] = set()
+        repos = cfg.get("repos") if isinstance(cfg, dict) else None
+        for repo in repos if isinstance(repos, list) else []:
+            hooks = repo.get("hooks") if isinstance(repo, dict) else None
+            for h in hooks if isinstance(hooks, list) else []:
+                if isinstance(h, dict):
+                    ids |= {v for v in (h.get("id"), h.get("alias")) if isinstance(v, str)}
+        return ids
+    ids = scan.cached("pre-commit", make)
+    if ids is None:
+        scan.add(file, line, "precommit_hook", hook, "fail", "the repository has no .pre-commit-config.yaml", text)
+    else:
+        scan.add(file, line, "precommit_hook", hook, "ok" if hook in ids else "fail",
+                 "hook id in .pre-commit-config.yaml" if hook in ids else "no hook with this id or alias", text)
+
+
+# first word of a command -> (adapter that must be enabled, its check)
+COMMANDS: dict[str, tuple[str, Handler]] = {
+    "bazel": ("bazel", _bazel), "bazelisk": ("bazel", _bazel),
+    "make": ("make", _make), "gmake": ("make", _make),
+    "cmake": ("cmake", _cmake),
+    "pytest": ("pytest", _pytest), "py.test": ("pytest", _pytest),
+    "python": ("pytest", _python), "python3": ("pytest", _python),
+    "pre-commit": ("pre-commit", _pre_commit),
+}

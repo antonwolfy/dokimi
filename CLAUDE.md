@@ -28,10 +28,10 @@ Before pushing: `make dev` once (repo root, builds CI's `.venv`), then `make ci-
   pipeline stage (`metrics/`, `questions/`, `eval/`, `gate/`, `treatments/`, …).
   See `agent-benchmark/docs/architecture.md` for the module map.
 - Key registries (top level of `agent-benchmark/`):
-  - `products.yaml` — product identity + doc sources (what products exist).
-  - `intents.yaml` — problem/intent domains mapped to products (what user
+  - `agent-benchmark/products.yaml` — product identity + doc sources (what products exist).
+  - `agent-benchmark/intents.yaml` — problem/intent domains mapped to products (what user
     problems exist). The domain→product mapping lives only here.
-  - `config/products.yaml` — LLM/runtime config for the eval track only;
+  - `agent-benchmark/config/products.yaml` — LLM/runtime config for the eval track only;
     identity stated there must not drift from `products.yaml`.
 - Executable tasks (Docker + oracle solution + pytest verifier) are evaluation
   content and live in a separate content repository. Point the framework at a
@@ -44,11 +44,11 @@ Before pushing: `make dev` once (repo root, builds CI's `.venv`), then `make ci-
 - Never commit generated artifacts: `results/`, `reports/`, and anything written
   to `baselines/`, `answers/` or `eval/`, coverage files, logs, tarballs. Only
   curated *inputs* go under `agent-benchmark/data/`, and only the fixtures the
-  framework's own tests and examples need (`skills/fastcontext/`,
-  `agent_profiles/`, `explore_tasks/`) — question sets and product skills are
+  framework's own tests and examples need
+  (`agent-benchmark/data/skills/fastcontext/`, `agent_profiles/`, `explore_tasks/`) — question sets and product skills are
   evaluation content, passed in by path from a content checkout. Captured runs
   stay out of the tree and their formats are locked by
-  `agent_benchmarks/schemas/`.
+  `agent-benchmark/agent_benchmarks/schemas/`.
 - Status reports and phase plans do not belong in the repo — use PR
   descriptions and issues.
 - All changes to `main` go through pull requests.

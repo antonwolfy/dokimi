@@ -1,0 +1,689 @@
+{
+  "repo": {
+    "id": "toy",
+    "tree": "toy/.git@f5ab7bb69490",
+    "sha": "f5ab7bb694900aef2a75e77a2c808b1f43246e8e",
+    "manifest": "<manifest>"
+  },
+  "files": [
+    "AGENTS.md",
+    "CONTRIBUTING.md"
+  ],
+  "adapters": [
+    "bazel",
+    "make",
+    "cmake",
+    "pytest",
+    "pre-commit"
+  ],
+  "adapters_detected": false,
+  "counts": {
+    "ok": 28,
+    "unresolved": 8,
+    "fail": 16,
+    "total": 52
+  },
+  "by_source": {
+    "framework": {
+      "ok": 26,
+      "unresolved": 8,
+      "fail": 15,
+      "total": 49
+    },
+    "repository": {
+      "ok": 2,
+      "unresolved": 0,
+      "fail": 1,
+      "total": 3
+    }
+  },
+  "by_kind": {
+    "bazel_config": {
+      "ok": 1,
+      "unresolved": 0,
+      "fail": 1,
+      "total": 2
+    },
+    "bazel_label": {
+      "ok": 5,
+      "unresolved": 2,
+      "fail": 2,
+      "total": 9
+    },
+    "cmake_var": {
+      "ok": 2,
+      "unresolved": 0,
+      "fail": 1,
+      "total": 3
+    },
+    "identifier": {
+      "ok": 1,
+      "unresolved": 0,
+      "fail": 2,
+      "total": 3
+    },
+    "link": {
+      "ok": 2,
+      "unresolved": 0,
+      "fail": 2,
+      "total": 4
+    },
+    "make_target": {
+      "ok": 3,
+      "unresolved": 1,
+      "fail": 0,
+      "total": 4
+    },
+    "make_var": {
+      "ok": 0,
+      "unresolved": 0,
+      "fail": 1,
+      "total": 1
+    },
+    "path": {
+      "ok": 8,
+      "unresolved": 2,
+      "fail": 2,
+      "total": 12
+    },
+    "precommit_hook": {
+      "ok": 1,
+      "unresolved": 0,
+      "fail": 1,
+      "total": 2
+    },
+    "pytest_node": {
+      "ok": 1,
+      "unresolved": 0,
+      "fail": 1,
+      "total": 2
+    },
+    "pytest_path": {
+      "ok": 2,
+      "unresolved": 0,
+      "fail": 0,
+      "total": 2
+    },
+    "script_path": {
+      "ok": 0,
+      "unresolved": 1,
+      "fail": 0,
+      "total": 1
+    },
+    "shell_fence": {
+      "ok": 0,
+      "unresolved": 0,
+      "fail": 1,
+      "total": 1
+    },
+    "starlark_kwarg": {
+      "ok": 0,
+      "unresolved": 1,
+      "fail": 1,
+      "total": 2
+    },
+    "starlark_macro": {
+      "ok": 2,
+      "unresolved": 1,
+      "fail": 0,
+      "total": 3
+    },
+    "target": {
+      "ok": 0,
+      "unresolved": 0,
+      "fail": 1,
+      "total": 1
+    }
+  },
+  "by_file": {
+    "AGENTS.md": {
+      "ok": 27,
+      "unresolved": 8,
+      "fail": 16,
+      "total": 51
+    },
+    "CONTRIBUTING.md": {
+      "ok": 1,
+      "unresolved": 0,
+      "fail": 0,
+      "total": 1
+    }
+  },
+  "static": {
+    "errors": [],
+    "claims": 3,
+    "superseded": 0,
+    "extra": {
+      "counts": {
+        "fail": 1,
+        "ok": 1,
+        "ok_basename": 1,
+        "unresolved": 0
+      },
+      "files": [
+        "AGENTS.md"
+      ]
+    }
+  },
+  "warnings": [],
+  "incomplete": false,
+  "claims": [
+    {
+      "file": "AGENTS.md",
+      "line": 2,
+      "kind": "link",
+      "claim": "src/a.h",
+      "status": "ok",
+      "why": "resolves to src/a.h",
+      "ctx": "See [the header](src/a.h), [gone](missing.md), [blob](https://github.com/acme/toy/blob/main/src/a.h),",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 2,
+      "kind": "link",
+      "claim": "missing.md",
+      "status": "fail",
+      "why": "resolves to missing.md",
+      "ctx": "See [the header](src/a.h), [gone](missing.md), [blob](https://github.com/acme/toy/blob/main/src/a.h),",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 2,
+      "kind": "link",
+      "claim": "https://github.com/acme/toy/blob/main/src/a.h",
+      "status": "ok",
+      "why": "resolves to src/a.h",
+      "ctx": "See [the header](src/a.h), [gone](missing.md), [blob](https://github.com/acme/toy/blob/main/src/a.h),",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 3,
+      "kind": "link",
+      "claim": "https://github.com/acme/toy/tree/main/nowhere",
+      "status": "fail",
+      "why": "resolves to nowhere",
+      "ctx": "[blob gone](https://github.com/acme/toy/tree/main/nowhere), [site](https://example.com/x) and [top](#toy).",
+      "source": "framework"
+    },
+    {
+      "claim": "a.h",
+      "file": "AGENTS.md",
+      "kind": "path",
+      "line": 3,
+      "status": "ok",
+      "source": "repository"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "src/a.h",
+      "status": "ok",
+      "why": "src/a.h",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "a.h",
+      "status": "ok_basename",
+      "why": "bare name; 1 match(es), e.g. src/a.h",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "src/*.h",
+      "status": "ok",
+      "why": "glob src/*.h -> e.g. src/a.h",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "docs/*.xyz",
+      "status": "fail",
+      "why": "glob docs/*.xyz -> 0 hits",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "src/missing.h",
+      "status": "fail",
+      "why": "src/ exists but src/missing.h does not",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "out/gen.h",
+      "status": "unresolved",
+      "why": "tried out/gen.h",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "inner/x.py",
+      "status": "ok_suffix",
+      "why": "below a directory the text does not name; 1 match(es), e.g. deep/inner/x.py",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "Makefile",
+      "status": "ok",
+      "why": "Makefile",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "<out>/a.h",
+      "status": "ok",
+      "why": "<out> stands for a directory; a.h matches src/a.h",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 4,
+      "kind": "path",
+      "claim": "{run_dir}/x.json",
+      "status": "unresolved",
+      "why": "{run_dir} stands for a directory outside the tree; nothing to check x.json against",
+      "ctx": "Paths: `src/a.h`, `a.h`, `src/*.h`, `docs/*.xyz`, `src/missing.h`, `out/gen.h`, `inner/x.py`, `Makefile`, `<out>/a.h`, `{run_dir}/x.json`.",
+      "source": "framework"
+    },
+    {
+      "claim": "b.h",
+      "file": "AGENTS.md",
+      "kind": "path",
+      "line": 4,
+      "status": "ok_basename",
+      "source": "repository"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 5,
+      "kind": "identifier",
+      "claim": "ToyWidget",
+      "status": "ok",
+      "why": "`ToyWidget` found in tracked non-doc files",
+      "ctx": "Names: `ToyWidget`, `GhostWidget`, `OnlyInDocs`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 5,
+      "kind": "identifier",
+      "claim": "GhostWidget",
+      "status": "fail",
+      "why": "`GhostWidget` not found in tracked non-doc files",
+      "ctx": "Names: `ToyWidget`, `GhostWidget`, `OnlyInDocs`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 5,
+      "kind": "identifier",
+      "claim": "OnlyInDocs",
+      "status": "fail",
+      "why": "`OnlyInDocs` not found in tracked non-doc files",
+      "ctx": "Names: `ToyWidget`, `GhostWidget`, `OnlyInDocs`.",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 6,
+      "kind": "bazel_label",
+      "claim": "//lib:core",
+      "status": "ok",
+      "why": "name = \"core\" in lib/BUILD",
+      "ctx": "//lib:core",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 6,
+      "kind": "bazel_label",
+      "claim": "//lib:nope",
+      "status": "fail",
+      "why": "no target \"nope\" in lib/BUILD",
+      "ctx": "//lib:nope",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 6,
+      "kind": "bazel_label",
+      "claim": "//pkg2:gen_extra",
+      "status": "unresolved",
+      "why": "no literal name = \"gen_extra\" in pkg2/BUILD; a macro there may generate it",
+      "ctx": "//pkg2:gen_extra",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 6,
+      "kind": "bazel_label",
+      "claim": "//nopkg:x",
+      "status": "fail",
+      "why": "no BUILD file in package 'nopkg'",
+      "ctx": "//nopkg:x",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 6,
+      "kind": "bazel_label",
+      "claim": "@other//x:y",
+      "status": "unresolved",
+      "why": "external repository @other",
+      "ctx": "@other//x:y",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 6,
+      "kind": "bazel_label",
+      "claim": "@toy//lib:core",
+      "status": "ok",
+      "why": "name = \"core\" in lib/BUILD",
+      "ctx": "@toy//lib:core",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 7,
+      "kind": "bazel_label",
+      "claim": "//lib/...",
+      "status": "ok",
+      "why": "package tree lib",
+      "ctx": "//lib/...",
+      "source": "framework"
+    },
+    {
+      "claim": "//x",
+      "ctx": "bazel test //x",
+      "file": "AGENTS.md",
+      "kind": "target",
+      "line": 9,
+      "status": "fail",
+      "why": "no such target",
+      "source": "repository"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 10,
+      "kind": "bazel_config",
+      "claim": "opt",
+      "status": "ok",
+      "why": "config in .bazelrc",
+      "ctx": "bazel build --config=opt //lib:core",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 10,
+      "kind": "bazel_label",
+      "claim": "//lib:core",
+      "status": "ok",
+      "why": "name = \"core\" in lib/BUILD",
+      "ctx": "bazel build --config=opt //lib:core",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 11,
+      "kind": "bazel_config",
+      "claim": "nope",
+      "status": "fail",
+      "why": "no such config in .bazelrc or its imports",
+      "ctx": "bazel test --config=nope //lib:core",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 11,
+      "kind": "bazel_label",
+      "claim": "//lib:core",
+      "status": "ok",
+      "why": "name = \"core\" in lib/BUILD",
+      "ctx": "bazel test --config=nope //lib:core",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 12,
+      "kind": "shell_fence",
+      "claim": "`make all`",
+      "status": "fail",
+      "why": "command wrapped in backticks inside a code fence: pasted, it runs as command substitution",
+      "ctx": "`make all`",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 12,
+      "kind": "make_target",
+      "claim": "all",
+      "status": "ok",
+      "why": "rule in the makefiles",
+      "ctx": "make all",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 13,
+      "kind": "make_target",
+      "claim": "lib_foo",
+      "status": "ok",
+      "why": "matched by a pattern rule",
+      "ctx": "make lib_foo",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 14,
+      "kind": "make_target",
+      "claim": "ghost",
+      "status": "unresolved",
+      "why": "no literal rule; some rule names are built from variables and not expanded here",
+      "ctx": "make ghost",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 15,
+      "kind": "make_var",
+      "claim": "VERBOSE=1",
+      "status": "fail",
+      "why": "VERBOSE appears in no makefile",
+      "ctx": "make VERBOSE=1",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 16,
+      "kind": "cmake_var",
+      "claim": "TOY_GPU",
+      "status": "ok",
+      "why": "used in the CMake sources",
+      "ctx": "cmake -S . -B build -DTOY_GPU=ON -DCMAKE_BUILD_TYPE=Release -DNOPE=1",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 16,
+      "kind": "cmake_var",
+      "claim": "CMAKE_BUILD_TYPE",
+      "status": "ok",
+      "why": "CMake built-in or package variable",
+      "ctx": "cmake -S . -B build -DTOY_GPU=ON -DCMAKE_BUILD_TYPE=Release -DNOPE=1",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 16,
+      "kind": "cmake_var",
+      "claim": "NOPE",
+      "status": "fail",
+      "why": "appears in no CMakeLists.txt or .cmake file",
+      "ctx": "cmake -S . -B build -DTOY_GPU=ON -DCMAKE_BUILD_TYPE=Release -DNOPE=1",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 17,
+      "kind": "pytest_path",
+      "claim": "tests/test_x.py",
+      "status": "ok",
+      "why": "tests/test_x.py",
+      "ctx": "pytest tests/test_x.py::test_one",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 17,
+      "kind": "pytest_node",
+      "claim": "tests/test_x.py::test_one",
+      "status": "ok",
+      "why": "defined in tests/test_x.py",
+      "ctx": "pytest tests/test_x.py::test_one",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 18,
+      "kind": "pytest_path",
+      "claim": "tests/test_x.py",
+      "status": "ok",
+      "why": "tests/test_x.py",
+      "ctx": "python -m pytest tests/test_x.py::test_two",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 18,
+      "kind": "pytest_node",
+      "claim": "tests/test_x.py::test_two",
+      "status": "fail",
+      "why": "not defined in tests/test_x.py",
+      "ctx": "python -m pytest tests/test_x.py::test_two",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 19,
+      "kind": "precommit_hook",
+      "claim": "clang-format",
+      "status": "ok",
+      "why": "hook id in .pre-commit-config.yaml",
+      "ctx": "pre-commit run clang-format",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 20,
+      "kind": "precommit_hook",
+      "claim": "ghost",
+      "status": "fail",
+      "why": "no hook with this id or alias",
+      "ctx": "pre-commit run ghost",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 21,
+      "kind": "script_path",
+      "claim": "tools/missing.py",
+      "status": "unresolved",
+      "why": "tried tools/missing.py",
+      "ctx": "python3 tools/missing.py",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 25,
+      "kind": "starlark_macro",
+      "claim": "my_macro",
+      "status": "ok",
+      "why": "defined in defs.bzl",
+      "ctx": "my_macro(\n    name = \"x\",\n    anything = 1,\n)\nstrict(\n    name = \"y\",\n    bogus",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 25,
+      "kind": "starlark_kwarg",
+      "claim": "my_macro(anything=)",
+      "status": "unresolved",
+      "why": "my_macro is defined more than once or takes **kwargs",
+      "ctx": "my_macro(\n    name = \"x\",\n    anything = 1,\n)\nstrict(\n    name = \"y\",\n    bogus",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 29,
+      "kind": "starlark_macro",
+      "claim": "strict",
+      "status": "ok",
+      "why": "defined in defs.bzl",
+      "ctx": "strict(\n    name = \"y\",\n    bogus = 2,\n)\nunknown_rule(name = \"z\")",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 29,
+      "kind": "starlark_kwarg",
+      "claim": "strict(bogus=)",
+      "status": "fail",
+      "why": "not a parameter of strict in defs.bzl",
+      "ctx": "strict(\n    name = \"y\",\n    bogus = 2,\n)\nunknown_rule(name = \"z\")",
+      "source": "framework"
+    },
+    {
+      "file": "AGENTS.md",
+      "line": 33,
+      "kind": "starlark_macro",
+      "claim": "unknown_rule",
+      "status": "unresolved",
+      "why": "not defined in a tracked .bzl file; it may come from an external rule set",
+      "ctx": "unknown_rule(name = \"z\")",
+      "source": "framework"
+    },
+    {
+      "file": "CONTRIBUTING.md",
+      "line": 1,
+      "kind": "make_target",
+      "claim": "all",
+      "status": "ok",
+      "why": "rule in the makefiles",
+      "ctx": "make all",
+      "source": "framework"
+    }
+  ],
+  "schema_version": "repo_readiness.v1"
+}

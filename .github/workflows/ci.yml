@@ -73,6 +73,8 @@ jobs:
         run: python -m agent_benchmarks.schema_check benchmarks/spec.v1.yaml
       - name: registry-drift-check
         run: python -m agent_benchmarks.config_check
+      - name: guidance self-scan (L0)
+        run: python cli.py repo scan .. --manifest-file benchmarks/self-scan.repo-eval.yaml --fail-on-fail
 
   test:
     name: Tests (py${{ matrix.python-version }})

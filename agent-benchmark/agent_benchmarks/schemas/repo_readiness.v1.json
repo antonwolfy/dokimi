@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/napetrov/agent-benchmark/schemas/repo_readiness.v1.json",
+  "title": "Repository L0 readiness v1",
+  "description": "L0: whether a repository's guidance is true of its own tree (docs/repo-evaluation-contract.md §8). One record per mechanically checkable claim (link, path, identifier, command, build label or config), from the framework's checks (`source: framework`) and the repository's own `static` output (`source: repository`, repo_static.v1). A repository claim replaces a framework claim on the same file, line and claim text. The status class is the part of `status` before the first `_`; only `fail` counts against the guidance, `unresolved` needs a human look.",
+  "type": "object",
+  "required": ["schema_version", "repo", "files", "adapters", "adapters_detected", "counts", "by_source", "by_kind",
+               "by_file", "static", "warnings", "incomplete", "claims"],
+  "additionalProperties": false,
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "required": ["ok", "unresolved", "fail", "total"],
+      "properties": {
+        "ok": {"type": "integer", "minimum": 0},
+        "unresolved": {"type": "integer", "minimum": 0},
+        "fail": {"type": "integer", "minimum": 0},
+        "total": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "repo_readiness.v1"},
+    "generated_at": {"type": "string"},
+    "repo": {
+      "type": "object",
+      "required": ["id", "tree"],
+      "properties": {
+        "id": {"type": "string"},
+        "tree": {"type": "string"},
+        "sha": {"type": ["string", "null"], "description": "Full commit SHA of a git source; null for a working tree."},
+        "manifest": {"type": "string"}
+      }
+    },
+    "files": {"type": "array", "items": {"type": "string"}, "description": "Guidance files scanned: guidance.globs plus also_scan."},
+    "adapters": {
+      "type": "array",
+      "items": {"enum": ["bazel", "make", "cmake", "pytest", "pre-commit"]}
+    },
+    "adapters_detected": {"type": "boolean", "description": "True when the manifest declared no build_systems and the adapters were chosen from the files at the root."},
+    "counts": {"$ref": "#/$defs/counts"},
+    "by_source": {
+      "type": "object",
+      "required": ["framework", "repository"],
+      "properties": {
+        "framework": {"$ref": "#/$defs/counts"},
+        "repository": {"oneOf": [{"$ref": "#/$defs/counts"}, {"type": "null"}]}
+      },
+      "description": "Counts per source before merging; repository is null when no static output was given."
+    },
+    "by_kind": {"type": "object", "additionalProperties": {"$ref": "#/$defs/counts"}},
+    "by_file": {"type": "object", "additionalProperties": {"$ref": "#/$defs/counts"}},
+    "static": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["errors", "claims", "superseded"],
+          "properties": {
+            "errors": {"type": "array", "items": {"type": "string"}, "description": "repo_static.v1 problems; when non-empty no repository claim was merged."},
+            "claims": {"type": "integer", "minimum": 0},
+            "superseded": {"type": "integer", "minimum": 0, "description": "Framework claims replaced by a repository claim."},
+            "extra": {"type": "object", "description": "Top-level keys of the static output other than schema and claims, stored as they are."}
+          }
+        }
+      ]
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}, "description": "Guidance the manifest names but the tree lacks: a glob with no match, a missing also_scan file, no guidance at all."},
+    "incomplete": {"type": "boolean", "description": "True when an also_scan file is missing, a guidance file cannot be read, or no guidance file was scanned; `repo scan --fail-on-fail` then exits 1."},
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "status", "source"],
+        "properties": {
+          "file": {"type": "string"},
+          "line": {"type": "integer", "minimum": 0},
+          "status": {"type": "string", "pattern": "^(ok|unresolved|fail)(_[A-Za-z0-9_]+)?$"},
+          "source": {"enum": ["framework", "repository"]},
+          "kind": {"description": "Claim kind, such as link, path, identifier, bazel_label or make_target."},
+          "claim": {"description": "The text the guidance claims; a repository claim keeps whatever its static output wrote."},
+          "why": {},
+          "ctx": {}
+        }
+      }
+    }
+  }
+}

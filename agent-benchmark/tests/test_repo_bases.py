@@ -14,7 +14,7 @@ import yaml
 
 from agent_benchmarks.cli import build_parser
 from agent_benchmarks.repos import RepoSource, check_repo, load_manifest, open_source
-from agent_benchmarks.repos.source import base_opener
+from agent_benchmarks.repos.source import WorkTree, base_opener
 from agent_benchmarks.repos.static import check_static, static_counts
 
 MANIFEST = {
@@ -163,3 +163,19 @@ def test_repo_static_v1():
     assert any("'line' is a required property" in p for p in problems), problems
     assert any("broken" in p for p in problems), problems
     assert check_static({"files": []}) != []
+
+
+def test_work_tree_lists_what_git_shows(tmp_path):
+    root = tmp_path / "wt"
+    _write(root, "AGENTS.md", "root\n")
+    _write(root, ".gitignore", ".venv/\n")
+    _commit_all(root, "init")
+    _write(root, ".venv/pkg/AGENTS.md", "vendored\n")
+    _write(root, "new/AGENTS.md", "not committed yet\n")
+    assert WorkTree(root).files() == [".gitignore", "AGENTS.md", "new/AGENTS.md"]
+    _write(root, "sub/AGENTS.md", "sub\n")
+    _write(root, "sub/.venv/AGENTS.md", "vendored below a subdirectory\n")
+    assert WorkTree(root / "sub").files() == ["AGENTS.md"]  # a subdirectory of the checkout
+    plain = tmp_path / "plain"
+    _write(plain, ".venv/AGENTS.md", "no git here, so every file counts\n")
+    assert WorkTree(plain).files() == [".venv/AGENTS.md"]

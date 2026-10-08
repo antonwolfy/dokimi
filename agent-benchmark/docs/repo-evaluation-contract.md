@@ -21,7 +21,14 @@
 >     [--bin <cli>] [--scenarios root,cwd,read] [--only <scenario>] [--dry-run]
 > ```
 >
-> `--manifest-file <local.yaml>` on `validate` and `reach` reads the manifest
+> Slice S2 adds the L0 scan (§8):
+>
+> ```bash
+> python cli.py repo scan <source> --manifest <path> [--static <repo_static.json>] [--out readiness.json]
+>     [--json] [--fail-on-fail]
+> ```
+>
+> `--manifest-file <local.yaml>` on `validate`, `scan` and `reach` reads the manifest
 > from outside the tree, for a repository that has not added it yet.
 >
 > Everything else below (workspace preparation, entry points, `grade.json`) is
@@ -342,7 +349,7 @@ the same content runnable by the framework.
 | oracle logic spread across `run.py check` | expose it as the `oracle` entry point |
 | `bin/bazel` wrapper, shared caches, `MKLROOT` removal | expressed in the Dockerfile and `image.caches` / `image.env` |
 | clean-ancestor guard, no-background hook, per-run config dir | done by the framework for every harness |
-| `static_check.py` | exposed as the `static` entry point. Its generic parts (links, paths, identifiers, fences) also become framework L0 checks; oneDAL rules such as the `//...` policy stay in oneDAL |
+| `static_check.py` | exposed as the `static` entry point. Its generic parts (links, paths, identifiers, fences) are framework L0 checks (§8); oneDAL rules such as the `//...` policy stay in oneDAL, and `repo scan --static` merges them |
 
 ## 6. Harness profiles
 
@@ -461,3 +468,92 @@ per scenario).
 - If payload capture is available, a `payload` field records whether each
   token was in the request bytes. This settles cells where the model
   under-reports, which is how a small model produces false `truncated` cells.
+
+## 8. L0 scan (`repo_readiness.v1`)
+
+`repo scan <source>` checks every mechanically checkable claim in the guidance
+files (`guidance.globs` plus `also_scan`) against the same snapshot. It makes
+no LLM call and needs no checkout: a blob-less clone fetches the blobs it reads
+in one request.
+
+| Check | Claims |
+|---|---|
+| generic | Markdown links (inline and reference definitions, `<angle-bracket>` targets; relative, and blob/tree links to `source.url`), paths and globs in code spans (see below), identifiers (a word in some tracked file that is not prose; a missing ALL_CAPS name is `unresolved`, since a tool outside the tree may read it), `python <script>` paths, a command wrapped in backticks inside a shell fence |
+| `bazel` | `--config` values against `.bazelrc` and its imports, flag aliases, labels against the target and output names (`name`, `outs`) that the package's `BUILD.bazel`, else `BUILD`, spells out in either quote style (a package that calls a macro or computes a name, `"t_" + s` or a comprehension, gives `unresolved`, not `fail`), macros and keyword arguments in Starlark fences against tracked `.bzl` files |
+| `make` | targets against the rules of every makefile (a `%:` catch-all or a rule named by a variable gives `unresolved`), `VAR=value` against the makefiles |
+| `cmake` | `-D` variables against the CMake sources (CMake built-ins and `<Pkg>_DIR`/`_ROOT` pass), `--preset` against `CMake(User)Presets.json` |
+| `pytest` | path arguments and `::test` nodes |
+| `pre-commit` | `pre-commit run <hook>` against hook ids and aliases |
+
+`build_systems` picks the adapters. Without it they are detected from the
+files at the root (any `conftest.py` or a pytest section also selects
+`pytest`), and the report says so.
+
+`--static <file>` merges the output of the repository's `static` entry point
+(§4.4). A repository claim replaces the framework claim on the same file, line
+and claim text, because the repository knows its own rules; `by_source` keeps
+both sides' counts before the merge. Running the entry point itself belongs to
+the task runner (S5), which runs entry points in the image.
+
+Shell lines are split at `&&`, `|`, `;` and the like, and redirections are
+dropped, so each simple command is checked on its own. A command continued
+with a trailing backslash is one line, reported at its first line; a comment
+line ends a continuation, and the body of a heredoc is not a command. A word
+that holds an expansion (`$VAR`, `${VAR}`, `$(cmd)`, a backtick substitution)
+is never looked up: not as a make target, a `-D` variable, a preset, a
+`--config` value, a hook id, a path or a label. The literal key of
+`VAR=$(cmd)` is still checked.
+A literal `cd dir` moves the relative paths of the later commands in the same
+fence or span, and a subshell ends at its closing parenthesis. After a `cd` to a
+directory the tree lacks or to a non-literal one, after `pushd`/`popd`, and
+after a `cd` that follows `||` or `|`, relative paths are `unresolved`.
+
+A path in a code span is tried at the file's directory and each of its
+ancestors. If none has it, the path is `fail` when its parent directory exists
+at one of those bases (a rename or a deleted file), `ok_suffix` when it ends a
+longer path in the tree (a root file naming paths inside a subproject), and
+`unresolved` otherwise (a build output, a path inside a submodule). `ok_suffix`
+and `ok_basename` resolve a path but cannot see it renamed, which then reads as
+`unresolved`; guidance the gate must protect names its paths from the repository
+root. A bare name
+that names some file or directory is `ok_basename`. A glob is tried the same
+way: `ok` when something matches at the file's directory or an ancestor, `fail`
+when its literal parent directory exists there and nothing in it matches
+(`src/*.zzz`), `ok_suffix` when it ends a longer path in the tree, and
+`unresolved` otherwise (`build/*.o`, `out/<run>/grade.json`). A `<placeholder>`
+or a wildcard in the directory part is never `fail`. A `*` may span
+directories and `**/` matches zero or more. A trailing slash on a file
+(`src/mod.py/`) is `fail`. A link or path into a submodule is `unresolved`. A
+blob or tree link to `source.url` holds `<ref>/<path>` and the ref may contain
+slashes. A default branch, a commit or a version tag is one segment; any other
+ref is tried at each slash, shortest first, and the link is `ok` if some
+remainder is in the tree. Failing that, a blob link is `fail`, and so is a tree
+link on a one-segment ref; a tree link on any other ref is `unresolved` (it may
+name a branch). `refs/heads/` and `refs/tags/` belong to the ref, and a link to
+a ref alone is not checked. A
+link to a directory inside the tree is followed, as in a checkout, so
+`linkdir/core.py` with `linkdir -> src/pkg` is `ok`.
+
+Not checked by L0 (a follow-up): the `#fragment` of a link (`docs/x.md#setup`
+is checked as `docs/x.md`; a bare `#anchor` is skipped), and HTML in Markdown
+(`<a href>`, `<img src>`).
+
+Guidance files are read with symlinks followed, the same way from a working
+tree and from a commit. A guidance file that links to another guidance file is
+scanned once, as the file it names.
+
+The report lists `warnings` for guidance the manifest names but the tree lacks:
+a glob with no match, a missing `also_scan` file, no guidance at all, and a
+guidance file that cannot be read (a link that dangles or leaves the tree, a
+binary file, a file over 2 MB), named with the reason. An invalid `--static`
+document is not merged, and the command exits 1. `--fail-on-fail` also exits 1
+when any claim fails, an `also_scan` file is missing, a guidance file cannot be
+read, or no guidance file matched (`incomplete`). A glob that matches nothing
+does not fail the gate, so a file the gate must see belongs in `also_scan`.
+
+Statuses are those of §4.4. Only `fail` counts against the guidance;
+`unresolved` needs a human look. Not implemented yet: the pre-commit↔CI
+file-set parity check.
+
+Measured on oneDAL and scikit-learn-intelex, claim by claim against their own
+checkers: see the pull request that added the scan (#68).
