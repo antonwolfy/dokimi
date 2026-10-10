@@ -190,3 +190,12 @@ def test_save_dashboard_json(tmp_path):
     parsed = json.loads(path.read_text(encoding="utf-8"))
     assert parsed["products"][0]["product"] == "oneTBB"
     assert parsed["products"][0]["avg_with_docs"] == 78.0
+
+
+def test_aggregator_ignores_the_judge_cap_marker(tmp_path):
+    ev = _ev("q1", "Q?", 40, 60)
+    ev["with_docs"]["caps"] = {"correctness": {"judged": 95.0, "rule": "wrong_figure"}}
+    ev["with_docs"]["unread_claims"] = [0, 2]
+    _make_eval_file(tmp_path, "oneTBB", [ev])
+    q = ResultsAggregator(tmp_path).aggregate().products[0].questions[0]
+    assert q.with_docs_dimensions == {"correctness": 40, "completeness": 40}

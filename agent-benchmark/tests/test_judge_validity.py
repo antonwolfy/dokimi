@@ -25,6 +25,7 @@ from agent_benchmarks.eval.degrade import (
     degrade,
     hedge_concrete,
     padding,
+    shuffle_sentences,
     strip_code,
     truncate_20,
     wrong_numbers,
@@ -1165,3 +1166,233 @@ def test_cli_warns_on_an_unmeasured_variant(tmp_path, monkeypatch, capsys, stric
         exit_code = exc.code
     assert exit_code == code
     assert "no pair was built for strip_code" in capsys.readouterr().err
+
+
+# --- degradations: contradiction names, code removal, figure scaling ----------
+
+
+@pytest.mark.parametrize(
+    "answer, name",
+    [
+        ("**Summary**\n\nThis is a well-known, step-by-step guide. Call tbb_malloc first.", "tbb_malloc"),
+        ("**Warning** Use the built-in allocator wrapper tbb_proxy.", "tbb_proxy"),
+        # A plain English word is only skipped when unquoted: a quoted one is code.
+        ("Run `numactl` first.", "numactl"),
+    ],
+)
+def test_contradiction_does_not_disown_an_english_word(answer, name):
+    assert f"caveat: `{name}` is not actually applicable" in contradiction(answer)
+
+
+@pytest.mark.parametrize(
+    "answer, name",
+    [
+        ("Do **not** use `malloc` here; link `tbbmalloc_proxy` instead.", "tbbmalloc_proxy"),
+        ("Avoid `omp_set_nested`; call `omp_set_max_active_levels`.", "omp_set_max_active_levels"),
+        ("Use `tbb_arena`, not `tbb_group`.", "tbb_arena"),
+        ("Never use `tbb_group`; use `tbb_arena`.", "tbb_arena"),
+        ("Don't use `tbb_group`; use `tbb_arena`.", "tbb_arena"),
+        ("Instead of `tbb_group`, use `tbb_arena`.", "tbb_arena"),
+        ("Rather than `tbb_group`, use `tbb_arena`.", "tbb_arena"),
+        ("You cannot use `np.memmap` here, call `dpnp.asarray`.", "dpnp.asarray"),
+        ("You can\u2019t use `np.memmap` here, call `dpnp.asarray`.", "dpnp.asarray"),
+        ("We won\u2019t use `np.memmap` here, call `dpnp.asarray`.", "dpnp.asarray"),
+        ("Don\u2019t use `malloc`; link `tbbmalloc_proxy`.", "tbbmalloc_proxy"),
+        ("There is no `dpnp.save`; call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        # A name followed by the answer saying it is unavailable.
+        ("`numpy.save` is not supported in dpnp, use `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("`np.save` and `np.load` are not re-implemented. Call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("`cp.cuda.Stream` is not present here. Call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("`old_api` is deprecated; use `new_api`.", "new_api"),
+        ("`old_api` should be avoided, so call `new_api`.", "new_api"),
+        ("`old_api` (deprecated), use `new_api`.", "new_api"),
+        ("`cupy.asnumpy` is not available; call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("`np.save`, `np.load` or `np.fromfile` are not supported; call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("`np.save` and **np.load** are not supported; call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("Neither `cupy.asnumpy` nor `numpy.asarray` is wanted; call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("There are no `dpnp.memmap` equivalents; call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("Don't ever use `tbb_group`; use `tbb_arena`.", "tbb_arena"),
+        ("It is not recommended to use `np.fromfile`; call `dpnp.asarray`.", "dpnp.asarray"),
+        ("Do not use `omp_a`, or `omp_b`; use `omp_c`.", "omp_c"),
+        ("Do not use `omp_a`. `omp_b` is the one to use.", "omp_b"),
+        ("`old_api` is NOT covered by the shim; use `new_api`.", "new_api"),
+        ("`mkl_umath` does not apply to your code; call `dpnp.add`.", "dpnp.add"),
+        ("`mkl_umath` doesn’t apply here; call `dpnp.add`.", "dpnp.add"),
+        ("No, `leapfrog` will not work here; use `skipahead`.", "skipahead"),
+        ("`leapfrog` won't work here; use `skipahead`.", "skipahead"),
+        ("**`np.floor_divide`** is explicitly **not covered** here; call `np.divide`.", "np.divide"),
+        # A later bare mention of a rejected dotted name is the same name.
+        ("`np.maximum` is not covered. `maximum` is slow; call `np.fmax`.", "np.fmax"),
+        # A dot inside a name does not end the sentence; a repeat mention is the same name.
+        ("Do not use `np.asarray` or `np.array` here; call `dpnp.asnumpy`.", "dpnp.asnumpy"),
+        ("Do not use `malloc` here. `malloc` takes a global lock, so link `tbbmalloc_proxy`.", "tbbmalloc_proxy"),
+    ],
+)
+def test_contradiction_does_not_disown_what_the_answer_warns_against(answer, name):
+    assert f"caveat: `{name}` is not actually applicable" in contradiction(answer)
+
+
+@pytest.mark.parametrize(
+    "answer, name",
+    [
+        ("Set it to `True`, then call `dpnp.asarray`.", "dpnp.asarray"),
+        ("Pass `None` or `False`; call `dpnp.asarray`.", "dpnp.asarray"),
+        ("It raises `NotImplementedError`, so call `dpnp.asarray`.", "dpnp.asarray"),
+        ("It raises `ValueError` and a `RuntimeWarning`; call `dpnp.asarray`.", "dpnp.asarray"),
+        ("`Summary` first. `Warning` too. Then call `dpnp.asarray`.", "dpnp.asarray"),
+        ("Replace the `cp.` prefix with `dpnp.asarray`.", "dpnp.asarray"),
+        ("**Summary.** Use tbb_proxy here.", "tbb_proxy"),
+        ("**WARNING** Use tbb_proxy here.", "tbb_proxy"),
+    ],
+)
+def test_contradiction_skips_literals_exception_names_and_fragments(answer, name):
+    assert f"caveat: `{name}` is not actually applicable" in contradiction(answer)
+
+
+@pytest.mark.parametrize(
+    "answer, name",
+    [
+        # The negation ends before the recommended name.
+        ("Avoid `omp_set_nested`, call `omp_set_max_active_levels`.", "omp_set_max_active_levels"),
+        ("Avoid copies: use `dpnp.asarray`.", "dpnp.asarray"),
+        ("Avoid `omp_set_nested` \u2014 `omp_set_max_active_levels` replaces it.", "omp_set_max_active_levels"),
+        ("If you do not have `numactl` installed, install it.", "numactl"),
+        ("Do not use `a_b`, use `c_d`, then call `e_f`.", "c_d"),
+        # Only a colon, a semicolon or a comma ends the reach here.
+        ("Avoid copies: `dpnp.asarray` is the fast path.", "dpnp.asarray"),
+        ("Avoid `a_b`; `c_d` is better.", "c_d"),
+        # "does not apply" disowns only when nothing is being applied.
+        ("`mkl_fft.fftn` does not apply the norm; call `mkl_fft.fft2`.", "mkl_fft.fftn"),
+        ("Don\u2019t call `dpnp.asnumpy` in a loop, batch with `dpnp.concatenate`.", "dpnp.concatenate"),
+    ],
+)
+def test_contradiction_keeps_a_name_the_negation_does_not_reach(answer, name):
+    assert f"caveat: `{name}` is not actually applicable" in contradiction(answer)
+
+
+@pytest.mark.parametrize("gap, picked", [(40, "tbb_arena"), (41, "tbb_group")])
+def test_contradiction_negation_reaches_forty_characters(gap, picked):
+    answer = "Avoid " + "a" * (gap - 2) + " `tbb_group`; use `tbb_arena`."
+    assert answer.index("`tbb_group`") - len("Avoid") == gap
+    assert f"caveat: `{picked}` is not actually applicable" in contradiction(answer)
+
+
+@pytest.mark.parametrize(
+    "remove",
+    [strip_code, lambda a: hedge_concrete(a, rng=random.Random(0))],
+    ids=["strip_code", "hedge_concrete"],
+)
+@pytest.mark.parametrize(
+    "answer, gone, kept",
+    [
+        # An outer four-backtick fence holding a three-backtick one.
+        ("Intro.\n\n````markdown\n```bash\nperf record\n```\n````\n\nEnd.", ("perf record", "bash", "`"), ("Intro.", "End.")),
+        # ``` mentioned mid-line in prose must not pair with the next real fence.
+        ("Wrap code in ``` fences.\n\n```bash\nmake\n```\n\nEnd.", ("make", "bash"), ("Wrap code in ``` fences.", "End.")),
+        ("Intro.\n\n~~~bash\nmake all\n~~~\n\nEnd.", ("make all", "~~~"), ("Intro.", "End.")),
+        ("Intro.\n\n<pre>\nmake all\n</pre>\n\nEnd.", ("make all", "pre>"), ("Intro.", "End.")),
+        ("1. Install:\n\n    ```bash\n    make all\n    ```\n\n2. Run.", ("make all", "```"), ("1. Install:", "2. Run.")),
+        # A same-line span, as in a table cell.
+        ("| a | b |\n| - | - |\n| x | ```make all``` |\n| y | z |", ("make all", "`"), ("| x |", "| y | z |")),
+        ("Use ```make all``` or ```make test``` here.", ("make all", "make test", "`"), ("Use", "here.")),
+        # A closing fence followed by a pipe still closes.
+        ("Intro.\n\n```python\nalpha()\n``` |\n\nProse here.\n\n```\nbeta()\n```\n\nEnd.", ("alpha", "beta", "`"), ("Prose here.", "End.")),
+        # A block inside a blockquote.
+        ("Intro.\n\n> ```bash\n> make all\n> ```\n\nEnd.", ("make all", "`"), ("Intro.", "> ", "End.")),
+    ],
+)
+def test_code_removal_takes_whole_blocks_by_the_fence_rules_padding_uses(remove, answer, gone, kept):
+    out = remove(answer)
+    assert not any(g in out for g in gone), out
+    assert all(k in out for k in kept), out
+
+
+@pytest.mark.parametrize(
+    "answer, expected",
+    [
+        ("| a | ```x = 1``` |", "| a | [code removed] |"),
+        ("Use ```make all``` or ```make test``` here.", "Use [code removed] or [code removed] here."),
+        ("Intro.\n\n```python\nalpha()\n``` |\n\nProse here.\n\n```\nbeta()\n```\n\nEnd.",
+         "Intro.\n\n[code removed] |\n\nProse here.\n\n[code removed]\n\nEnd."),
+        # The indent keeps a block inside its list item.
+        ("1. Step one:\n\n    ```bash\n    make\n    ```\n\n    Then run it.\n\n2. Next.",
+         "1. Step one:\n\n    [code removed]\n\n    Then run it.\n\n2. Next."),
+        # An unclosed block is left as it is, with the prose after it.
+        ("Intro.\n\n```bash\nmake\n\nTrailing prose.", "Intro.\n\n```bash\nmake\n\nTrailing prose."),
+        ("Intro.\r\n\r\n```bash\r\nmake\r\n```\r\n\r\nEnd.\r\n", "Intro.\r\n\r\n[code removed]\r\n\r\nEnd.\r\n"),
+        ("A.\n\n```\nx()\n```\t|\n\nB.", "A.\n\n[code removed]\t|\n\nB."),
+        # A block inside a blockquote, which also ends with the quote.
+        ("Intro.\n\n> ```bash\n> make all\n> ```\n\nEnd.", "Intro.\n\n> [code removed]\n\nEnd."),
+        ("> Note:\n>\n> ```python\n> import dpnp\n> ```\n>\n> Done.", "> Note:\n>\n> [code removed]\n>\n> Done."),
+        ("> > ```\n> > x()\n> > ```\n\nEnd.", "> > [code removed]\n\nEnd."),
+        ("> ```\n> make\n\nProse.\n\n```\nx()\n```", "> [code removed]\n\nProse.\n\n[code removed]"),
+        # A line starting with ">" inside an unquoted block is code.
+        ("```console\n> ```\n> make\n```\n\nEnd.", "[code removed]\n\nEnd."),
+        # A run of backticks mentioned in prose is not a span.
+        ("Write ```` or ``` to fence.", "Write ```` or ``` to fence."),
+        ("Use ```x```` here.", "Use ```x```` here."),
+    ],
+)
+def test_strip_code_output_is_exact(answer, expected):
+    assert strip_code(answer) == expected
+
+
+def test_hedge_concrete_does_not_count_a_blocks_indent_in_its_length_budget():
+    block = "        ```bash\n        make all\n        ```"
+    answer = "\n\n".join(f"Step {i} is below.\n\n{block}" for i in range(10))
+    drift = [len(hedge_concrete(answer, rng=random.Random(seed))) - len(answer) for seed in range(20)]
+    assert abs(sum(drift)) / len(drift) < 20, drift
+
+
+def test_shuffle_sentences_removes_a_blockquoted_block():
+    out = shuffle_sentences("Run it. Then check.\n\n> ```bash\n> make all\n> ```\n\nDone.", rng=random.Random(0))
+    assert "`" not in out and "make all" not in out, out
+
+
+def test_shuffle_sentences_removes_a_tilde_fenced_block():
+    answer = "Install it first. Then run the build.\n\n~~~bash\nexport A=1. make all. ./run.sh\n~~~\n\nCheck the log. Done."
+    out = shuffle_sentences(answer, rng=random.Random(0))
+    assert "~~~" not in out and "make all" not in out, out
+    assert sorted(out.split()) == sorted("Install it first. Then run the build. Check the log. Done.".split())
+
+
+def test_padding_keeps_a_fence_open_through_an_indented_fence_line():
+    # A markdown-template answer: the indented ``` lines are content of the
+    # outer block, not its closer.
+    block = "```markdown\n1. Step\n\n    ```bash\n    make\n    ```\n\n2. Next\n```"
+    out = padding(f"Intro.\n\n{block}\n\nEnd.")
+    assert block in out, out
+    assert all(p in out for p in PADDING_PARAGRAPHS)
+
+
+@pytest.mark.parametrize(
+    "answer, expected",
+    [
+        # A figure in a URL is part of the address, not a claim.
+        ("Fetch https://x.org/guide/4/ or [g](https://x.org/v2/8x/) in 5 ms.",
+         "Fetch https://x.org/guide/4/ or [g](https://x.org/v2/8x/) in 50 ms."),
+        ("Get https://x.org/p?page=10&limit=50 or https://x.org/q?timeout=30s in 5 ms.",
+         "Get https://x.org/p?page=10&limit=50 or https://x.org/q?timeout=30s in 50 ms."),
+        # The scaled figure is written out whole: no exponent, no float noise.
+        ("Took 123456.78 ms.", "Took 1234567.8 ms."),
+        ("Took 1.1 ms.", "Took 11 ms."),
+        ("Took 0.07 ms.", "Took 0.7 ms."),
+        ("Took 0.000001 ms.", "Took 0.00001 ms."),
+        ("Took 1234567890123.25 ms.", "Took 12345678901232.5 ms."),
+        ("Took 1,200 ms.", "Took 12,000 ms."),
+        ("Hit 40% of it.", "Hit 4% of it."),
+        ("Hit 10% of it.", "Hit 1% of it."),
+        ("Hit 9% of it.", "Hit 90% of it."),
+        # Outside a URL a fraction is scaled on both sides.
+        ("Use 1/4 of the cache.", "Use 10/40 of the cache."),
+    ],
+)
+def test_wrong_numbers_writes_plain_figures_and_leaves_urls_alone(answer, expected):
+    assert wrong_numbers(answer) == expected
+
+
+@pytest.mark.parametrize("tail", [" then 3 runs."])
+def test_wrong_numbers_survives_a_digit_run_too_long_for_a_float(tail):
+    huge = "9" * 400
+    out = wrong_numbers(f"Digest {huge}{tail}")
+    assert out.startswith(f"Digest {huge}") and out != f"Digest {huge}{tail}"

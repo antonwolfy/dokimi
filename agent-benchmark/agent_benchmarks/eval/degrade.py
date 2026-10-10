@@ -44,9 +44,8 @@ from __future__ import annotations
 
 import random
 import re
+from decimal import Context, Decimal
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
-
-CODE_BLOCK = re.compile(r"```.*?```", re.S)
 
 #: Minimum answer length (characters) worth degrading. Short answers have too
 #: little content for truncation or code-stripping to mean anything.
@@ -60,14 +59,14 @@ def truncate_20(answer: str, **_: Any) -> str:
 
 def strip_code(answer: str, **_: Any) -> str:
     """Remove every fenced code block, leaving a marker behind."""
-    return CODE_BLOCK.sub("[code removed]", answer)
+    return _replace_code_blocks(answer, lambda _: "[code removed]")
 
 
 def shuffle_sentences(answer: str, rng: Optional[random.Random] = None, **_: Any) -> str:
     """Keep the facts, destroy the order. Needs a seeded rng for reproducibility."""
     if rng is None:
         raise ValueError("shuffle_sentences requires a seeded rng")
-    parts = re.split(r"(?<=[.!?])\s+", CODE_BLOCK.sub("", answer))
+    parts = re.split(r"(?<=[.!?])\s+", _replace_code_blocks(answer, lambda _: ""))
     rng.shuffle(parts)
     return " ".join(parts)
 
@@ -153,6 +152,9 @@ YEAR = re.compile(r"(?:19[89]|20[0-4])\d\Z")
 #: Identifier sources, in fallback order, for degradations that need to name
 #: something the answer itself said.
 INLINE_SPAN = re.compile(r"`[^`\n]+`")
+#: Text a degradation must not edit: inline code and URLs (their paths and
+#: query strings carry figures that are not claims).
+_VERBATIM = re.compile(INLINE_SPAN.pattern + r"|https?://\S+")
 BOLD_SPAN = re.compile(r"\*\*([^*\n]{2,40})\*\*")
 SHAPED_BARE = re.compile(
     r"\b(?:[a-z][a-z0-9_]*[-_][a-z0-9_-]+|[A-Z][A-Za-z]+\d|AVX-?\d+|[a-z]+\d[a-z0-9]*)\b"
@@ -161,23 +163,26 @@ SHAPED_BARE = re.compile(
 #: ``0.42``, and "0.42 is not applicable here" is not a contradiction, it is
 #: gibberish — so a candidate must be a single identifier-shaped token starting
 #: with a letter, which also rejects multi-word bold phrases.
-NAME_TOKEN = re.compile(r"[A-Za-z][\w.\-/+]*\Z")
+NAME_TOKEN = re.compile(r"[A-Za-z](?:[\w.\-/+]*[\w+])?\Z")
 #: Some answers inline-quote ordinary English (``and``, ``must``), and
-#: "`and` is not applicable here" is the same gibberish as the numeric case.
+#: "`and` is not applicable here" is the same gibberish as the numeric case,
+#: and so are labels and literals (``Summary``, ``True``) and exception names.
 COMMON_WORDS = frozenset(
     "and or not but must should may can will the this that these those with "
     "for from into than then when where which while critical important note "
-    "yes no all any each both same other more less high low".split()
+    "yes no all any each both same other more less high low "
+    "summary warning true false none".split()
 )
+EXCEPTION_NAME = re.compile(r"\w*(?:Error|Exception|Warning)\Z")
 
 
 def _scale(figure: str, unit: str = "") -> str:
     """10x a figure, except a percentage over 9, which is shrunk instead."""
-    value = float(figure.replace(",", ""))
-    scaled = value / 10 if unit == "%" and value > 9 else value * 10
-    if scaled != int(scaled):
-        return f"{scaled:g}"
-    return f"{int(scaled):,}" if "," in figure else f"{int(scaled)}"
+    digits = figure.replace(",", "")
+    value = Decimal(digits)
+    ctx = Context(prec=len(digits))
+    scaled = ctx.divide(value, 10) if unit == "%" and value > 9 else ctx.multiply(value, 10)
+    return format(ctx.normalize(scaled), ",f" if "," in figure else "f")
 
 
 def _scale_magnitude(match: "re.Match[str]") -> str:
@@ -200,7 +205,7 @@ def _in_prose(answer: str, edit: Callable[[str], str]) -> str:
         text = "\n".join(lines)
         out: List[str] = []
         end = 0
-        for span in INLINE_SPAN.finditer(text):
+        for span in _VERBATIM.finditer(text):
             out += [edit(text[end : span.start()]), span.group()]
             end = span.end()
         out.append(edit(text[end:]))
@@ -240,17 +245,54 @@ CONTRADICTION_SUFFIX = (
 )
 
 
+#: A bold label or hyphenated compound that is plain English ("Summary",
+#: "well-known"), as opposed to something identifier-shaped ("TaskArena", "tbb_x").
+ENGLISH_WORD = re.compile(r"[A-Z]?[a-z]+(?:-[a-z]+)*\Z")
+#: What comes before a name the answer itself warns against ("do not use `x`",
+#: "avoid `x`", "there is no `x`"): disowning it would agree with the answer, not
+#: contradict it. The reach is 40 characters inside one clause: it stops at a
+#: sentence end (a "." before whitespace), ";", ":", an em dash, a comma that
+#: does not lead on to another name, and a later use/call/link/install ("avoid
+#: `x`, call `y`") or "have" ("do not have `x`").
+_VERB = r"\b(?:use|call|link|install)"
+NEGATION = re.compile(
+    r"\b(?:not|never|neither|avoid|cannot|\w+n['\u2019]t|there (?:is|are) no|instead of|rather than)\b"
+    rf"(?:\*\*)?(?:\s+(?:ever\s+)?{_VERB}\w*)?"
+    rf"(?:(?!(?<!\bto ){_VERB}|\bhave\b|,(?=\s*[^\s`*])(?!\s*(?:and|or)\b))[^.;:\n\u2014]|\.(?=\S)){{0,40}}\Z",
+    re.I,
+)
+#: What the answer says after a name (or a list of names) that disowns it.
+UNAVAILABLE = re.compile(
+    r"(?:\s*(?:,|and|or)\s*(?:`[^`\n]+`|\*\*[^*\n]+\*\*))*(?:\*\*)?"
+    r"(?:\s+(?:is|are)\s+(?:\w+ly\s+)?(?:\*\*)?not\s+(?:re-?)?"
+    r"(?:supported|available|implemented|present|covered)"
+    r"|\s*\(?(?:(?:is|are)\s+)?deprecated\b|\s+should be avoided"
+    r"|\s+(?:does|do)(?:\s+not|n['’]t)\s+apply(?=\s+(?:to|here)\b|\s*[.,;:)*]|\s*\Z)"
+    r"|\s+(?:will\s+not|won['’]t)\s+work)",
+    re.I,
+)
+
+
 def _first_identifier(answer: str) -> Optional[str]:
-    """First identifier-shaped token the answer names, or None."""
+    """First identifier-shaped token the answer recommends, or None."""
     candidates = (
-        [span.strip("`") for span in INLINE_SPAN.findall(answer)]
-        + BOLD_SPAN.findall(answer)
-        + SHAPED_BARE.findall(answer)
+        [(m.start(), m.end(), m.group().strip("`"), True) for m in INLINE_SPAN.finditer(answer)]
+        + [(m.start(1), m.end(), m.group(1), False) for m in BOLD_SPAN.finditer(answer)]
+        + [(m.start(), m.end(), m.group(), False) for m in SHAPED_BARE.finditer(answer)]
     )
-    for raw in candidates:
+    rejected: set[str] = set()
+    for pos, end, raw, quoted in candidates:
         name = raw.strip()
-        if 2 <= len(name) <= 30 and NAME_TOKEN.match(name) and name.lower() not in COMMON_WORDS:
-            return name
+        if not (2 <= len(name) <= 30 and NAME_TOKEN.match(name) and name.lower() not in COMMON_WORDS):
+            continue
+        if EXCEPTION_NAME.match(name):
+            continue
+        if name in rejected or (not quoted and ENGLISH_WORD.match(name)):
+            continue
+        if NEGATION.search(answer, 0, pos) or UNAVAILABLE.match(answer, end):
+            rejected.update((name, name.rsplit(".", 1)[-1]))  # and a later bare mention
+            continue
+        return name
     return None
 
 
@@ -300,8 +342,8 @@ def _fence_state(lines: Sequence[str], fence: Optional[str]) -> Optional[str]:
     ``fence`` is the opening line's indentation plus its run (e.g. "```" or
     "    ~~~~") of the block we are inside, or None outside one. A block closes on
     a line starting with the same character, at least as many times, nothing
-    else after it, and indented at most 3 columns past the opener: deeper, it is
-    content (a fence quoted inside a ```markdown block). A ``<pre>`` element is a
+    else after it (a table cell's ``|`` aside), and indented at most 3 columns
+    past the opener: deeper, it is content (a fence quoted inside a ```markdown block). A ``<pre>`` element is a
     block too, closed by ``</pre>``.
     """
     for line in lines:
@@ -330,10 +372,61 @@ def _fence_state(lines: Sequence[str], fence: Optional[str]) -> Optional[str]:
                 run[0] == opener[0]
                 and len(run) >= len(opener)
                 and indent <= len(fence) - len(opener) + 3
-                and not line.strip()[len(run):].strip()
+                and not line.strip()[len(run):].strip(" \t|")
             ):
                 fence = None
     return fence
+
+
+_INLINE_FENCE = re.compile(r"(?<!`)(`{3,})(?!`)(.+?)(?<!`)\1(?!`)")
+_QUOTE_MARK = re.compile(r"[ \t]*>[ \t]?")
+
+
+def _unquote(line: str, limit: int) -> "tuple[int, str]":
+    """Strip up to ``limit`` blockquote markers; return how many were stripped and the rest."""
+    depth = pos = 0
+    while depth < limit and (m := _QUOTE_MARK.match(line, pos)):
+        depth, pos = depth + 1, m.end()
+    return depth, line[pos:]
+
+
+def _replace_code_blocks(answer: str, replace: Callable[[str], str]) -> str:
+    """Replace each fenced block, found line by line as ``padding`` finds them.
+
+    A triple-backtick span within one line (a table cell) is replaced too. An
+    unclosed block is left as it is. The first line's indentation and what
+    follows the closing fence (a ``|`` or a carriage return) are kept, so a block nested in
+    a list item or a table row stays where it was. A block inside a blockquote
+    keeps the opening line's ``>`` markers and ends where the quote does.
+    """
+    out: List[str] = []
+    block: List[str] = []
+    fence: Optional[str] = None
+    depth = 0
+
+    def replaced() -> str:
+        quote = block[0][: len(block[0]) - len(_unquote(block[0], depth)[1])]
+        text = "\n".join(_unquote(line, depth)[1] for line in block)
+        body = text.lstrip(" \t")
+        code = body.rstrip(" \t|\r")
+        return quote + text[: len(text) - len(body)] + replace(code) + body[len(code):]
+
+    for line in answer.split("\n"):
+        if fence is not None and _unquote(line, depth)[0] < depth:
+            out.append(replaced())
+            block, fence = [], None
+        level, rest = _unquote(line, depth if fence is not None else len(line))
+        was, fence = fence, _fence_state([rest], fence)
+        if was is None and fence is None:
+            out.append(_INLINE_FENCE.sub(lambda m: replace(m.group()), line))
+            continue
+        if was is None:
+            depth = level
+        block.append(line)
+        if fence is None:
+            out.append(replaced())
+            block = []
+    return "\n".join(out + block)
 
 
 LIST_ITEM = re.compile(r"\s*(?:[-*+]|\d+[.)])\s")
@@ -440,9 +533,9 @@ def hedge_concrete(answer: str, rng: Optional[random.Random] = None, **_: Any) -
     used = [0, 0]
     gap = 0
 
-    def fill(block: "re.Match[str]") -> str:
+    def fill(block: str) -> str:
         nonlocal gap
-        gap += len(block.group(0))
+        gap += len(block)
         out: List[str] = []
         while True:
             options = [decks[i][used[i] % len(decks[i])] for i in (0, 1)]
@@ -453,7 +546,7 @@ def hedge_concrete(answer: str, rng: Optional[random.Random] = None, **_: Any) -
             used[k] += 1
             gap -= len(options[k]) + 1
 
-    return CODE_BLOCK.sub(fill, answer)
+    return _replace_code_blocks(answer, fill)
 
 
 Degradation = Callable[..., str]

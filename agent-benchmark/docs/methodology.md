@@ -129,7 +129,7 @@ The standard judge scores five dimensions from 0 to 100:
 
 ### Grounded Judging
 
-When a question carries ground truth, the judge scores a sixth dimension, **factual grounding**, against it. Python computes the aggregate on both paths: correctness carries double weight, and in grounded runs factual grounding does too.
+When a question carries ground truth, the judge scores a sixth dimension, **factual grounding**, against it. Python computes the aggregate on both paths: correctness carries double weight, and in grounded runs factual grounding does too. Python also holds the prompt's cap: a `numeric_claims` item judged wrong lowers correctness to 40, and the judge's own score is kept under `caps`. Items with no readable verdict are listed by index under `unread_claims`.
 
 Two kinds of question supply ground truth:
 
@@ -150,7 +150,7 @@ The optional judge panel uses three roles:
 - `developer_advocate`: emphasizes practical usefulness and actionability.
 - `doc_reviewer`: emphasizes completeness and fidelity to context.
 
-Panel aggregates are computed in Python from role-specific weights. The panel report includes mean score, standard deviation, agreement score, and disagreement flags.
+Panel aggregates are computed in Python from role-specific weights. The panel report includes mean score, standard deviation, agreement score, and disagreement flags. Panel prompts ask for no `numeric_claims`, so the panel has no wrong-figure cap, and its correctness scores are not comparable with the single judge's.
 
 RAGAS meta-evaluation can be run after answer generation to add faithfulness and answer-relevancy signals, especially for the `with_docs` condition.
 

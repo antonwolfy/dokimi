@@ -6,6 +6,7 @@
 import logging
 import json
 import os
+import re
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -424,6 +425,41 @@ class Judge:
     #: with an excerpt to check against, faithfulness to it *is* correctness.
     _GROUNDED_WEIGHTS = {**_STANDARD_WEIGHTS, "factual_grounding": 2.0}
 
+    #: A verdict after a colon, a dash or an opening parenthesis, optionally
+    #: qualified: "64 B: wrong", "64 B - wrong", "64 B (wrong)", "64 B: partially wrong".
+    _VERDICT = re.compile(
+        r"(?::|\s[-\u2013\u2014]|\()\s*(?:[a-z]+ly\s+)?(wrong|incorrect|right|correct)\b", re.I
+    )
+
+    @classmethod
+    def _is_wrong_figure(cls, claim: Any) -> Optional[bool]:
+        """True for a claim judged wrong, None for one with no readable verdict."""
+        text = f": {claim.get('verdict')}" if isinstance(claim, dict) else claim
+        match = cls._VERDICT.search(text) if isinstance(text, str) else None
+        if match is None:
+            return None
+        return match.group(1).lower() in ("wrong", "incorrect")
+
+    @classmethod
+    def _cap_for_wrong_figures(cls, scores: Dict[str, Any]) -> None:
+        """Hold the prompt's promise: one wrong figure in `numeric_claims` caps correctness at 40.
+
+        The judged score is kept under `caps`, so a capped 40 can be told from a judged 40,
+        and the indexes of claims with no readable verdict under `unread_claims`.
+        """
+        claims = scores.get("numeric_claims")
+        if not isinstance(claims, list):
+            return
+        verdicts = [cls._is_wrong_figure(c) for c in claims]
+        unread = [i for i, wrong in enumerate(verdicts) if wrong is None]
+        if unread:
+            scores["unread_claims"] = unread
+        if any(verdicts):
+            judged = float(scores["correctness"])
+            if judged > 40.0:
+                scores["correctness"] = 40.0
+                scores["caps"] = {"correctness": {"judged": judged, "rule": "wrong_figure"}}
+
     @staticmethod
     def _compute_aggregate(scores: Dict[str, Any], weights: Dict[str, float]) -> float:
         """Weighted mean of the scored dimensions — never trust the LLM to do math."""
@@ -487,6 +523,7 @@ class Judge:
             if missing:
                 raise ValueError(f"Missing keys in judge response: {missing}")
             # A non-numeric dimension ("N/A") is a formatting failure too.
+            self._cap_for_wrong_figures(scores)
             return scores, self._compute_aggregate(scores, weights)
 
         def parses(raw: str) -> bool:

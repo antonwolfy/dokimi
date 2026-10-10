@@ -222,6 +222,73 @@ class TestJudgeAnswer:
         assert moved["correctness"] == 60.0
         assert moved["completeness"] == moved["code_quality"] == moved["actionability"] == 80.0
 
+    def _judge(self, mock_llm, claims, correctness):
+        mock_llm.invoke.return_value.content = json.dumps({
+            "numeric_claims": claims, "correctness": correctness, "completeness": 90,
+            "specificity": 90, "code_quality": 90, "actionability": 90, "aggregate": 0,
+        })
+        mock_cls = Mock(return_value=mock_llm)
+        with patch('agent_benchmarks.eval.judge.ChatAnthropic', mock_cls, create=True), \
+             patch('agent_benchmarks.eval.judge.LANGCHAIN_AVAILABLE', True):
+            return Judge()._judge_answer("oneTBB", "Q?", "A.", "context")
+
+    @pytest.mark.parametrize("claims, correctness, expected", [
+        (["64 B line: right", "10 ns latency: wrong"], 95, 40),
+        (["10 ns latency: Wrong."], 95, 40),
+        (["64 bytes: wrong (should be 128 bytes)"], 95, 40),
+        (["64 bytes: wrong for this CPU"], 95, 40),
+        (["64 bytes: incorrect"], 95, 40),
+        (["64 bytes - wrong"], 95, 40),
+        (["64 bytes (wrong)"], 95, 40),
+        ([{"figure": "64 bytes", "verdict": "wrong"}], 95, 40),
+        (["strides (8,) or (8, 8000): partially wrong"], 95, 40),
+        (["64 bytes: mostly incorrect"], 95, 40),
+        # An item with no readable verdict does not stop the cap on another.
+        ([7, None, {"figure": "x"}, "64 bytes: wrong"], 95, 40),
+        (["10 ns latency: wrong"], 25, 25),   # already under the cap
+        (["10 ns latency: wrong"], 40, 40),
+        (["64 B line: right"], 95, 95),
+        (["wrong-way ratio 2: right"], 95, 95),
+        (["64 bytes: right (not wrong)"], 95, 95),
+        (["the wrong figure is 64 bytes"], 95, 95),
+        ([{"figure": "64 bytes", "verdict": "right"}], 95, 95),
+        (["64 bytes"], 95, 95),               # no verdict at all
+        (["64 bytes: wrongly stated"], 95, 95),
+        (["64 bytes: correct"], 95, 95),
+        (["64 bytes: partially right"], 95, 95),
+        (["64 bytes, non-wrong"], 95, 95),
+        ("none", 95, 95),                      # not a list: nothing to enforce
+    ])
+    def test_a_wrong_figure_caps_correctness_at_forty(self, mock_llm, claims, correctness, expected):
+        """The prompt promises "a single wrong figure caps it at 40". A reply that
+        lists a wrong figure and still scores 95 breaks that promise, so the cap is
+        applied here and not left to the model."""
+        result = self._judge(mock_llm, claims, correctness)
+        assert result["correctness"] == expected
+        assert result["aggregate"] == round((expected * 2 + 90 * 3) / 5, 1)
+        if expected < correctness:
+            assert result["caps"] == {"correctness": {"judged": float(correctness), "rule": "wrong_figure"}}
+        else:
+            assert "caps" not in result
+
+    def test_a_claim_with_no_verdict_is_recorded_not_logged(self, mock_llm, caplog):
+        # The reply is parsed twice per attempt (once by the cache check), so a
+        # warning would repeat for every hedged verdict.
+        with caplog.at_level("WARNING", logger="agent_benchmarks.eval.judge"):
+            result = self._judge(mock_llm, ["64 bytes", "10 ns: uncertain"], 95)
+        assert result["unread_claims"] == [0, 1]
+        assert caplog.text == ""
+
+    @pytest.mark.parametrize("claims, unread", [
+        (["64 bytes", "8 ms: uncertain", "4 B: right", 7, None], [0, 1, 3, 4]),
+        (["10 ns: wrong", "8 ms: unverified"], [1]),
+    ])
+    def test_a_claim_with_no_verdict_is_counted(self, mock_llm, claims, unread):
+        assert self._judge(mock_llm, claims, 95)["unread_claims"] == unread
+
+    def test_readable_claims_record_no_unread_marker(self, mock_llm):
+        assert "unread_claims" not in self._judge(mock_llm, ["4 B: right", "8 ms: wrong"], 95)
+
     def test_grounded_weights_grounding_like_correctness(self, mock_llm):
         """With an excerpt to check against, faithfulness to it *is* correctness."""
         mock_llm.invoke.return_value.content = json.dumps({
