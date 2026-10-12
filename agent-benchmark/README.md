@@ -27,6 +27,22 @@ Evidence tracks:
 | Repository subjects | How well does an agent work inside a given repository? | [repo-evaluation-contract.md](docs/repo-evaluation-contract.md) |
 | Static docs checks | Are the docs well-structured, fresh, readable, with runnable examples? | [Static benchmark metrics](#static-benchmark-metrics) |
 
+### Three questions you can ask
+
+The arm comparison is the default, and two tracks ask a different question about
+the same material. Pick by what you are about to do with the answer:
+
+| Question | Use | Command |
+|---|---|---|
+| Does this artifact help, and is the delta real? | treatment arms | `cli.py arms run` |
+| *Which parts* of it help, and which parts does the model already know? | content novelty | `cli.py novelty analyze` |
+| Does a repository's own guidance reach the agent working in it? | repository as subject | `cli.py repo reach` |
+
+The first ships or cuts an artifact; the second edits one; the third measures a
+codebase instead of a document.
+[docs/README.md](docs/README.md) explains the three in full and
+[docs/architecture.md](docs/architecture.md) maps them to modules.
+
 The framework is content-agnostic: question sets, tasks, skills and products are
 passed in by path or registered in `products.yaml`. The bundled registry uses
 oneTBB, oneDAL and oneMKL as worked examples.
@@ -117,6 +133,8 @@ Results and registries
   dataset             Export artifacts to JSONL/Parquet/Hugging Face
   library             List/show registered products and intent domains (alias: product)
 ```
+
+That is the curated set; `python cli.py --help` lists every group.
 
 Use `--help` on any command for detailed options, for example:
 
@@ -257,6 +275,11 @@ docs/                    Documentation (full index: docs/README.md)
   contributing-terminal-bench-task.md
                          Executable task format (tasks live in the content repo)
   methodology.md         Model roles, question types, judging, trust checks
+  skill-novelty.md       What an artifact adds to a model, and how to shorten it
+  skill-novelty-evidence.md
+                         The study the novelty defaults come from
+  repo-evaluation-contract.md
+                         What a repository supplies to be evaluated as a subject
 tests/                   Pytest suite
 ```
 
