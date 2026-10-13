@@ -115,7 +115,8 @@ class ReportGenerator:
                     "trusted": trust_verdict.trusted,
                     "checks": [
                         {"name": c.name, "passed": c.passed, "value": c.value,
-                         "threshold": c.threshold, "message": c.message, "severity": c.severity}
+                         "threshold": c.threshold, "message": c.message, "severity": c.severity,
+                         "measured": c.measured}
                         for c in trust_verdict.checks
                     ],
                 },

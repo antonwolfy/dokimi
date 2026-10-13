@@ -164,7 +164,7 @@ Every serious run should answer "Can we trust this run?" before interpreting del
 - average delta,
 - score coefficient of variation,
 - inter-rater agreement when panel data exists,
-- retrieval hit rate,
+- retrieval hit rate — the share of questions where at least one document reached the `with_docs` prompt, from the per-evaluation `retrieval_hit` the judge and panel record; eval files judged before that field existed show it as not measured,
 - multi-run variance when `--multi-run N` is used.
 
 For reproducibility:
