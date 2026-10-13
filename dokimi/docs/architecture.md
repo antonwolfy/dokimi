@@ -299,7 +299,8 @@ label. The other two:
    `config_check` checks `products.yaml`/`intents.yaml`/`config/products.yaml`
    drift.
 4. **test** — pytest from `requirements.lock.txt`, offline, with coverage
-   (Python 3.10–3.13); on a PR, 80% of the changed lines must be covered.
+   (Python 3.11–3.14, plus a 3.15 leg that may fail until litellm imports
+   there); on a PR, 80% of the changed lines must be covered.
 5. **package-smoke** — builds/installs the package and exercises the console and
    module entry points.
 

@@ -7,17 +7,17 @@ name = "dokimi"
 version = "0.1.0"
 description = "Measures whether a skill, MCP doc source, documentation set or agent profile actually improves AI-agent answers and task outcomes"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Intel Corporation" }]
 keywords = ["documentation", "benchmark", "evaluation", "llm", "rag"]
 classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
@@ -37,7 +37,6 @@ dependencies = [
   "datasets>=2.20,<6",
   "openai>=1.51,<3",
   "anthropic~=0.34",
-  "tomli>=2.0.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -78,7 +77,7 @@ dokimi = ["schemas/*.json", "repos/profiles/*.yaml", "repos/support/*.py"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 extend-exclude = ["benchmarks", "data"]
 
 # Correctness-focused gate to start (pyflakes + bugbear + syntax). Stylistic
@@ -93,7 +92,7 @@ ignore = ["B008"]
 # list; they are exempt until fixed. Do not add to that list: a new module is
 # checked from its first commit. Removing an entry is the way to shrink it.
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 warn_unused_ignores = false

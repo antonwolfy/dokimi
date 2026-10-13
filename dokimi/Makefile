@@ -18,7 +18,7 @@ BASE ?= baselines/baseline.json
 # `make dev` venv: at the repo root, outside this directory, so `bandit -r .`
 # and the docs benchmark (both run from here) do not scan it. CI's Python.
 VENV ?= ../.venv
-PYTHON_VERSION ?= 3.11
+PYTHON_VERSION ?= 3.14
 VENV_ABS := $(abspath $(VENV))
 VPY := $(VENV_ABS)/bin/python
 

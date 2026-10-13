@@ -248,7 +248,7 @@ def run(args: argparse.Namespace) -> int:
     print(f"\n{len(failed)} failed, "
           f"{sum(r[1] == 'pass' for r in results)} passed, "
           f"{sum(r[1].startswith('skip') for r in results)} skipped")
-    print("Not covered locally: the other legs of the test matrix (3.10-3.13), "
+    print("Not covered locally: the other legs of the test matrix (3.11-3.15), "
           "and CI's merge commit (this runs your working tree).")
     return 1 if failed else 0
 

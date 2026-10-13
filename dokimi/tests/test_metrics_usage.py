@@ -245,18 +245,7 @@ class _FullResp:
 
 def _stub_completion(monkeypatch, calls, content="answer"):
     """Replace litellm.completion; record the kwargs each call receives."""
-    try:
-        import litellm
-    except ImportError as exc:  # pragma: no cover - depends on the interpreter
-        # Not just "litellm is optional": on 3.10 it is not importable at all.
-        # litellm's anthropic pass-through module does `from typing import
-        # NotRequired`, which lands in typing only in 3.11, so `import litellm`
-        # raises ImportError under the 3.10 leg of the test matrix even though
-        # the package installed fine. This repo declares requires-python
-        # ">=3.10", so treat an unimportable litellm the way the rest of this
-        # file already does (see test_cost_none_when_no_pricing): skip the
-        # assertion, do not fail the suite.
-        pytest.skip(f"litellm is not importable here: {exc}")
+    import litellm
 
     def fake_completion(**kwargs):
         calls.append(kwargs)
