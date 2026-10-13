@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/intel/dokimi/schemas/subject_scorecard.v2.json",
+  "title": "Subject scorecard artifact v2",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "subject",
+    "suite",
+    "baseline",
+    "awareness",
+    "work",
+    "cells",
+    "novelty"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "subject_scorecard.v2"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "object",
+      "required": [
+        "id",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ref_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "members": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "descriptor": {
+      "type": "string"
+    },
+    "suite": {
+      "type": "object",
+      "required": [
+        "products",
+        "questions"
+      ],
+      "properties": {
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "question_set_hash": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "baseline": {
+      "type": "string"
+    },
+    "baseline_digest": {
+      "type": "string"
+    },
+    "awareness": {
+      "type": "object",
+      "required": [
+        "arm_specs",
+        "runs"
+      ],
+      "properties": {
+        "arm_specs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "runs": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "work": {
+      "type": "object",
+      "required": [
+        "status",
+        "arm_specs",
+        "tasks"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_run",
+            "run",
+            "skipped"
+          ]
+        },
+        "arm_specs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "harnesses": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "task_runs": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "task_report": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "cells": {
+      "type": "array"
+    },
+    "plugin_deltas": {
+      "type": "array"
+    },
+    "run_manifest": {
+      "type": "object"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "novelty": {
+      "type": "object",
+      "description": "What the subject's content adds to a model, per (artifact, model) cell. Additive in v2: v1 scorecards remain valid and are still loadable. Cells are never averaged - novelty is a property of a pair, and ranking artifacts by `added` inside one model correlated with the measured task delta at -0.446 over 13 artifacts, so there is nothing subject-level to sort by. Populated only when novelty artifacts are attached to the run; the analysis is not run inline because its cost is atoms x probes x arms x (answer + grade).",
+      "required": [
+        "status",
+        "cells"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_run",
+            "measured"
+          ]
+        },
+        "n_cells": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "artifact": {
+                "type": "object"
+              },
+              "model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "provider": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "judge_model": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "atoms": {
+                "type": "object"
+              },
+              "paired": {
+                "type": "object",
+                "description": "The 2x2 under both grading strictnesses, each with its n. Absolute levels rest on an LLM judge that agreed with a second judge on a 6-way scale only 0.664 of the time; the paired rates are more robust because a constant judge offset cancels within a pair, though a threshold-dependent bias does not (skill-novelty-evidence.md §10.21)."
+              },
+              "k0": {
+                "type": "object"
+              },
+              "spans": {
+                "type": "object",
+                "description": "Span totals and the dead-token share. Read frac_carrying_nothing only together with capped_atom_set: from a capped atom set it inverts rather than approximates (0.064 read as 0.743 on the study's largest artifact)."
+              },
+              "gate": {
+                "type": "object",
+                "description": "The soft novelty gate's verdict for this cell. Every check reports and none blocks: subsampling showed a threshold at added >= 0.15 flipping on up to 24% of artifacts at a 0.25 probe budget."
+              },
+              "source": {
+                "type": "string",
+                "description": "Path of the novelty artifact this cell was summarized from."
+              },
+              "warnings": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "caveats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

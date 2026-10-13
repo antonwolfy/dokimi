@@ -1,0 +1,798 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""Offline tests for the judge-reliability checks: sequential gate, wording
+sensitivity, required-point coverage, pairwise judging and the cross-judge verdict."""
+
+from unittest.mock import MagicMock
+
+import pytest
+
+from dokimi.eval import checklist as ck
+from dokimi.eval.judge import JUDGE_PROMPT, Judge
+from dokimi.eval.judge_sequential import SPRT_BATCH, run_sequential, sprt
+from dokimi.eval.judge_validity import evaluate_pairs
+from dokimi.eval.judge_wording import WORDINGS, WordingReport, reword
+
+from tests.test_judge_validity import ANSWER, OTHER_ANSWER
+
+
+def _many_answers(n=40):
+    return [
+        {
+            "question_id": f"Q{i:03d}",
+            "question_text": f"Question {i}?",
+            "arms": {"baseline": {"answer": (ANSWER if i % 2 else OTHER_ANSWER) + f" Case {i}."}},
+        }
+        for i in range(n)
+    ]
+
+
+def _length_judge(library, question, answer):
+    return float(len(answer) % 1000)
+
+
+def _perfect(intact_set):
+    return lambda library, question, answer: 90.0 if answer in intact_set else 10.0
+
+
+# --- sequential -------------------------------------------------------------
+
+
+def test_sprt_decides_on_clear_evidence_only():
+    assert sprt([1.0] * 15, 0.8)[0] == "PASS"
+    assert sprt([1.0] * 5, 0.8)[0] == "continue"
+    assert sprt([0.0] * 5, 0.8)[0] == "FAIL"
+    # Exactly at the gate the evidence never accumulates toward either side.
+    assert sprt([1.0, 1.0, 1.0, 1.0, 0.0] * 4, 0.8)[0] == "continue"
+
+
+def test_sequential_stops_a_perfect_judge_after_the_minimum_rounds():
+    answers = _many_answers()
+    intact = {a["arms"]["baseline"]["answer"] for a in answers}
+    report = run_sequential(answers, _perfect(intact), max_bases=40, variants=["truncate_20", "strip_code"])
+    s = report.summary()
+    assert s["mode"] == "sequential"
+    assert s["passed"] and s["conclusive"]
+    for v in ("truncate_20", "strip_code"):
+        seq = s["per_variant"][v]["sequential"]
+        assert seq["decision"] == "PASS"
+        assert seq["n"] == 2 * SPRT_BATCH  # 15 straight wins are needed; batches are 10
+
+
+def test_sequential_fails_an_inverted_judge_early():
+    answers = _many_answers()
+    intact = {a["arms"]["baseline"]["answer"] for a in answers}
+    good = _perfect(intact)
+    report = run_sequential(
+        answers, lambda lib, q, a: 100.0 - good(lib, q, a), max_bases=40, variants=["truncate_20"]
+    )
+    s = report.summary()
+    assert not s["passed"]
+    assert s["per_variant"]["truncate_20"]["sequential"]["decision"] == "FAIL"
+    assert s["per_variant"]["truncate_20"]["n"] == SPRT_BATCH
+
+
+def test_sequential_reports_the_cap_as_inconclusive():
+    answers = _many_answers()
+    report = run_sequential(answers, lambda *_: 50.0, max_bases=20, variants=["truncate_20"])
+    s = report.summary()
+    # Ties are half a success: 0.5 sits below the gate, but 20 pairs at the
+    # FAIL boundary is not reached... and the pass rule must not flip it to PASS.
+    assert s["per_variant"]["truncate_20"]["sequential"]["decision"] in ("FAIL", "continue")
+    assert not s["passed"]
+    assert "RESULT: FAIL" in report.format_summary()
+
+
+def test_sequential_says_when_the_pool_ran_out_before_the_cap():
+    answers = _many_answers(12)
+    # A judge sitting exactly on the gate: right on 4 pairs of 5, so SPRT never decides.
+    calls = []
+
+    def at_the_gate(pair):
+        calls.append(pair)
+        return (60.0, 50.0) if len(calls) % 5 else (50.0, 60.0)
+
+    report = run_sequential(answers, lambda *_: 0.0, max_bases=120, variants=["truncate_20"],
+                            pair_scorer=at_the_gate)
+    seq = report.summary()["per_variant"]["truncate_20"]["sequential"]
+    assert seq["decision"] == "continue" and seq["stopped_by"] == "pool"
+    assert "answer pool exhausted" in report.format_summary()
+
+
+
+def _undecided_by_variant():
+    """A pair scorer right on 4 pairs of 5 for each variant, so SPRT never decides any."""
+    calls: dict = {}
+
+    def at_the_gate(pair):
+        n = calls[pair["variant"]] = calls.get(pair["variant"], 0) + 1
+        return (60.0, 50.0) if n % 5 else (50.0, 60.0)
+
+    return at_the_gate
+
+
+def test_sequential_stopped_by_is_judged_per_variant():
+    fence = "```\nperf stat -e cycles,instructions ./app\n```\n\n"
+    answers = _many_answers(40)
+    for i, a in enumerate(answers):
+        if i >= 5:  # a code block in only 5 answers: strip_code applies to 5 bases
+            a["arms"]["baseline"]["answer"] = ANSWER.replace(fence, "") + f" Case {i}."
+    report = run_sequential(answers, lambda *_: 0.0, max_bases=40, variants=["strip_code", "truncate_20"],
+                            pair_scorer=_undecided_by_variant())
+    pv = report.summary()["per_variant"]
+    strip, trunc = pv["strip_code"]["sequential"], pv["truncate_20"]["sequential"]
+    assert (strip["n"], strip["decision"], trunc["decision"]) == (5, "continue", "continue")
+    assert (strip["stopped_by"], trunc["stopped_by"]) == ("pool", "cap")
+
+
+def test_sequential_few_pairs_with_more_answers_than_the_cap_is_the_cap():
+    """strip_code has 5 pairs in the 20 bases sampled, but 40 answers exist: a higher
+    --max-bases would add pairs, so "answer pool exhausted" would send the user the wrong way."""
+    fence = "```\nperf stat -e cycles,instructions ./app\n```\n\n"
+    answers = _many_answers(40)
+    for i, a in enumerate(answers):
+        if i % 8:
+            a["arms"]["baseline"]["answer"] = ANSWER.replace(fence, "") + f" Case {i}."
+    report = run_sequential(answers, lambda *_: 0.0, max_bases=20, variants=["strip_code"],
+                            pair_scorer=_undecided_by_variant())
+    seq = report.summary()["per_variant"]["strip_code"]["sequential"]
+    assert seq["decision"] == "continue" and seq["n"] < 20
+    assert seq["stopped_by"] == "cap"
+
+
+def test_neutral_variant_stops_taking_pairs_at_30_bases():
+    report = run_sequential(_many_answers(60), lambda *_: 0.0, max_bases=60, variants=["truncate_20", "padding"],
+                            pair_scorer=_undecided_by_variant())
+    counts = {v: sum(1 for r in report.rows if r.variant == v) for v in ("truncate_20", "padding")}
+    assert counts == {"truncate_20": 60, "padding": 30}
+
+def test_concurrent_scoring_matches_serial():
+    answers = _many_answers(12)
+    from dokimi.eval.degrade import build_pairs
+
+    pairs = build_pairs(answers, n_bases=12)
+    a = evaluate_pairs(_length_judge, pairs).to_dict()["rows"]
+    b = evaluate_pairs(_length_judge, pairs, concurrency=6).to_dict()["rows"]
+    assert a == b
+
+
+# --- wording ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize("name", sorted(WORDINGS))
+def test_every_wording_applies_to_the_shipped_prompt(name):
+    out = reword(JUDGE_PROMPT, name)
+    assert out != JUDGE_PROMPT
+    assert out.split("**Output format", 1)[1] == JUDGE_PROMPT.split("**Output format", 1)[1]
+
+
+def test_a_wording_whose_anchor_is_gone_raises_instead_of_measuring_the_original():
+    with pytest.raises(ValueError):
+        reword("no criteria here\n**Output format** {}", "reorder_dimensions")
+
+
+def _report_with(correct_by_cond, variant="wrong_numbers"):
+    """A WordingReport whose conditions ordered pair i right when ``correct_by_cond[cond][i]``."""
+    from dokimi.eval.judge_validity import ValidityReport
+    from dokimi.eval.validity_scoring import ValidityRow
+
+    report = WordingReport(judge="fake")
+    for cond, correct in correct_by_cond.items():
+        report.reports[cond] = ValidityReport(judge="fake", rows=[
+            ValidityRow(base_id=f"Q{i}", arm="baseline", variant=variant,
+                        intact_score=90.0 if ok else 10.0, degraded_score=50.0)
+            for i, ok in enumerate(correct)
+        ])
+    return report
+
+
+def test_wording_flags_a_rewrite_that_moves_the_same_pairs():
+    # 16 of 20 under the original and a re-draw; the persona rewrite loses 9 of those pairs.
+    base = [True] * 16 + [False] * 4
+    s = _report_with({"original": base, "redraw-1": base, "persona": [False] * 9 + base[9:]}).summary()
+    assert s["fragile_variants"] == ["wrong_numbers"]
+    assert s["per_variant"]["wrong_numbers"]["worst_wording"] == "persona"
+    assert s["per_variant"]["wrong_numbers"]["p_holm"] < 0.05
+
+
+def test_wording_does_not_flag_identical_prompts():
+    """Identical prompts drawn independently and given the wording and noise roles:
+    the old range-versus-range rule flagged about half of such runs at the defaults."""
+    import random
+
+    flagged = 0
+    for seed in range(40):
+        rng = random.Random(seed)
+        conds = ["original", "redraw-1", *sorted(WORDINGS)]
+        draws = {c: [rng.random() < 0.7 for _ in range(20)] for c in conds}
+        flagged += bool(_report_with(draws).summary()["fragile_variants"])
+    assert flagged <= 3
+
+
+# --- checklist --------------------------------------------------------------
+
+
+def test_parse_and_points():
+    assert ck.parse_yes_no("Yes.") is True
+    assert ck.parse_yes_no("**NO**") is False
+    assert ck.parse_yes_no("maybe") is None
+    assert ck.parse_yes_no("no") is False
+    # "no" inside prose is not the verdict.
+    assert ck.parse_yes_no("There is no explicit mention, but it is covered: YES") is True
+    assert ck.points_of({"expected_topics": "['a', 'b']"}) == ["a", "b"]
+    assert ck.points_of({"expected_topics": ["a", " "]}) == ["a"]
+
+
+def test_disagreeing_polarities_count_half():
+    assert ck.PointVerdict("p", covered=True, absent=False).score == 1.0
+    assert ck.PointVerdict("p", covered=False, absent=True).score == 0.0
+    assert ck.PointVerdict("p", covered=True, absent=True).score == 0.5  # yes-bias
+    assert ck.PointVerdict("p", covered=False, absent=False).score == 0.5  # no-bias
+    assert ck.PointVerdict("p", covered=None, absent=False).score is None
+
+
+def _keyword_ask(prompt, **_):
+    """Covers a point iff the point's text appears in the answer."""
+    answer = prompt.split("ANSWER:\n", 1)[1].split("\n\nRequired point:", 1)[0]
+    point = prompt.split("Required point:\n", 1)[1].split("\n\n", 1)[0]
+    present = point in answer
+    asks_absent = ck.ASK_ABSENT in prompt
+    return "YES" if present != asks_absent else "NO"
+
+
+def test_run_checklist_compares_arms_to_baseline():
+    records = [
+        {"question_id": f"Q{i}", "question_text": "q", "arms": {
+            "baseline": {"answer": "alpha"},
+            "skill": {"answer": "alpha beta"},
+        }}
+        for i in range(6)
+    ] + [{"question_id": "QX", "question_text": "q", "arms": {"baseline": {"answer": "x"}}}]
+    points = {f"Q{i}": ["alpha", "beta"] for i in range(6)}
+    report = ck.run_checklist(records, points, _keyword_ask, concurrency=3)
+    s = report.summary()
+    assert s["n_without_points"] == 1
+    assert s["arms"]["baseline"]["coverage"]["mean"] == 0.5
+    assert s["arms"]["skill"]["coverage"]["mean"] == 1.0
+    vb = s["arms"]["skill"]["vs_baseline"]
+    assert (vb["wins"], vb["losses"], vb["ties"]) == (6, 0, 0)
+    assert s["arms"]["skill"]["consistency"] == 1.0
+    md = report.format_markdown()
+    assert "| `skill` | 1.000" in md and "**+** `skill`" in md
+
+
+def test_a_failed_checklist_call_is_unparsed_not_a_lost_run():
+    def flaky_ask(prompt, **_):
+        if "beta" in prompt.split("Required point:\n", 1)[1]:
+            raise RuntimeError("ValidationException: input too long")
+        return _keyword_ask(prompt)
+
+    records = [{"question_id": "Q1", "question_text": "q", "arms": {
+        "baseline": {"answer": "alpha"}, "skill": {"answer": "alpha beta"}}}]
+    report = ck.run_checklist(records, {"Q1": ["alpha", "beta"]}, flaky_ask, concurrency=2)
+    s = report.summary()
+    assert s["arms"]["skill"]["unparsed"] == 1
+    assert s["arms"]["skill"]["coverage"]["mean"] == 1.0
+
+
+# --- per-draw caching -------------------------------------------------------
+
+
+def test_prompt_template_override_reaches_the_model():
+    judge = Judge.__new__(Judge)
+    judge.temperature = judge.seed = None
+    judge.prompt_template = "CUSTOM __QUESTION__ __ANSWER__ __CONTEXT__ __LIBRARY_NAME__"
+    judge._accumulate_usage = lambda usage: None
+    judge.llm = MagicMock()
+    judge.llm.invoke.return_value = MagicMock(content=(
+        '{"correctness": 1, "completeness": 1, "specificity": 1, "code_quality": 1, "actionability": 1, "aggregate": 0}'
+    ))
+    judge.score_answer(library_name="L", question="Q?", answer="A!")
+    assert judge.llm.invoke.call_args.args[0].startswith("CUSTOM Q? A!")
+
+
+# --- cross-judge ------------------------------------------------------------
+
+from dokimi.eval import cross_judge as cj  # noqa: E402
+
+
+def _row(sign, significant):
+    return {"sign": sign, "p_sign": 0.001 if significant else 0.5}
+
+
+def test_an_escalated_pairwise_measure_is_not_a_second_judge():
+    rows = [{"sign": 1, "p_sign": 0.001, "measure": "p/oss pairwise"},
+            {"sign": 1, "p_sign": 0.001, "measure": "p/oss pairwise → p/opus"}]
+    assert cj.label(rows) == "CONSISTENT + (one judge)"
+    rows.append({"sign": 1, "p_sign": 0.001, "measure": "p/haiku"})
+    assert cj.label(rows) == "CONSISTENT +"
+
+
+def test_one_marginal_measure_out_of_many_is_not_a_verdict():
+    rows = [{"sign": 1, "p_sign": 0.03}] + [{"sign": 1, "p_sign": 0.4} for _ in range(5)]
+    assert cj.label(rows) == "NO DETECTABLE EFFECT"  # Holm: 0.03 x 6 = 0.18
+    assert rows[0]["p_holm"] > 0.05 and rows[0]["votes"]
+
+
+def test_a_failed_gate_also_silences_that_judges_grounded_measure():
+    absolute = cj.Measure(name="p/j", kind="aggregate")
+    grounded = cj.Measure(name="p/j", kind="grounded")
+    report = cj.CrossJudgeReport(baseline_arm="baseline", measures=[absolute, grounded])
+    report.apply_validity([{"judge": "p/j", "passed": False}])
+    assert (absolute.gate, grounded.gate) == ("FAIL", "FAIL")
+    report.apply_validity([{"judge": "p/j", "passed": True}])
+    assert absolute.gate == "PASS" and grounded.gate == "FAIL"  # a PASS does not validate grounded scoring
+
+
+@pytest.mark.parametrize("rows,expected", [
+    ([_row(1, True), _row(1, False)], "CONSISTENT + (one judge)"),
+    ([_row(1, True), _row(1, True)], "CONSISTENT +"),
+    ([_row(-1, True), _row(-1, True)], "CONSISTENT −"),
+    ([_row(1, True), _row(-1, False)], "LEANING + (one judge)"),
+    ([_row(1, True), _row(-1, True)], "JUDGE-DEPENDENT"),
+    ([_row(1, False), _row(-1, False)], "NO DETECTABLE EFFECT"),
+])
+def test_verdict_labels(rows, expected):
+    assert cj.label(rows) == expected
+
+
+def test_measures_pair_by_question_and_skip_unscored():
+    data = {"evaluations": [
+        {"question_id": f"Q{i}", "scores": {"baseline": {"aggregate": 80}, "skill": {"aggregate": 90}}}
+        for i in range(8)
+    ] + [{"question_id": "QN", "scores": {"baseline": {"aggregate": 80}, "skill": {}}}]}
+    stored = cj.stored_measure(data)
+    row = stored.versus("skill", "baseline")
+    assert (row["n"], row["wins"], row["losses"]) == (8, 8, 0)
+    assert row["significant"] and row["sign"] == 1
+
+    checklist = {"questions": [
+        {"question_id": f"Q{i}", "arms": {"baseline": {"coverage": 1.0}, "skill": {"coverage": 0.0}}}
+        for i in range(8)
+    ]}
+    cov = cj.coverage_measure(checklist, "haiku")
+    report = cj.CrossJudgeReport(baseline_arm="baseline", measures=[stored, cov])
+    assert report.summary()["arms"]["skill"]["label"] == "JUDGE-DEPENDENT"
+    assert "**JUDGE-DEPENDENT**" in report.format_markdown()
+
+
+def test_score_measure_drops_failed_answers():
+    records = [{"question_id": "Q1", "question_text": "q", "arms": {
+        "baseline": {"answer": "ok"}, "skill": {"answer": "boom"}}}]
+
+    def scorer(lib, q, a):
+        if a == "boom":
+            raise RuntimeError("judge down")
+        return 70.0
+
+    m = cj.score_measure(records, lambda l, q, a, g, c: scorer(l, q, a), name="j", library="L", concurrency=2)
+    assert m.scores == {("Q1", "baseline"): 70.0, ("Q1", "skill"): None}
+    assert m.versus("skill", "baseline")["n"] == 0
+
+
+
+def test_cross_judge_rescoring_shows_the_judge_each_arms_context(tmp_path, monkeypatch):
+    import json
+
+    from dokimi.cli import build_parser
+    from dokimi.eval import judge as judge_mod
+
+    seen = {}
+
+    class FakeJudge:
+        def __init__(self, **_):
+            pass
+
+        def score_answer(self, *, answer, context="", **_):
+            seen[answer] = context
+            return {"aggregate": 50.0}
+
+    monkeypatch.setattr(judge_mod, "Judge", FakeJudge)
+    answers = tmp_path / "run.json"
+    answers.write_text(json.dumps({"library_name": "L", "answers": [{
+        "question_id": "Q1", "question_text": "q", "arms": {
+            "baseline": {"answer": "base answer"},
+            "skill": {"answer": "skill answer",
+                      "context_chunks": [{"snippet": "first"}, {"snippet": "second"}]},
+        }}]}), encoding="utf-8")
+    args = build_parser().parse_args(["eval", "cross-judge", "--answers", str(answers), "--no-stored",
+                                      "--judges", "amazon-bedrock/m", "--output", str(tmp_path / "cj.json")])
+    args.func(args)
+    assert seen == {"skill answer": "first\nsecond", "base answer": "(No documentation retrieved)"}
+
+
+def _stamped_run(source="stored"):
+    """An arms file judged under judge_context: every score records its context source."""
+    def score(agg):
+        return {"aggregate": agg, "judge_context_source": source}
+    return {
+        "library_name": "L", "judge_provider": "amazon-bedrock", "judge_model": "haiku",
+        "judge_context": "treatment_material.v1",
+        "answers": [{"question_id": f"Q{i}", "question_text": "q", "arms": {
+            "baseline": {"answer": f"b{i}", "metadata": {"arm_kind": "baseline"}},
+            "skill": {"answer": f"s{i}", "metadata": {"arm_kind": "skill"}},
+        }} for i in range(8)],
+        "evaluations": [{"question_id": f"Q{i}", "scores": {"baseline": score(70), "skill": score(90)}}
+                        for i in range(8)],
+    }
+
+
+def test_stored_measure_is_named_for_its_judge():
+    data = _stamped_run()
+    stored = cj.stored_measure(data)
+    assert stored.name == "amazon-bedrock/haiku (stored)"
+    rescored = cj.Measure(name="amazon-bedrock/haiku", kind="aggregate", scores=dict(stored.scores))
+    report = cj.CrossJudgeReport(baseline_arm="baseline", measures=[stored, rescored])
+    # Both measures are Haiku: agreement between them is not agreement across judges.
+    assert report.summary()["arms"]["skill"]["label"] == "CONSISTENT + (one judge)"
+    # A failed gate for that judge reaches the stored scores, so they stop voting.
+    assert report.apply_validity([{"judge": "amazon-bedrock/haiku", "passed": False}]) == []
+    assert stored.gate == "FAIL"
+    assert cj.stored_measure({"evaluations": data["evaluations"]}).name == "stored judge"
+
+
+def test_unreproducible_arms_are_those_judged_on_material_the_file_lacks():
+    assert cj.unreproducible_arms(_stamped_run()) == ["skill"]
+    # Before judge_context the stored judge saw the snippets the file keeps.
+    unstamped = _stamped_run()
+    for ev in unstamped["evaluations"]:
+        for s in ev["scores"].values():
+            del s["judge_context_source"]
+    assert cj.unreproducible_arms(unstamped) == []
+    assert cj.unreproducible_arms(_stamped_run("snippet_fallback")) == []
+
+
+def test_cross_judge_refuses_to_rescore_against_unreproducible_stored_scores(tmp_path, monkeypatch, capsys):
+    import json
+
+    from dokimi.cli import build_parser
+    from dokimi.eval import judge as judge_mod
+
+    class FakeJudge:
+        def __init__(self, **_):
+            pass
+
+        def score_answer(self, **_):
+            return {"aggregate": 50.0}
+
+    monkeypatch.setattr(judge_mod, "Judge", FakeJudge)
+    answers = tmp_path / "run.json"
+    answers.write_text(json.dumps(_stamped_run()), encoding="utf-8")
+    argv = ["eval", "cross-judge", "--answers", str(answers), "--judges", "amazon-bedrock/m",
+            "--output", str(tmp_path / "cj.json")]
+    args = build_parser().parse_args(argv)
+    with pytest.raises(SystemExit) as exc:
+        args.func(args)
+    assert exc.value.code == 2 and "skill" in capsys.readouterr().err
+    # Without the stored scores every measure sees the same snippets, and it runs.
+    args = build_parser().parse_args(argv + ["--no-stored"])
+    args.func(args)
+    assert (tmp_path / "cj.json").exists()
+
+
+def test_a_failed_gate_also_silences_that_judges_coverage_measure():
+    absolute = cj.Measure(name="p/j", kind="aggregate")
+    coverage = cj.Measure(name="p/j", kind="coverage")
+    other = cj.Measure(name="p/k", kind="aggregate")
+    for i in range(10):
+        for m in (absolute, coverage):
+            m.scores.update({(f"Q{i}", "baseline"): 0.2, (f"Q{i}", "skill"): 0.8})
+        other.scores.update({(f"Q{i}", "baseline"): 70.0, (f"Q{i}", "skill"): 70.0 + (1 if i % 2 else -1)})
+    report = cj.CrossJudgeReport(baseline_arm="baseline", measures=[absolute, coverage, other])
+    report.apply_validity([{"judge": "p/j", "passed": False}])
+    assert coverage.gate == "FAIL"
+    rows = report.summary()["arms"]["skill"]
+    assert [r["measure"] for r in rows["rows"] if r["votes"]] == ["p/k"]
+    assert rows["label"] == "NO DETECTABLE EFFECT"
+    report.apply_validity([{"judge": "p/j", "passed": True}])
+    assert coverage.gate == "FAIL"  # a PASS does not validate checklist coverage
+
+
+@pytest.mark.parametrize("measure_flag", ["--pairwise", "--checklist"])
+def test_cross_judge_refuses_stored_scores_against_pairwise_and_checklist_too(tmp_path, capsys, measure_flag):
+    import json
+
+    from dokimi.cli import build_parser
+
+    run = _stamped_run()
+    answers = tmp_path / "run.json"
+    answers.write_text(json.dumps(run), encoding="utf-8")
+    other = tmp_path / "other.json"
+    qids = [f"Q{i}" for i in range(8)]
+    if measure_flag == "--pairwise":
+        other.write_text(json.dumps({"summary": {"judge": "p/j pairwise"}, "verdicts": {
+            "skill": {q: {"score": -1.0} for q in qids}}}), encoding="utf-8")
+    else:
+        other.write_text(json.dumps({"summary": {"judge": "p/j"}, "questions": [
+            {"question_id": q, "arms": {"baseline": {"coverage": 0.8}, "skill": {"coverage": 0.2}}}
+            for q in qids]}), encoding="utf-8")
+    argv = ["eval", "cross-judge", "--answers", str(answers), measure_flag, str(other),
+            "--output", str(tmp_path / "cj.json")]
+    with pytest.raises(SystemExit) as exc:
+        args = build_parser().parse_args(argv)
+        args.func(args)
+    assert exc.value.code == 2 and "skill" in capsys.readouterr().err
+    assert not (tmp_path / "cj.json").exists()
+    # The judges that never saw the material can be compared with each other.
+    args = build_parser().parse_args(argv + ["--no-stored"])
+    args.func(args)
+    assert (tmp_path / "cj.json").exists()
+    # Stored scores that the file does reproduce (judged on the snippets) are not refused.
+    (tmp_path / "cj.json").unlink()
+    answers.write_text(json.dumps(_stamped_run("snippet_fallback")), encoding="utf-8")
+    args = build_parser().parse_args(argv)
+    args.func(args)
+    assert (tmp_path / "cj.json").exists()
+
+
+@pytest.mark.parametrize("kind", ["grounded", "coverage"])
+def test_a_failed_gate_reaches_a_judge_whose_only_measure_is_grounded_or_coverage(kind):
+    # --grounded without --both, or --checklist alone, leaves no aggregate measure for the judge.
+    only = cj.Measure(name="p/j", kind=kind)
+    other = cj.Measure(name="p/k", kind="aggregate")
+    for i in range(10):
+        only.scores.update({(f"Q{i}", "baseline"): 0.8, (f"Q{i}", "skill"): 0.2})
+        other.scores.update({(f"Q{i}", "baseline"): 70.0, (f"Q{i}", "skill"): 70.0 + (1 if i % 2 else -1)})
+    report = cj.CrossJudgeReport(baseline_arm="baseline", measures=[only, other])
+    assert report.apply_validity([{"judge": "p/j", "passed": False}]) == []
+    assert only.gate == "FAIL"
+    assert report.summary()["arms"]["skill"]["label"] == "NO DETECTABLE EFFECT"
+    # A PASS validates neither, and says so: it matched nothing.
+    only.gate = None
+    assert report.apply_validity([{"judge": "p/j", "passed": True}]) == ["p/j"]
+    assert only.gate is None
+
+
+def test_significance_uses_the_unrounded_holm_p():
+    rows = [{"sign": 1, "p_sign": 0.0166662, "measure": f"p/j{i}"} for i in range(3)]
+    # Holm: 3 x 0.0166662 = 0.0499986, significant; displayed to 4 decimals it is 0.05.
+    assert cj.label(rows) == "CONSISTENT +"
+    assert all(r["significant"] for r in rows)
+    assert {r["p_holm"] for r in rows} == {0.05}
+
+# --- pairwise ---------------------------------------------------------------
+
+from dokimi.eval import pairwise as pw  # noqa: E402
+
+
+def _ab_ask(better, *, consistent=True):
+    """A judge that prefers the answer containing ``better``; optionally position-biased."""
+    def ask(prompt, **_):
+        a = prompt.split("**Answer A:**\n", 1)[1].split("\n\n**Answer B:**", 1)[0]
+        if not consistent:
+            return "A"
+        return "A" if better in a else "B"
+    return ask
+
+
+def test_parse_choice():
+    assert pw.parse_choice("**B**") == "B"
+    assert pw.parse_choice("tie") == "TIE"
+    assert pw.parse_choice("Answer: TIE") == "TIE"
+    # The article is not verdict A.
+    assert pw.parse_choice("Both are fine, so it is a TIE.") == "TIE"
+    assert pw.parse_choice("Answer A is better: A") == "A"
+    assert pw.parse_choice("neither") is None
+
+
+def test_pairwise_needs_both_orders_to_agree():
+    good = pw.PairwiseJudge(ask=_ab_ask("GOOD"))
+    assert good.compare("L", "q", "GOOD x", "bad y").score == 1
+    assert good.compare("L", "q", "bad y", "GOOD x").score == -1
+    biased = pw.PairwiseJudge(ask=_ab_ask("GOOD", consistent=False))
+    assert biased.compare("L", "q", "GOOD x", "bad y").score == 0  # always "A" is position, not preference
+
+
+def test_pairwise_escalates_only_undecided_pairs():
+    calls = []
+
+    def expensive(prompt, **_):
+        calls.append(prompt)
+        return _ab_ask("GOOD")(prompt)
+
+    judge = pw.PairwiseJudge(ask=_ab_ask("GOOD", consistent=False), escalate=expensive)
+    v = judge.compare("L", "q", "GOOD x", "bad y")
+    assert (v.score, v.escalated, len(calls)) == (1, True, 2)
+    decided = pw.PairwiseJudge(ask=_ab_ask("GOOD"), escalate=expensive)
+    assert decided.compare("L", "q", "GOOD x", "bad y").escalated is False
+    assert len(calls) == 2
+
+
+def test_unparseable_reply_is_an_error_not_a_tie():
+    judge = pw.PairwiseJudge(ask=lambda p, **_: "", escalate=lambda p, **_: "A")
+    with pytest.raises(pw.UnparseableVerdict):
+        judge.compare("L", "q", "x", "y")
+    records = [{"question_id": "Q1", "question_text": "q", "arms": {"baseline": {"answer": "b"}, "s": {"answer": "a"}}}]
+    report = pw.run_arm_pairwise(records, pw.PairwiseJudge(ask=lambda p, **_: "I cannot decide"))
+    assert report.verdicts == {} and len(report.errors) == 1
+
+
+def test_eval_pairwise_writes_the_errors_when_every_comparison_fails(tmp_path, monkeypatch):
+    import json
+
+    from dokimi.cli import build_parser
+    from dokimi.commands import judge_reliability as jr
+
+    monkeypatch.setattr(jr, "pairwise_judge",
+                        lambda args: (pw.PairwiseJudge(ask=lambda p, **_: "no idea"), "fake"))
+    answers = tmp_path / "run.json"
+    answers.write_text(json.dumps({"answers": [{"question_id": "Q1", "question_text": "q", "arms": {
+        "baseline": {"answer": "b"}, "skill": {"answer": "s"}}}]}), encoding="utf-8")
+    out = tmp_path / "pw.json"
+    args = build_parser().parse_args(["eval", "pairwise", "--answers", str(answers), "--output", str(out)])
+    with pytest.raises(SystemExit) as exc:
+        args.func(args)
+    assert exc.value.code == 2
+    errors = json.loads(out.read_text(encoding="utf-8"))["errors"]
+    assert [e["question_id"] for e in errors] == ["Q1"] and "UnparseableVerdict" in errors[0]["error"]
+
+
+def test_consistent_ties_are_kept_unless_asked():
+    calls = []
+
+    def expensive(prompt, **_):
+        calls.append(prompt)
+        return "A"
+
+    tie = pw.PairwiseJudge(ask=lambda p, **_: "TIE", escalate=expensive)
+    assert (tie.compare("L", "q", "x", "y").escalated, len(calls)) == (False, 0)
+    tie.escalate_ties = True
+    assert tie.compare("L", "q", "x", "y").escalated is True
+
+
+def test_pairwise_drives_the_validity_gate():
+    answers = _many_answers()
+    intact = {a["arms"]["baseline"]["answer"] for a in answers}
+
+    def ask(prompt, **_):
+        a = prompt.split("**Answer A:**\n", 1)[1].split("\n\n**Answer B:**", 1)[0]
+        return "A" if a in intact else "B"
+
+    scorer = pw.PairwiseJudge(ask=ask).pair_scorer()
+    report = run_sequential(answers, lambda *_: 0.0, max_bases=40, variants=["truncate_20", "padding"],
+                            pair_scorer=scorer)
+    s = report.summary()
+    assert s["passed"] and s["per_variant"]["truncate_20"]["sequential"]["decision"] == "PASS"
+
+
+def test_arm_pairwise_report_and_cross_judge_measure():
+    records = [{"question_id": f"Q{i}", "question_text": "q", "arms": {
+        "baseline": {"answer": "plain"}, "skill": {"answer": "GOOD"}}} for i in range(7)]
+    report = pw.run_arm_pairwise(records, pw.PairwiseJudge(ask=_ab_ask("GOOD")), label="fake", concurrency=3)
+    r = report.summary()["arms"]["skill"]
+    assert (r["wins"], r["losses"], r["ties"]) == (7, 0, 0) and r["p_sign"] < 0.05
+    assert "| `skill` | 7 | 0 | 0 |" in report.format_markdown()
+    m = cj.pairwise_measure(report.to_dict(), "fake", "baseline")
+    assert m.versus("skill", "baseline")["wins"] == 7
+
+
+def test_a_judge_that_failed_its_gate_does_not_vote():
+    good = cj.Measure(name="p/strong", kind="aggregate")
+    bad = cj.Measure(name="p/weak", kind="aggregate")
+    for i in range(8):
+        good.scores.update({(f"Q{i}", "baseline"): 70.0, (f"Q{i}", "skill"): 80.0})
+        bad.scores.update({(f"Q{i}", "baseline"): 80.0, (f"Q{i}", "skill"): 70.0})
+    report = cj.CrossJudgeReport(baseline_arm="baseline", measures=[good, bad])
+    assert report.summary()["arms"]["skill"]["label"] == "JUDGE-DEPENDENT"
+    unmatched = report.apply_validity([
+        {"judge": "p/weak", "passed": False}, {"judge": "p/strong", "passed": True}, {"judge": "p/other"},
+    ])
+    assert unmatched == ["p/other"]
+    assert report.summary()["arms"]["skill"]["label"] == "CONSISTENT + (one judge)"
+    md = report.format_markdown()
+    assert "| ✗ |" in md and "| ✓ |" in md
+    unvalidated = cj.Measure(name="p/unknown", kind="aggregate", scores=dict(bad.scores))
+    report.measures.append(unvalidated)
+    assert report.summary()["arms"]["skill"]["label"] == "JUDGE-DEPENDENT"
+    report.require_validated = True
+    assert report.summary()["arms"]["skill"]["label"] == "CONSISTENT + (one judge)"
+
+
+def test_escalation_without_pairwise_mode_is_refused(tmp_path):
+    from dokimi.cli import build_parser
+
+    args = build_parser().parse_args(["eval", "judge-validity", "--answers", str(tmp_path / "a.json"),
+                                      "--escalate-model", "m"])
+    with pytest.raises(SystemExit) as exc:
+        args.func(args)
+    assert exc.value.code == 2
+
+
+# --- verdict parsing inside prose, and checklist rendering without a parsed point ---------
+
+
+@pytest.mark.parametrize("reply, expected", [
+    ("Neither A nor B is wrong, so TIE", None),
+    ("B is better than A.", None),
+    ("Answer A omits the unit. Answer B is complete. Verdict: B", None),
+    ("A, B, or TIE", None),
+    ("Reply with exactly one token: A, B, or TIE.", None),
+    ("<think>Compare A and B</think>\nB", "B"),
+    ("<think>A says 8, B says 8.</think>**TIE**", "TIE"),
+    ("<think>Answer A cites 8 threads and", None),
+    ("A tie", "TIE"),
+    ("A TIE.", "TIE"),
+    ("Both are fine, so it is a TIE.", "TIE"),
+    ("The better answer is B.", "B"),
+    ("Answer A is better: A", "A"),
+    ("**b**", "B"),
+    ("B\n\nAnswer B is more accurate than A.", "B"),
+    ("A\nreason: B lacks the number", "A"),
+    ("B is better than A.\nA lacks the unit.", None),
+    ("", None),
+])
+def test_parse_choice_needs_one_verdict(reply, expected):
+    assert pw.parse_choice(reply) == expected
+
+
+@pytest.mark.parametrize("reply, expected", [
+    ("There is no explicit mention, but it is covered: YES", True),
+    ("NO. The answer never states it, and YES would be wrong.", None),
+    ("Reply with exactly one word: YES or NO.", None),
+    ("<think>maybe NO</think>YES", True),
+    ("<think>maybe NO", None),
+    ("**No**", False),
+    ("NO - the answer never mentions it", False),
+    ("YES\nIt says NO threads are needed, so the point is covered.", True),
+    ("NO.\nThe answer never states it, and YES would be wrong.", False),
+])
+def test_parse_yes_no_needs_one_verdict(reply, expected):
+    assert ck.parse_yes_no(reply) is expected
+
+
+def test_a_reply_naming_two_verdicts_is_redrawn_not_read_as_the_first():
+    replies = iter(["Neither A nor B is wrong, so TIE", "TIE"])
+    verdict, raw = pw.ask_parsed(lambda p, **_: next(replies), "p", pw.parse_choice)
+    assert (verdict, raw) == ("TIE", "TIE")
+    judge = pw.PairwiseJudge(ask=lambda p, **_: "A or B?")
+    with pytest.raises(pw.UnparseableVerdict):
+        judge.compare("L", "q", "x", "y")
+
+
+def _arm_with_no_parsed_point():
+    def ask(prompt, **_):
+        if "ANSWER:\nunreadable" in prompt:
+            return "Verdict:"
+        return "YES" if "cover this" in prompt else "NO"
+
+    records = [{"question_id": f"Q{i}", "question_text": "q",
+                "arms": {"baseline": {"answer": "fine"}, "skill": {"answer": "unreadable"}}} for i in (1, 2)]
+    return ck.run_checklist(records, {"Q1": ["p1", "p2"], "Q2": ["p1"]}, ask)
+
+
+def test_checklist_markdown_renders_an_arm_with_no_parsed_point():
+    report = _arm_with_no_parsed_point()
+    md = report.format_markdown()
+    row = next(line for line in md.splitlines() if line.startswith("| `skill`"))
+    assert row == "| `skill` | - | [-, -] | - | - | 0/0/0 |  | - |"
+    assert "3 point(s) got no usable reply" in md
+    assert next(line for line in md.splitlines() if line.startswith("| `baseline`")).startswith("| `baseline` | 1.000")
+
+
+def test_eval_checklist_writes_the_json_before_rendering(tmp_path, monkeypatch):
+    import json
+
+    from dokimi.cli import build_parser
+    from dokimi.eval import judge as judge_mod
+
+    class FakeJudge:
+        def __init__(self, **_):
+            self.llm = MagicMock()
+            self.llm.invoke = lambda prompt, **_: MagicMock(content="YES" if "cover this" in prompt else "NO")
+
+    monkeypatch.setattr(judge_mod, "Judge", FakeJudge)
+
+    def boom(self, *_, **__):
+        raise RuntimeError("render failed")
+
+    monkeypatch.setattr(ck.ChecklistReport, "format_markdown", boom)
+    answers, questions, out = tmp_path / "run.json", tmp_path / "q.json", tmp_path / "ck.json"
+    answers.write_text(json.dumps({"answers": [{"question_id": "Q1", "question_text": "q", "arms": {
+        "baseline": {"answer": "b"}, "skill": {"answer": "s"}}}]}), encoding="utf-8")
+    questions.write_text(json.dumps({"questions": [{"id": "Q1", "expected_topics": ["p"]}]}), encoding="utf-8")
+    args = build_parser().parse_args(["eval", "checklist", "--answers", str(answers),
+                                      "--questions", str(questions), "--output", str(out)])
+    with pytest.raises(RuntimeError, match="render failed"):
+        args.func(args)
+    assert json.loads(out.read_text(encoding="utf-8"))["summary"]["n_questions"] == 1

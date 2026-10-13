@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/intel/dokimi/schemas/repo_static.v1.json",
+  "title": "Repository static-check output v1",
+  "description": "What a repository's `static` entry point writes to {out} (docs/repo-evaluation-contract.md §4.4). The repository owns it, so it carries `schema` rather than `schema_version`. Only the listed claim fields are read; every other key is stored as it is. The status class is the part before the first `_`.",
+  "type": "object",
+  "required": ["schema", "claims"],
+  "properties": {
+    "schema": {"const": "repo_static.v1"},
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "line", "status"],
+        "properties": {
+          "file": {"type": "string", "minLength": 1},
+          "line": {"type": "integer", "minimum": 0},
+          "status": {"type": "string", "pattern": "^(ok|unresolved|fail)(_[A-Za-z0-9_]+)?$"}
+        }
+      }
+    }
+  }
+}

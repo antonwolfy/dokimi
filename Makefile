@@ -3,16 +3,16 @@
 
 # Top-level Makefile for the agent measurement framework.
 #
-# The whole runnable project lives in agent-benchmark/; every target here
+# The whole runnable project lives in dokimi/; every target here
 # delegates into it. Run `make help` for the current target list.
 
-BENCH_DIR := agent-benchmark
+BENCH_DIR := dokimi
 
 .PHONY: help test benchmark-run benchmark-compare validate-benchmark-spec dev ci-local hooks
 
 help:
 	@echo "Agent measurement framework — top-level targets:"
-	@echo "  make test                    Run the agent-benchmark test suite"
+	@echo "  make test                    Run the dokimi test suite"
 	@echo "  make benchmark-run           Run the static agent-quality benchmark"
 	@echo "  make benchmark-compare       Compare benchmark snapshots (BASE=<your snapshot>)"
 	@echo "  make validate-benchmark-spec Validate the benchmark spec schema"

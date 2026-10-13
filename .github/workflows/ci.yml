@@ -24,7 +24,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: agent-benchmark
+    working-directory: dokimi
 
 jobs:
   lint:
@@ -70,9 +70,9 @@ jobs:
           python-version: '3.11'
       - run: pip install PyYAML jsonschema
       - name: schema-check
-        run: python -m agent_benchmarks.schema_check benchmarks/spec.v1.yaml
+        run: python -m dokimi.schema_check benchmarks/spec.v1.yaml
       - name: registry-drift-check
-        run: python -m agent_benchmarks.config_check
+        run: python -m dokimi.config_check
       - name: guidance self-scan (L0)
         run: python cli.py repo scan .. --manifest-file benchmarks/self-scan.repo-eval.yaml --fail-on-fail
 
@@ -98,7 +98,7 @@ jobs:
       # Offline by construction: pytest-socket (addopts in pyproject.toml) fails
       # any test that opens a network socket.
       - name: Run tests
-        run: pytest --cov=agent_benchmarks --cov-branch --cov-report=term --cov-report=xml
+        run: pytest --cov=dokimi --cov-branch --cov-report=term --cov-report=xml
       # Coverage of the lines this PR changes, not of the whole tree: the total
       # moves too little per PR to gate on, an untested new function does not.
       # Below 20 measurable changed lines one missed line swings the percentage
@@ -127,9 +127,9 @@ jobs:
         with:
           name: coverage
           path: |
-            agent-benchmark/coverage.xml
-            agent-benchmark/diff-cover.json
-            agent-benchmark/diff-cover.md
+            dokimi/coverage.xml
+            dokimi/diff-cover.json
+            dokimi/diff-cover.md
           if-no-files-found: ignore
 
   # Canary for the dependency ranges in requirements*.txt: installs the newest
@@ -220,8 +220,8 @@ jobs:
           python -m pip install --upgrade pip build
           pip install .
       - name: Console entry point works
-        run: agent-benchmark --help
+        run: dokimi --help
       - name: Module entry point works
-        run: python -m agent_benchmarks --help
+        run: python -m dokimi --help
       - name: Core imports
-        run: python -c "import agent_benchmarks, agent_benchmarks.cli, agent_benchmarks.artifacts, agent_benchmarks.runner.spec"
+        run: python -c "import dokimi, dokimi.cli, dokimi.artifacts, dokimi.runner.spec"

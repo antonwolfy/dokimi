@@ -4,7 +4,7 @@
 name: contracts
 
 # Artifact schemas are versions: an in-place edit to <kind>.v<N>.json may only
-# widen what it accepts (agent_benchmarks/schema_compat.py says why and what to
+# widen what it accepts (dokimi/schema_compat.py says why and what to
 # do instead). The fixture half of the contract runs in the test suite
 # (tests/test_schema_compat.py); this job is the diff half, which needs the
 # PR's base.
@@ -12,8 +12,8 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
-      - 'agent-benchmark/agent_benchmarks/schemas/**'
-      - 'agent-benchmark/agent_benchmarks/schema_compat.py'
+      - 'dokimi/dokimi/schemas/**'
+      - 'dokimi/dokimi/schema_compat.py'
       - '.github/workflows/contracts.yml'
 
 permissions:
@@ -25,7 +25,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: agent-benchmark
+    working-directory: dokimi
 
 jobs:
   schema-compat:
@@ -55,7 +55,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          python -m agent_benchmarks.schema_compat --base "origin/$BASE_REF" | tee compat.txt || status=$?
+          python -m dokimi.schema_compat --base "origin/$BASE_REF" | tee compat.txt || status=$?
           if grep -qE '^(BREAKING|WARNING)' compat.txt; then
             { echo '### Schema compatibility'; echo '```'; cat compat.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi

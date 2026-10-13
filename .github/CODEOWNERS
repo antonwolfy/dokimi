@@ -6,14 +6,14 @@
 *                                   @napetrov
 
 # Static benchmark subsystem
-/agent-benchmark/agent_benchmarks/runner/      @napetrov
-/agent-benchmark/agent_benchmarks/metrics/     @napetrov
-/agent-benchmark/agent_benchmarks/ingest/      @napetrov
-/agent-benchmark/agent_benchmarks/gate/        @napetrov
-/agent-benchmark/benchmarks/                   @napetrov
+/dokimi/dokimi/runner/      @napetrov
+/dokimi/dokimi/metrics/     @napetrov
+/dokimi/dokimi/ingest/      @napetrov
+/dokimi/dokimi/gate/        @napetrov
+/dokimi/benchmarks/                   @napetrov
 
 # LLM evaluation subsystem
-/agent-benchmark/agent_benchmarks/eval/        @napetrov
-/agent-benchmark/agent_benchmarks/questions/   @napetrov
-/agent-benchmark/agent_benchmarks/personas/    @napetrov
-/agent-benchmark/agent_benchmarks/treatments/  @napetrov
+/dokimi/dokimi/eval/        @napetrov
+/dokimi/dokimi/questions/   @napetrov
+/dokimi/dokimi/personas/    @napetrov
+/dokimi/dokimi/treatments/  @napetrov

@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/intel/dokimi/schemas/arms.v1.json",
+  "title": "Arms artifact v1",
+  "type": "object",
+  "required": [
+    "arms",
+    "answers"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "arms.v1"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "library_name": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provider": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "matrix_cell": {
+      "type": "string"
+    },
+    "judge_model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "judge_provider": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "judge_context": {
+      "description": "Protocol for what the judge was shown about each arm's treatment material (e.g. treatment_material.v1). Absent on runs judged on 200-char report snippets, before the stamp existed.",
+      "type": "string"
+    },
+    "arms": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "baseline_arm": {
+      "type": "string"
+    },
+    "total_questions": {
+      "type": "integer"
+    },
+    "answers": {
+      "type": "array"
+    },
+    "evaluations": {
+      "type": "array"
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "per_arm": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "avg_aggregate": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "n": {
+                "type": "integer"
+              },
+              "delta_vs_baseline": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "significance": {
+                "description": "Paired test of this arm against the shared baseline arm. Absent on the baseline arm itself, and on arms with too few complete pairs to describe.",
+                "type": "object",
+                "properties": {
+                  "n": {
+                    "description": "Complete pairs contributing (questions scored in both this arm and the baseline).",
+                    "type": "integer"
+                  },
+                  "delta_mean": {
+                    "type": "number"
+                  },
+                  "delta_std": {
+                    "type": "number"
+                  },
+                  "cohens_d": {
+                    "description": "Cohen's d_z on the paired deltas (sample SD, ddof=1). Null when the deltas are constant and non-zero, where d_z is unbounded rather than zero; 0.0 when every delta is zero.",
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "effect": {
+                    "enum": [
+                      "negligible",
+                      "small",
+                      "medium",
+                      "large",
+                      "unknown"
+                    ]
+                  },
+                  "ci_lo": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "ci_hi": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "ci_confidence": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 1
+                  },
+                  "p_ttest": {
+                    "description": "Two-sided paired t-test. Null when SciPy is absent, fewer than 6 pairs exist (see eval.stats.MIN_PAIRS_FOR_TEST), or the deltas have zero variance.",
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "p_wilcoxon": {
+                    "description": "Two-sided Wilcoxon signed-rank, zero_method=zsplit so tied pairs stay in the sample. Null under the same conditions as p_ttest, or when every delta is zero.",
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "n_wilcoxon": {
+                    "description": "Pairs the signed-rank test actually used. Zero when it did not run.",
+                    "type": "integer"
+                  },
+                  "ci_method": {
+                    "description": "How ci_lo/ci_hi were computed. student_t is coherent with p_ttest; percentile_bootstrap is the SciPy-absent fallback.",
+                    "enum": [
+                      "student_t",
+                      "percentile_bootstrap",
+                      "degenerate",
+                      "none"
+                    ]
+                  },
+                  "significant": {
+                    "description": "Unadjusted verdict at alpha = 0.05. Null when no test could run, which is not the same as a negative verdict. Prefer significant_adjusted.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "p_adjusted": {
+                    "description": "p_ttest after multiplicity correction across the treatment arms in this run.",
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "significant_adjusted": {
+                    "description": "Verdict at alpha = 0.05 using p_adjusted. Null when no test could run.",
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "correction": {
+                    "enum": [
+                      "holm",
+                      "bh"
+                    ]
+                  },
+                  "correction_family": {
+                    "description": "Which set of hypotheses this p was corrected within. Arm comparisons and interaction contrasts are separate families.",
+                    "type": "string"
+                  },
+                  "family_size": {
+                    "description": "Treatment arms in the comparison family.",
+                    "type": "integer"
+                  },
+                  "family_tested": {
+                    "description": "Arms that yielded a testable p-value — the effective correction multiplier.",
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "interactions": {
+          "description": "One entry per detected 2x2 factorial cell, i.e. per combined arm whose two sub-treatments are also present as standalone arms. Absent when no such cell exists.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "arm_a": {
+                "type": "string"
+              },
+              "arm_b": {
+                "type": "string"
+              },
+              "combined_arm": {
+                "type": "string"
+              },
+              "baseline_arm": {
+                "type": "string"
+              },
+              "n": {
+                "description": "Questions scored in all four cells.",
+                "type": "integer"
+              },
+              "delta_a": {
+                "type": "number"
+              },
+              "delta_b": {
+                "type": "number"
+              },
+              "delta_combined": {
+                "type": "number"
+              },
+              "additive_expectation": {
+                "description": "delta_a + delta_b, i.e. the combined delta implied by no interaction.",
+                "type": "number"
+              },
+              "interaction": {
+                "description": "Per-question contrast combined - A - B + baseline. Negative means the treatments interfere; positive means they reinforce.",
+                "type": "number"
+              },
+              "delta_mean": {
+                "description": "Same value as interaction, kept so the block reads like any other delta description.",
+                "type": "number"
+              },
+              "delta_std": {
+                "type": "number"
+              },
+              "cohens_d": {
+                "description": "Cohen's d_z on the interaction contrasts (sample SD, ddof=1). Null when the contrast is constant and non-zero; 0.0 when every contrast is zero.",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "effect": {
+                "enum": [
+                  "negligible",
+                  "small",
+                  "medium",
+                  "large",
+                  "unknown"
+                ]
+              },
+              "ci_lo": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "ci_hi": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "ci_confidence": {
+                "type": "number"
+              },
+              "ci_method": {
+                "enum": [
+                  "student_t",
+                  "percentile_bootstrap",
+                  "degenerate",
+                  "none"
+                ]
+              },
+              "p_ttest": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "p_wilcoxon": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "n_wilcoxon": {
+                "type": "integer"
+              },
+              "significant": {
+                "description": "Unadjusted verdict at alpha = 0.05. Null when no test could run.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "p_adjusted": {
+                "description": "p_ttest corrected across the interaction contrasts in this run — their own family, not pooled with the per-arm comparisons.",
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "significant_adjusted": {
+                "description": "Verdict at alpha = 0.05 using p_adjusted. Null when no test could run.",
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "correction": {
+                "enum": [
+                  "holm",
+                  "bh"
+                ]
+              },
+              "correction_family": {
+                "type": "string"
+              },
+              "family_size": {
+                "description": "Interaction contrasts in the family.",
+                "type": "integer"
+              },
+              "family_tested": {
+                "description": "Contrasts that yielded a testable p-value.",
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "evaluations"
+        ]
+      },
+      "then": {
+        "required": [
+          "judge_model",
+          "judge_provider"
+        ],
+        "properties": {
+          "judge_model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "judge_provider": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  ]
+}

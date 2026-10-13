@@ -21,7 +21,7 @@ concurrency:
 
 defaults:
   run:
-    working-directory: agent-benchmark
+    working-directory: dokimi
 
 jobs:
   # Whether a PR changes anything besides Markdown. The Docker smoke test below
@@ -56,7 +56,7 @@ jobs:
   # THE executable-track proof for this repo. It is now the only job that
   # builds and verifies a Docker task, because the task definitions no longer
   # live here: they are supplied from an external content checkout via
-  # --tasks-root (see agent-benchmark/docs/contributing-terminal-bench-task.md
+  # --tasks-root (see dokimi/docs/contributing-terminal-bench-task.md
   # for the format). That makes this the right shape of test anyway -- it
   # exercises the framework against content it did not author.
   #
@@ -162,5 +162,5 @@ jobs:
         with:
           name: agent-quality-report
           path: |
-            agent-benchmark/baselines/current.json
-            agent-benchmark/reports/current.md
+            dokimi/baselines/current.json
+            dokimi/reports/current.md

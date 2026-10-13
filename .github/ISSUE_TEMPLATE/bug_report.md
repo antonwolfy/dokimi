@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a problem with agent-benchmark
+about: Report a problem with Dokimi
 title: ""
 labels: bug
 assignees: ""
@@ -15,7 +15,7 @@ A clear description of what's wrong.
 Steps or the exact command(s):
 
 ```bash
-agent-benchmark ...
+dokimi ...
 ```
 
 ## Expected vs actual
@@ -25,7 +25,7 @@ agent-benchmark ...
 
 ## Environment
 
-- agent-benchmark commit/version:
+- Dokimi commit/version:
 - Python version:
 - OS:
 - Relevant extras installed (ocr / mcp / embeddings):

@@ -1,0 +1,7 @@
+id: citation-localization-scoring
+product: dokimi
+query: >
+  Where does the benchmark parse an explorer's <final_answer> citation block and
+  score the cited file/line ranges against reference locations (precision/recall/F1)?
+references:
+  - path: dokimi/metrics/exploration.py
