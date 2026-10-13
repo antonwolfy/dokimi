@@ -370,7 +370,14 @@ class JudgePanel:
                             library_name: str) -> Optional[PanelVerdict]:
         if not ans_data or not ans_data.get("answer"):
             return None
-        ctx = "\n".join(d.get("content", "") for d in ans_data.get("retrieved_docs", []))
+        # answers.v1 keeps only each doc's 200-char ``snippet``; the full text the
+        # answerer was given is not persisted. That is also what the single judge
+        # shows (``Judge._format_context``), so both judges see the same material.
+        # ``content`` is read as a fallback for records that do carry it.
+        ctx = "\n".join(
+            d.get("snippet") or d.get("content", "")
+            for d in ans_data.get("retrieved_docs") or [] if d
+        )
         return self.evaluate(question, ans_data["answer"], library_name, ctx)
 
     def evaluate_answers(self, answers: List[Dict[str, Any]], library_name: str,
@@ -382,7 +389,11 @@ class JudgePanel:
         n = len(answers)
         for i, answer in enumerate(answers, 1):
             q_id = answer.get("question_id", answer.get("id", f"q{i}"))
-            question = answer.get("question") or answer.get("text", "")
+            # answers.v1 writes ``question_text``; ``question``/``text`` are the
+            # question-set spellings, accepted for hand-built inputs.
+            question = (
+                answer.get("question_text") or answer.get("question") or answer.get("text", "")
+            )
             print(f"[{i}/{n}] Panel: {q_id}…", flush=True)
             with_v = self._score_answer_entry(answer.get("with_docs"), question, library_name)
             without_v = self._score_answer_entry(answer.get("without_docs"), question, library_name)
