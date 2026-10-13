@@ -22,6 +22,7 @@ from agent_benchmarks.harnesses.runner import summarize_task_results
 def _fixture_task(tmp_path: Path) -> Path:
     task = tmp_path / "toy-task"
     (task / "tests").mkdir(parents=True)
+    (task / "tests" / "test.sh").write_text("#!/bin/bash\n", encoding="utf-8")  # Harbor needs one
     (task / "environment").mkdir()
     (task / "solution").mkdir()
     (task / "instruction.md").write_text("Write solution.py and pass tests.", encoding="utf-8")

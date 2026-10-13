@@ -115,6 +115,7 @@ def _harbor(harness_id: str, agent: str) -> CommandHarness:
             "harbor run -p {task_path} -a " + agent + " -m {model} "
             "--jobs-dir {output_dir}"
         ),
+        agent=agent,
     )
 
 

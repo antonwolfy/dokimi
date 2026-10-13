@@ -865,7 +865,9 @@ def test_subjects_run_writes_work_task_runs_when_requested(tmp_path: Path, monke
 
     monkeypatch.setattr("agent_benchmarks.commands.arms.cmd_arms_matrix_run", fake_matrix_run)
     task_dir = tmp_path / "task-one"
-    task_dir.mkdir()
+    (task_dir / "environment").mkdir(parents=True)
+    (task_dir / "tests").mkdir()
+    (task_dir / "tests" / "test.sh").write_text("#!/bin/bash\n", encoding="utf-8")  # Harbor needs one
     (task_dir / "instruction.md").write_text("Edit the code.", encoding="utf-8")
     (task_dir / "task.toml").write_text(
         """

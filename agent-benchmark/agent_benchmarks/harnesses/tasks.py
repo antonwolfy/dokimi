@@ -17,8 +17,9 @@ Two on-disk layouts are understood and normalised into one :class:`TaskSpec`:
 
 A directory holding both is loaded as ``task-md`` (the format BenchFlow treats
 as canonical when it migrates a split task) when the ``task.md`` frontmatter
-has a BenchFlow key; any other ``task.md`` there is an author's note and the
-task loads from ``task.toml``.
+is a BenchFlow document (every top-level key one BenchFlow knows); any other
+``task.md`` there is an author's note and the task loads from ``task.toml``.
+When both definitions load, :func:`legacy_drift` names where they differ.
 """
 
 from __future__ import annotations
@@ -112,10 +113,10 @@ def task_format(path: Path) -> str | None:
     has_toml = (path / "task.toml").is_file()
     if (path / "task.md").is_file():
         # Next to a task.toml, a task.md is a BenchFlow task only if its
-        # frontmatter is a mapping with a BenchFlow key. Anything else (no
-        # frontmatter, Jekyll/Hugo frontmatter, a leading horizontal rule, an
-        # unclosed block) is an author's note: the directory loads from
-        # task.toml, as it did before task.md was read at all.
+        # frontmatter is a BenchFlow document. Anything else (no frontmatter,
+        # Jekyll/Hugo frontmatter, a leading horizontal rule, an unclosed
+        # block) is an author's note: the directory loads from task.toml, as
+        # it did before task.md was read at all.
         if not has_toml or _is_benchflow_task_md(path / "task.md"):
             return FORMAT_TASK_MD
     if has_toml:
@@ -128,11 +129,23 @@ def _has_frontmatter(path: Path) -> bool:
         return fh.readline().strip() == "---"
 
 
-# Top-level keys of a BenchFlow task.md (TaskConfig), plus the pre-1.3
-# 'environment' spelling of 'sandbox' that load_task also accepts.
+# Top-level keys of a BenchFlow 0.7.8 task.md: the TaskConfig fields
+# (benchflow/task/config.py, with its 'solution' alias of 'oracle' and the
+# 'version' spelling of 'schema_version'), the document keys
+# (task/_document_parse.py) and the authoring keys (task/_document_profiles.py;
+# _reject_authoring_shorthands refuses all of them but 'name'), plus the
+# pre-1.3 'environment' spelling of 'sandbox' that load_task accepts.
 _BENCHFLOW_KEYS = frozenset(
-    {"schema_version", "metadata", "verifier", "agent", "sandbox", "environment", "oracle"}
+    {
+        "schema_version", "version", "task", "metadata", "verifier", "agent", "sandbox",
+        "environment", "oracle", "solution", "source", "reward",
+        "multi_step_reward_strategy", "steps", "artifacts",
+        "agents", "benchflow", "scenes", "user",
+        "image", "name", "profile", "profiles",
+    }
 )
+# Of those, the tables BenchFlow only accepts as mappings.
+_BENCHFLOW_TABLES = frozenset({"task", "metadata", "agent", "sandbox", "environment"})
 
 # task_format runs several times per directory (discovery, load_task,
 # read_task_config); warn about each ignored file once per process.
@@ -154,12 +167,17 @@ def _is_benchflow_task_md(path: Path) -> bool:
     except ValueError as exc:
         _warn_once(f"ignoring task.md next to task.toml, loading task.toml: {exc}")
         return False
-    if _BENCHFLOW_KEYS & data.keys():
+    unknown = sorted(str(k) for k in data if k not in _BENCHFLOW_KEYS)
+    not_tables = sorted(k for k in _BENCHFLOW_TABLES if k in data and not isinstance(data[k], dict))
+    if data and not unknown and not not_tables:
         return True
-    _warn_once(
-        f"ignoring task.md next to task.toml, loading task.toml: its frontmatter has "
-        f"no BenchFlow key ({', '.join(sorted(_BENCHFLOW_KEYS))}): {path}"
-    )
+    if not data:
+        why = "its frontmatter is empty"
+    elif unknown:
+        why = f"its frontmatter has keys BenchFlow does not know ({', '.join(unknown)})"
+    else:
+        why = f"its frontmatter has non-table {', '.join(not_tables)}"
+    _warn_once(f"ignoring task.md next to task.toml, loading task.toml: {why}: {path}")
     return False
 
 
@@ -241,7 +259,7 @@ def load_task(path_or_name: str | Path, root: Path | None = None) -> TaskSpec:
         )
     environment = _table(data.get("sandbox")) or _table(data.get("environment"))
     version = data.get("schema_version")
-    return TaskSpec(
+    spec = TaskSpec(
         name=path.name,
         path=path,
         instruction=instruction,
@@ -253,6 +271,13 @@ def load_task(path_or_name: str | Path, root: Path | None = None) -> TaskSpec:
         format=fmt,
         schema_version=str(version) if version is not None else None,
     )
+    drift = legacy_drift(spec)
+    if drift:
+        _warn_once(
+            f"task.md and the task.toml/instruction.md next to it differ in {', '.join(drift)}: "
+            f"docker-* and the run artifact use task.md, Harbor-backed harnesses refuse it: {path}"
+        )
+    return spec
 
 
 def read_task_config(path: Path) -> dict[str, Any]:
@@ -268,11 +293,159 @@ def read_task_config(path: Path) -> dict[str, Any]:
     if fmt == FORMAT_TASK_MD:
         return _read_task_md(path / "task.md")[0]
     if fmt == FORMAT_HARBOR:
-        try:
-            return _plain(tomllib.loads((path / "task.toml").read_text(encoding="utf-8")))
-        except tomllib.TOMLDecodeError as exc:
-            raise ValueError(f"task.toml is not valid TOML: {path}: {exc}") from exc
+        return _read_task_toml(path)
     raise FileNotFoundError(f"Task has no task.toml or task.md: {path}")
+
+
+def _read_task_toml(path: Path) -> dict[str, Any]:
+    """The ``task.toml`` of task directory *path*; ``ValueError`` if unparsable."""
+
+    try:
+        data = tomllib.loads((path / "task.toml").read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"task.toml is not valid TOML: {path}: {exc}") from exc
+    except RecursionError as exc:
+        raise ValueError(f"task.toml is nested too deeply: {path}") from exc
+    return _plain(data)
+
+
+def legacy_drift(task: TaskSpec) -> list[str]:
+    """Where a ``task.md`` task and the split definition next to it disagree.
+
+    ``bench tasks migrate`` without ``--remove-legacy`` leaves ``task.toml`` and
+    ``instruction.md`` beside the new ``task.md``. The ``docker-*`` harnesses
+    and the run artifact use the ``task.md``; ``harbor run`` reads the split
+    files. BenchFlow's ``bench tasks check`` rejects such a directory when the
+    two differ, and so do the Harbor-backed harnesses here. This compares what
+    a run uses (the ``metadata``, ``verifier``, ``agent``, sandbox and
+    ``oracle`` tables, and the prompt as BenchFlow normalises it), not every
+    key BenchFlow compares. Returns the differing sections (``task.toml`` when
+    it does not parse), and ``[]`` for any other task.
+    """
+
+    if task.format != FORMAT_TASK_MD or not (task.path / "task.toml").is_file():
+        return []
+    try:
+        legacy = _read_task_toml(task.path)
+    except ValueError:
+        return ["task.toml"]
+    ours = {
+        "metadata": task.metadata,
+        "verifier": task.verifier,
+        "agent": task.agent,
+        "environment": task.environment,
+        "oracle": task.oracle,
+    }
+    theirs = {
+        "metadata": _table(legacy.get("metadata")),
+        "verifier": _table(legacy.get("verifier")),
+        "agent": _table(legacy.get("agent")),
+        "environment": _table(legacy.get("sandbox")) or _table(legacy.get("environment")),
+        "oracle": _table(legacy.get("oracle")) or _table(legacy.get("solution")),
+    }
+    drift = [key for key in ours if ours[key] != theirs[key]]
+    instruction = task.path / "instruction.md"
+    if instruction.is_file():
+        try:
+            prompt = instruction.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            prompt = None
+        if prompt is None or _normalize_prompt(prompt) != _normalize_prompt(task.instruction):
+            drift.append("instruction")
+    return drift
+
+
+def _normalize_prompt(text: str) -> str:
+    """BenchFlow's prompt comparison (task/runtime_capabilities.py)."""
+    return "\n".join(line.rstrip() for line in text.strip().splitlines())
+
+
+def harbor_task_problem(task: TaskSpec, *, needs_solution: bool = False) -> str | None:
+    """Why ``harbor run -p <task>`` would not run *task*, or ``None``.
+
+    Mirrors the file checks of Harbor 0.24's ``Task.is_valid_dir``: a
+    ``task.toml``, an ``environment/`` directory, and (for a task without
+    ``steps``, whose per-step files are left to Harbor) an ``instruction.md``
+    and a ``tests/test.sh`` (``test.bat`` for a Windows verifier), unless a
+    separate-mode verifier bundles its tests. Harbor's oracle agent also needs
+    a solve script (*needs_solution*). Harbor's own rejection exits 1, which a
+    Harbor-backed cell would record as a fail, so these are refused before
+    Harbor starts. So are scripts that read BenchFlow's mounts
+    (:func:`benchflow_mount_refs`), which Harbor does not provide, and a
+    ``task.md`` task whose split definition, the one Harbor reads, differs
+    from it (:func:`legacy_drift`). Not mirrored: Harbor's schema validation
+    of the config values, per-step directories, and symlinks leaving the task.
+    """
+
+    path = task.path
+    if not (path / "task.toml").is_file():
+        return "no task.toml"
+    try:
+        config = _read_task_toml(path)
+    except ValueError as exc:
+        return str(exc)
+    missing = [] if (path / "environment").is_dir() else ["environment/"]
+    if not config.get("steps"):
+        if not (path / "instruction.md").is_file():
+            missing.append("instruction.md")
+        # Harbor's verifier_mode.py: a [verifier.environment] table implies the
+        # separate mode, and only a separate verifier can bundle its tests.
+        verifier = _table(config.get("verifier"))
+        verifier_env = _table(verifier.get("environment"))
+        has_env = "environment" in verifier
+        mode = verifier.get("environment_mode") or ("separate" if has_env else "shared")
+        bundled = mode == "separate" and (
+            bool(verifier_env.get("docker_image"))
+            or any((path / "tests" / n).is_file() for n in ("Dockerfile", "docker-compose.yaml"))
+        )
+        task_os = str(_table(config.get("environment")).get("os") or "linux")
+        test_os = str(verifier_env.get("os") or "linux") if mode == "separate" and has_env else task_os
+        test_script = "test.bat" if test_os == "windows" else "test.sh"
+        if not bundled and not (path / "tests" / test_script).is_file():
+            missing.append(f"tests/{test_script}")
+        # The oracle agent takes the OS's solve script, else solve.sh.
+        solve = {"solve.sh", "solve.bat" if task_os == "windows" else "solve.sh"}
+        if needs_solution and not any((path / "solution" / n).is_file() for n in solve):
+            missing.append("solution/solve.bat or solve.sh" if task_os == "windows" else "solution/solve.sh")
+    if missing:
+        return f"no {', '.join(missing)}"
+    scripts = [("tests", "test.sh")] + ([("solution", "solve.sh")] if needs_solution else [])
+    for directory, script in scripts:
+        hits = benchflow_mount_refs(path / directory / script)
+        if hits:
+            return (
+                f"{directory}/{script} reads {', '.join(hits)} (BenchFlow's paths, as `bench tasks "
+                f"export --target harbor` leaves them); Harbor mounts {directory}/ at /{directory}"
+            )
+    drift = legacy_drift(task)
+    if drift:
+        return (
+            f"its task.md (what the run records) and task.toml/instruction.md (what Harbor runs) "
+            f"differ in {', '.join(drift)}"
+        )
+    return None
+
+
+# A path under BenchFlow's /oracle or /verifier mount: not /logs/verifier (the
+# shared reward dir), nor a path under a variable, a subshell or ~.
+_BENCHFLOW_MOUNT_RE = re.compile(r"(?<![\w.$/})~])/(?:oracle|verifier)(?![\w.-])")
+
+
+def benchflow_mount_refs(script: Path) -> list[str]:
+    """The BenchFlow mounts (``/oracle``, ``/verifier``) *script*'s code uses.
+
+    ``bench tasks export --target harbor`` renames ``oracle/`` and
+    ``verifier/`` to ``solution/`` and ``tests/`` but leaves these paths in the
+    scripts, so a runner that mounts the Harbor names verifies against files
+    that are not there. Comment lines are skipped; a missing script has none.
+    """
+    if not script.is_file():
+        return []
+    code = (
+        line for line in script.read_text(encoding="utf-8", errors="replace").splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    return sorted({m.group(0) for line in code for m in _BENCHFLOW_MOUNT_RE.finditer(line)})
 
 
 def _read_task_md(path: Path) -> tuple[dict[str, Any], str]:
@@ -296,12 +469,46 @@ def _split_frontmatter(path: Path) -> tuple[dict[str, Any], str]:
     else:
         raise ValueError(f"task.md frontmatter is not closed with '---': {path}")
     try:
-        data = yaml.safe_load("".join(lines[1:end])) or {}
+        data = _load_yaml("".join(lines[1:end]))
+    except _AliasRefused as exc:
+        raise ValueError(f"task.md frontmatter uses a YAML alias, which is refused: {path}: {exc}") from exc
     except yaml.YAMLError as exc:
         raise ValueError(f"task.md frontmatter is not valid YAML: {path}: {exc}") from exc
+    except RecursionError as exc:
+        raise ValueError(f"task.md frontmatter is nested too deeply: {path}") from exc
+    if data is None:  # empty or comment-only frontmatter
+        data = {}
     if not isinstance(data, dict):
         raise ValueError(f"task.md frontmatter must be a mapping: {path}")
     return data, "".join(lines[end + 1:]).lstrip("\n")
+
+
+class _AliasRefused(yaml.YAMLError):
+    pass
+
+
+class _NoAliasLoader(yaml.SafeLoader):
+    """``SafeLoader`` that refuses aliases.
+
+    Task content comes from third-party catalogs, and a few hundred bytes of
+    nested aliases expand to exponential time and memory; a self-referencing
+    one recurses without end. BenchFlow's own loader resolves them, but no
+    SkillsBench task uses one.
+    """
+
+    def compose_node(self, parent: yaml.Node | None, index: Any) -> yaml.Node | None:
+        if self.check_event(yaml.AliasEvent):
+            raise _AliasRefused(f"alias {self.peek_event().start_mark}")
+        return super().compose_node(parent, index)
+
+
+def _load_yaml(text: str) -> Any:
+    loader = _NoAliasLoader(text)
+    try:
+        return loader.get_single_data()
+    finally:
+        loader.dispose()
+
 
 
 # BenchFlow's reserved body headings (benchflow.task._document_parse). Only

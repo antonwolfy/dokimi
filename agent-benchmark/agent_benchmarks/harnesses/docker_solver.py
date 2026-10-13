@@ -637,9 +637,20 @@ def _refuse_unrunnable(task: TaskSpec, mode: str, agent_location: str) -> None:
       both edit ``/app`` only (see :func:`_require_agent_workdir` for the
       image's own ``WORKDIR``, which needs the built image).
 
+    - A task without the directory a mode copies in: ``tests/`` (``verifier/``)
+      for the verifier, and ``solution/`` (``oracle/``) for ``docker-oracle``.
+      ``docker cp`` would fail only at that step, after the image build and,
+      for ``docker-claude``, the paid agent run.
+
     A probe is refused where its ``claude`` arm is: it would vouch for an arm
-    that never runs. Oracle mode is never refused.
+    that never runs. It copies neither directory. Oracle mode is refused only
+    for a missing directory.
     """
+    if mode != "probe":
+        needed = [("tests", task.tests_dir)] + ([("solution", task.solution_dir)] if mode == "oracle" else [])
+        for role, directory in needed:
+            if not directory.is_dir():
+                raise ValueError(f"{task.name}: no {directory.name}/ directory to copy to /{role}")
     if mode not in ("claude", "probe"):
         return
     if agent_location == "host" and task.format == FORMAT_TASK_MD:

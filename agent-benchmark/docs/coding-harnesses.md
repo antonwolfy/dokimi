@@ -10,14 +10,34 @@ pass rate against a baseline harness.
 Two layouts are read, and a root may mix them. `task.md` is read by
 `tasks list`, `coverage` and `catalog scan`; it is run by `docker-oracle` and
 by the `benchflow*:<agent>` harnesses (BenchFlow reads it natively), and a
-`command:` harness runs whatever it is given. `docker-claude` and `docker-probe`
-run it when it works in `/app`: their agent runs in the task container, but in
-`/app` only, so a task whose image works elsewhere (`WORKDIR /root`, most
-SkillsBench images) is an errored cell. The `-host` variants record an errored
-cell for every `task.md` task instead of a verdict, and so do the Harbor-backed
-harnesses (`codex`, `claude-code`, `terminal-bench:<agent>`) for a task without
-a `task.toml`. A directory left by `bench tasks migrate` that kept `task.toml`,
-`solution/` and `tests/` runs.
+`command:` harness runs whatever it is given. What each harness refuses
+follows the files it reads, and a refused cell is an error (missing data),
+never a verdict:
+
+- `docker-claude` and `docker-probe` run a `task.md` task when it works in
+  `/app`: their agent runs in the task container, but in `/app` only, so a
+  task whose image works elsewhere (`WORKDIR /root`, most SkillsBench images)
+  is refused. The `-host` variants refuse every `task.md` task. Every
+  `docker-*` mode but the probe refuses a task without the directory it
+  copies in (`tests/` or `verifier/`, and `solution/` or `oracle/` for
+  `docker-oracle`) before it builds anything.
+- The Harbor-backed ones (`codex`, `claude-code`, `terminal-bench:<agent>`)
+  refuse what Harbor 0.24 itself would reject (it exits 1, which would read
+  as a fail): no `task.toml`, `environment/`, `instruction.md` or
+  `tests/test.sh` (`test.bat` for a Windows verifier; not needed when a
+  separate-mode verifier bundles its tests, or for a task with `steps`, whose
+  files are left to Harbor), and no `solution/solve.sh` for
+  `terminal-bench:oracle`. They also refuse a `test.sh`/`solve.sh` that reads
+  `/verifier` or `/oracle`, which Harbor does not mount. Harbor's validation
+  of the config values themselves is not repeated here.
+
+A directory left by `bench tasks migrate` that kept `task.toml`,
+`instruction.md`, `solution/` and `tests/` also runs under the Harbor-backed
+harnesses. There the `docker-*` harnesses and the run artifact use the
+`task.md`, while Harbor reads the split files; when the two differ (as
+BenchFlow's `bench tasks check` also reports, though it compares more keys
+than the tables and prompt a run uses), loading warns and the Harbor-backed
+harnesses refuse the task.
 
 | Layout | Files | Oracle | Verifier |
 |---|---|---|---|
@@ -28,14 +48,22 @@ Both carry the same tables (`metadata`, `verifier`, `agent`, and the sandbox
 table, which BenchFlow schema 1.3 renamed from `environment` to `sandbox`;
 either name is read, and a file declaring both is rejected, as BenchFlow
 rejects it). A directory holding both files loads as `task.md` only when its
-frontmatter has a BenchFlow key (`schema_version`, `metadata`, `verifier`,
-`agent`, `sandbox`/`environment`, `oracle`); any other `task.md` there (no
-frontmatter, Jekyll/Hugo frontmatter, an unclosed block) is an author's note,
-and the task loads from `task.toml` with a warning (none for a note without
-frontmatter). Discovery skips a lone `task.md` without frontmatter with a
-warning; `load_task` on it raises. A lone `task.md` with frontmatter is a
-task, whatever its keys. YAML and TOML dates and times become ISO strings, and
-YAML sets sorted lists.
+frontmatter is a BenchFlow document: every top-level key is one BenchFlow
+0.7.8 knows (its `TaskConfig` fields, document keys and authoring keys, plus
+the legacy `environment`) and `task`, `metadata`, `agent` and the sandbox
+table are mappings. Any other `task.md` there (no frontmatter, YAML frontmatter from
+Jekyll or Hugo, an unclosed block) is an author's note, and the task loads
+from `task.toml` with a warning (none for a note without frontmatter, or with
+Hugo's TOML `+++` frontmatter, which is not frontmatter here).
+
+Discovery skips a lone `task.md` without frontmatter with a warning;
+`load_task` on it raises. A lone `task.md` with frontmatter is a task, whatever
+its keys. One that opens with `---` but does not parse (a horizontal rule, an
+unclosed block, invalid YAML, a non-mapping) fails discovery of the whole
+root, as a malformed `task.toml` does; `coverage` skips it. YAML aliases are
+refused (a few hundred bytes of nested aliases expand without bound), and
+frontmatter nested too deeply to parse is a parse error. YAML and TOML dates
+and times become ISO strings, and YAML sets sorted lists.
 
 The `docker-*` harnesses mount the oracle at `/solution` and `/oracle` and the
 verifier at `/tests` and `/verifier`, because a script written for one layout
@@ -73,7 +101,12 @@ are not checked yet and are read past.
 
 To convert between the two, use BenchFlow's own `bench tasks migrate`
 (split → `task.md`) and `bench tasks export --target harbor` (`task.md` →
-split) rather than a converter here.
+split) rather than a converter here. An export renames `oracle/` and
+`verifier/` to `solution/` and `tests/` but keeps the scripts' `/oracle` and
+`/verifier` paths (all 101 SkillsBench `test.sh` call `/verifier/...`). The
+`docker-*` harnesses mount both names, so they run the exported task (as long
+as it works in `/app`, for the agent arms); the Harbor-backed harnesses refuse
+it.
 
 ## Supported Harnesses
 
@@ -938,12 +971,14 @@ python cli.py tasks run --tasks onetbb-histogram-local-aggregation \
 harbor run -p /tmp/uxl-skills/evaluation/harbor/tasks/onetbb-histogram-local-aggregation -a oracle
 ```
 
-The `docker-*` harnesses read `network_mode` from the task's sandbox table (`[environment]` in
-`task.toml`), alongside `cpus`/`memory_mb`. Without it the task container has
-no network. `network_mode = "public"` gives `docker-oracle` bridge for its
-solve and verify, but for `docker-claude` it applies to the **verifier only**:
-the agent solves on the internal network, and a solve that needs a host (pip,
-a package mirror) must list it under `environment.egress`. A `-host` agent
+The `docker-*` harnesses read `network_mode` from the task's sandbox table
+(`[environment]` in `task.toml`, `sandbox:` in a `task.md`), alongside
+`cpus`/`memory_mb`. Without it the task container has no network.
+`network_mode = "public"` gives `docker-oracle` bridge for its solve and
+verify, but for `docker-claude` it applies to the **verifier only**: the agent
+solves on the internal network, and a solve that needs a host (pip, a package
+mirror) must list it under `egress` in that table (`environment.egress`, or
+`sandbox.egress` in a `task.md`). A `-host` agent
 solves with the host's network whatever the task declares
 (`metrics.isolation.network: open`).
 The oracle and verifier steps of a public-network

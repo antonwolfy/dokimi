@@ -16,7 +16,7 @@ from typing import Any
 
 from .models import HarnessResult, OperationRecord
 from .operations import load_operations
-from .tasks import TaskSpec
+from .tasks import TaskSpec, harbor_task_problem
 
 
 _REWARD_RE = re.compile(r"(?:reward|score|pass[_ -]?rate)\D+([01](?:\.\d+)?)", re.IGNORECASE)
@@ -44,6 +44,7 @@ class CommandHarness:
     kind: str = "command"
     default_timeout_sec: float | None = None
     env: dict[str, str] = field(default_factory=dict)
+    agent: str | None = None  # the Harbor agent id, for kind="harbor"
 
     def run(
         self,
@@ -54,9 +55,12 @@ class CommandHarness:
         timeout_sec: float | None = None,
         dry_run: bool = False,
     ) -> HarnessResult:
-        if self.kind == "harbor" and not (task.path / "task.toml").is_file():
-            # Harbor reads only task.toml; its non-zero exit would read as a fail.
-            raise ValueError(f"{task.name}: Harbor-backed harness cannot run a task without task.toml")
+        if self.kind == "harbor":
+            # Harbor's own rejection of the directory exits 1, which would read
+            # as a fail; refuse first, so the cell is an error (missing data).
+            problem = harbor_task_problem(task, needs_solution=self.agent == "oracle")
+            if problem:
+                raise ValueError(f"{task.name}: Harbor-backed harness cannot run it: {problem}")
         output_dir = Path(output_dir) if output_dir else None
         if output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
