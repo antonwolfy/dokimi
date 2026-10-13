@@ -1,9 +1,53 @@
 # Coding Harnesses And Task Runs
 
 Executable task runs measure whether an agent can do the work, not only answer
-questions about an API. The `tasks run` command runs Harbor/terminal-bench task
+questions about an API. The `tasks run` command runs executable task
 directories through named harnesses, records operation telemetry, and compares
 pass rate against a baseline harness.
+
+## Task Layouts
+
+Two layouts are read, and a root may mix them. `task.md` is read by
+`tasks list`, `coverage` and `catalog scan`. No built-in harness runs a
+`task.md` task yet (`benchflow:*` will, once #75 lands); a `command:` harness
+runs whatever it is given. What each harness refuses follows the files it
+reads: the `docker-*` harnesses record an errored cell, instead of a verdict,
+for a task whose scripts are in `oracle/` or `verifier/` (they copy to
+`/solution` and `/tests`), and the Harbor-backed ones (`codex`, `claude-code`,
+`terminal-bench:<agent>`) for a task without a `task.toml`. A directory left by
+`bench tasks migrate` that kept `task.toml`, `solution/` and `tests/` runs.
+
+| Layout | Files | Oracle | Verifier |
+|---|---|---|---|
+| Harbor / terminal-bench | `task.toml` + `instruction.md` | `solution/solve.sh` | `tests/test.sh` |
+| BenchFlow `task.md` (SkillsBench) | `task.md` (YAML frontmatter + instruction body) | `oracle/solve.sh` | `verifier/test.sh` |
+
+Both carry the same tables (`metadata`, `verifier`, `agent`, and the sandbox
+table, which BenchFlow schema 1.3 renamed from `environment` to `sandbox`;
+either name is read, and a file declaring both is rejected, as BenchFlow
+rejects it). A directory holding both files loads as `task.md` only when its
+frontmatter has a BenchFlow key (`schema_version`, `metadata`, `verifier`,
+`agent`, `sandbox`/`environment`, `oracle`); any other `task.md` there (no
+frontmatter, Jekyll/Hugo frontmatter, an unclosed block) is an author's note,
+and the task loads from `task.toml` with a warning (none for a note without
+frontmatter). Discovery skips a lone `task.md` without frontmatter with a
+warning; `load_task` on it raises. A lone `task.md` with frontmatter is a
+task, whatever its keys. YAML and TOML dates and times become ISO strings, and
+YAML sets sorted lists.
+
+As in BenchFlow, a `task.md` body with a `## prompt` heading gives the agent
+only that section; `## role:<name>`, `## scene:<name>` and `## user-persona`
+sections are left out of it. Multi-role documents (`agents`, `scenes`, `user`
+in the frontmatter) are not run as such: the one agent gets the base prompt.
+BenchFlow's frontmatter shorthands (`verifier: <path>`, `oracle: <path>`,
+`image:`, `profile:` / `profiles:`) are rejected with an error naming the key,
+rather than read past: write the canonical tables. Other BenchFlow keys
+(`agent.prompt_prefix`, `verifier.type`, `solution:`, `sandbox.image`, ...)
+are not checked yet and are read past.
+
+To convert between the two, use BenchFlow's own `bench tasks migrate`
+(split → `task.md`) and `bench tasks export --target harbor` (`task.md` →
+split) rather than a converter here.
 
 ## Supported Harnesses
 
@@ -473,9 +517,10 @@ python cli.py tasks run --tasks <task-name> \
 - `results[]`: one row per `(task, harness, model, repeat)` cell. With
   `--repeats > 1` each row carries a `repeat` index and the run lands in a
   `run<N>/` subdirectory.
-- `results[].passed`: verifier pass/fail. If a reward file is present,
-  `1.0` means pass and `0.0` means fail. If no reward is found, adapter exit code
-  is used as the fallback.
+- `results[].passed`: verifier pass/fail. If a reward file is present, its
+  number is `results[].reward`: `1.0` passes, and anything lower, including
+  partial credit such as `0.75`, is kept as the reward and counts as a fail. If
+  no reward is found, the adapter's exit code is used as the fallback.
 - `results[].metrics`: for LLM harnesses (`docker-claude*`), the per-run
   `UsageRecord` fields — `cost_usd`, `prompt_tokens`, `completion_tokens`,
   `total_tokens`, `cache_read_tokens`, `cache_write_tokens`, `latency_sec`,
@@ -661,8 +706,8 @@ python cli.py tasks run --tasks onetbb-histogram-local-aggregation \
 harbor run -p /tmp/uxl-skills/evaluation/harbor/tasks/onetbb-histogram-local-aggregation -a oracle
 ```
 
-The `docker-*` harnesses read `environment.network_mode` from the task's own
-`task.toml`, alongside `cpus`/`memory_mb`. Without it the task container has
+The `docker-*` harnesses read `network_mode` from the task's sandbox table (`[environment]` in
+`task.toml`), alongside `cpus`/`memory_mb`. Without it the task container has
 no network. `network_mode = "public"` gives `docker-oracle` bridge for its
 solve and verify, but for `docker-claude` it applies to the **verifier only**:
 the agent solves on the internal network, and a solve that needs a host (pip,

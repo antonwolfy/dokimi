@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 _TASKS_ROOT_HELP = (
-    "Directory holding one sub-directory per task (each with task.toml). "
+    "Directory holding one sub-directory per task (each with task.toml or task.md). "
     "Required for bare task names and for --all; the tasks live in a separate "
     "evaluation-content checkout, e.g. "
     "--tasks-root /path/to/content-repo/evaluation/harbor/tasks"

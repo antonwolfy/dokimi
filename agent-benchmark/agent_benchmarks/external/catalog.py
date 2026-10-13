@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from agent_benchmarks.harnesses.tasks import TaskSpec, discover_tasks, load_task
+from agent_benchmarks.harnesses.tasks import TaskSpec, discover_tasks, is_task_dir, load_task
 from agent_benchmarks.skills import Skill, discover_skills, load_skill
 
 DEFAULT_TASKS_SUBDIR = "evaluation/harbor/tasks"
@@ -245,7 +245,7 @@ def read_task_manifest(
                 )
                 continue
 
-            if not (task_dir / "task.toml").is_file():
+            if not is_task_dir(task_dir):
                 entries.append(
                     TaskCatalogEntry(
                         name=name,
@@ -253,7 +253,7 @@ def read_task_manifest(
                         track=track,
                         path=None,
                         skipped=True,
-                        reason=f"no task.toml under {task_dir} (manifest status={status!r})",
+                        reason=f"no task.toml or task.md under {task_dir} (manifest status={status!r})",
                     )
                 )
                 continue

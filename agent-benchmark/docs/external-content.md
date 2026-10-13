@@ -13,7 +13,7 @@ implicit default that points at a sibling checkout:
 |---|---|---|
 | `--root` | a whole content checkout to scan | `catalog scan` |
 | `--questions-root` | directory holding `<product_key>_golden.json` | `benchmark preflight/run/batch`, `evaluate`, `coverage`, `config_check` |
-| `--tasks-root` | directory of executable task dirs (each with `task.toml`), or of exploration task YAML files | `tasks list/run`, `explore list/run`, `coverage`, `config_check` |
+| `--tasks-root` | directory of executable task dirs (each with `task.toml` or a BenchFlow `task.md`), or of exploration task YAML files | `tasks list/run`, `explore list/run`, `coverage`, `config_check` |
 | `--repo-root` | the source tree an exploration task is scored against | `explore run` |
 | `--registry` | a `products.yaml` describing products this repo has never heard of | `benchmark preflight/run` |
 | `--questions` | one question-set file | `arms run`, `answers generate` |
@@ -85,8 +85,8 @@ not-written-yet planned C:\Users\Public\content-repo\skills\not-written-yet     
 
 # tasks (3 declared under C:\Users\Public\content-repo)
 demo-widget     published       executable      ok
-demo-quiz       published       answer-quality  skipped: no task.toml under C:\Users\Public\content-repo\evaluation\harbor\tasks\demo-quiz (manifest status='published')
-demo-later      planned executable      skipped: no task.toml under C:\Users\Public\content-repo\evaluation\harbor\tasks\demo-later (manifest status='planned')
+demo-quiz       published       answer-quality  skipped: no task.toml or task.md under C:\Users\Public\content-repo\evaluation\harbor\tasks\demo-quiz (manifest status='published')
+demo-later      planned executable      skipped: no task.toml or task.md under C:\Users\Public\content-repo\evaluation\harbor\tasks\demo-later (manifest status='planned')
 $ echo $?
 1
 ```
@@ -111,8 +111,8 @@ Restrict the scan with `--kind`:
 $ python cli.py catalog scan --root C:/Users/Public/content-repo --kind tasks
 # tasks (3 declared under C:\Users\Public\content-repo)
 demo-widget     published       executable      ok
-demo-quiz       published       answer-quality  skipped: no task.toml under C:\Users\Public\content-repo\evaluation\harbor\tasks\demo-quiz (manifest status='published')
-demo-later      planned executable      skipped: no task.toml under C:\Users\Public\content-repo\evaluation\harbor\tasks\demo-later (manifest status='planned')
+demo-quiz       published       answer-quality  skipped: no task.toml or task.md under C:\Users\Public\content-repo\evaluation\harbor\tasks\demo-quiz (manifest status='published')
+demo-later      planned executable      skipped: no task.toml or task.md under C:\Users\Public\content-repo\evaluation\harbor\tasks\demo-later (manifest status='planned')
 $ echo $?
 0
 ```

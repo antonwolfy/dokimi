@@ -54,6 +54,9 @@ class CommandHarness:
         timeout_sec: float | None = None,
         dry_run: bool = False,
     ) -> HarnessResult:
+        if self.kind == "harbor" and not (task.path / "task.toml").is_file():
+            # Harbor reads only task.toml; its non-zero exit would read as a fail.
+            raise ValueError(f"{task.name}: Harbor-backed harness cannot run a task without task.toml")
         output_dir = Path(output_dir) if output_dir else None
         if output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -195,17 +198,34 @@ def _find_reward(output_dir: Path | None, stdout: str, stderr: str) -> float | N
             output_dir.rglob("reward.json")
         )
         for path in candidates:
-            parsed = _parse_reward_text(path.read_text(encoding="utf-8", errors="replace"))
+            parsed = _parse_reward_text(
+                path.read_text(encoding="utf-8", errors="replace"), reward_file=True
+            )
             if parsed is not None:
                 return parsed
     parsed = _parse_reward_text(stdout)
     return parsed if parsed is not None else _parse_reward_text(stderr)
 
 
-def _parse_reward_text(text: str) -> float | None:
+def _parse_reward_text(text: str, *, reward_file: bool = False) -> float | None:
+    """A reward from a ``reward.txt`` (``reward_file``) or from command output.
+
+    In a reward file a bare number is the whole reward, so partial credit in
+    [0, 1] is accepted (SkillsBench's dialogue-parser writes the passing-test
+    fraction). On stdout/stderr only an exact 0/1 or a labelled
+    ``reward: x`` counts: a command that prints ``0.5`` for some other reason
+    keeps falling back to its exit code, as it always has.
+    """
     stripped = text.strip()
     if stripped in {"0", "0.0", "1", "1.0"}:
         return float(stripped)
+    if reward_file:
+        try:
+            value = float(stripped)
+        except ValueError:
+            value = None
+        if value is not None and 0.0 <= value <= 1.0:
+            return value
     match = _REWARD_RE.search(text)
     if match:
         return float(match.group(1))

@@ -158,9 +158,11 @@ thresholds come from, with the caveat attached to each number.
 
 Tasks are [Terminal-Bench / Harbor](https://harborframework.com)-format
 directories — Docker environment, `instruction.md`, oracle solution, and pytest
-verifier — supplied from an external content checkout named with `--tasks-root`
-(format spec:
-[contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)). CI
+verifier — or BenchFlow `task.md` directories (SkillsBench), supplied from an
+external content checkout named with `--tasks-root` (format spec:
+[contributing-terminal-bench-task.md](contributing-terminal-bench-task.md);
+layouts and which harnesses run each:
+[coding-harnesses.md](coding-harnesses.md#task-layouts)). CI
 builds a container from a pinned external catalog and runs its oracle and the
 isolation probe, to make sure the harness, the task format, the verifier path
 and the agent's sandbox all still work.

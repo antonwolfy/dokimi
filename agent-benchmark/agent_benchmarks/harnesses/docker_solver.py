@@ -114,6 +114,7 @@ class DockerSolverHarness:
         timeout_sec: Optional[float] = None,
         dry_run: bool = False,
     ) -> HarnessResult:
+        _refuse_unmounted_dirs(task, self.mode)
         output_dir = Path(output_dir) if output_dir else None
         if output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -298,7 +299,7 @@ class DockerSolverHarness:
         task's solve.sh can be a thin script that `cp`s a sibling source
         file into place (e.g. uxlfoundation/skills' oneTBB tasks).
         """
-        _docker(["cp", str(task.path / "solution"), f"{container}:/solution"], log)
+        _docker(["cp", str(task.solution_dir), f"{container}:/solution"], log)
         _docker(
             ["exec", "-u", "root", container, "bash", "-lc",
              "chmod +x /solution/solve.sh && /solution/solve.sh"],
@@ -502,7 +503,7 @@ class DockerSolverHarness:
 
     def _verify(self, task: TaskSpec, container: str, output_dir: Path, log) -> Optional[float]:
         """Run tests/ in-container; pull /logs/verifier/reward.txt back out."""
-        _docker(["cp", str(task.path / "tests"), f"{container}:/tests"], log)
+        _docker(["cp", str(task.tests_dir), f"{container}:/tests"], log)
         proc = _docker(
             ["exec", "-u", "root", container, "bash", "-lc",
              "mkdir -p /logs/verifier && chmod +x /tests/test.sh && /tests/test.sh"],
@@ -514,7 +515,9 @@ class DockerSolverHarness:
             log, check=False,
         )
         if pulled.returncode == 0 and reward_file.is_file():
-            return _parse_reward_text(reward_file.read_text(encoding="utf-8", errors="replace"))
+            return _parse_reward_text(
+                reward_file.read_text(encoding="utf-8", errors="replace"), reward_file=True
+            )
         if proc.returncode != 0:  # no verdict at all if the container is gone, not a 0
             running = _docker(["inspect", "-f", "{{.State.Running}}", container], log, check=False)
             if (getattr(running, "stdout", "") or "").strip() != "true":
@@ -541,6 +544,22 @@ class DockerSolverHarness:
         if self.skill_path:
             parts += ["--skill", self.skill_path]
         return parts
+
+
+def _refuse_unmounted_dirs(task: TaskSpec, mode: str) -> None:
+    """docker-* copy the task's solution and tests to ``/solution`` and
+    ``/tests``. A task whose scripts live in ``oracle/`` or ``verifier/`` (the
+    ``task.md`` layout) expects ``/oracle`` and ``/verifier`` (and its workdir),
+    which are not mounted yet. Raising makes the cell an error (missing data),
+    not a verified 0. The check follows the directories that would be copied,
+    not the format: a ``bench tasks migrate`` directory that kept ``solution/``
+    and ``tests/`` runs. The probe copies neither."""
+    used = [] if mode == "probe" else [task.tests_dir, *([task.solution_dir] if mode == "oracle" else [])]
+    if any(d.name in ("oracle", "verifier") for d in used):
+        raise ValueError(
+            f"{task.name}: docker-* harnesses do not run tasks with oracle/ or verifier/ "
+            "(task.md layout) yet"
+        )
 
 
 def _docker(args: list[str], log, *, check: bool = True,

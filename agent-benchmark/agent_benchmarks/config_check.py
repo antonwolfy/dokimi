@@ -14,7 +14,7 @@ coverage declaration is broken (``coverage_status: covered`` with no
 resolvable task/question set, or a declared questions file that is absent).
 
 The coverage half is checked against ``--tasks-root`` (task dirs with a
-``task.toml``) and ``--questions-root`` (``<product_key>_golden.json`` files)
+``task.toml`` or ``task.md``) and ``--questions-root`` (``<product_key>_golden.json`` files)
 when they are given — those roots hold evaluation content and live outside this
 repository. Without them the coverage check is limited to declaration validity.
 Intended for CI.
@@ -40,7 +40,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--tasks-root",
         default=None,
-        help="Directory of executable task dirs (each with task.toml) used to "
+        help="Directory of executable task dirs (each with task.toml or task.md) used to "
              "resolve the work half of the coverage contract, e.g. "
              "/path/to/content-repo/evaluation/harbor/tasks",
     )

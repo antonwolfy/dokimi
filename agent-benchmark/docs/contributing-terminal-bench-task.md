@@ -55,9 +55,12 @@ matches the primary API surface (`onetbb-…`, `onemkl-…`, `dpnp-…`):
     solve.sh              # REQUIRED for the oracle harness; never shown to the agent
 ```
 
-`instruction.md` and `task.toml` are hard requirements: `load_task()` raises
-`FileNotFoundError` without either, and directory discovery only treats a
-directory as a task when it contains `task.toml`.
+This page describes the Harbor layout. In it, `instruction.md` and
+`task.toml` are hard requirements: `load_task()` raises `FileNotFoundError`
+without either. Directory discovery treats a directory as a task when it
+contains `task.toml` or a BenchFlow `task.md`; see
+[Task Layouts](coding-harnesses.md#task-layouts) for that layout and for which
+harnesses run it.
 
 ## 3 — `task.toml`
 
@@ -136,8 +139,10 @@ the container and runs `/tests/test.sh` after `mkdir -p /logs/verifier`.
 The contract:
 
 - Write the outcome to `/logs/verifier/reward.txt` — `1` (or `1.0`) for pass,
-  `0` (or `0.0`) for fail. The harness copies that file out; if it is missing it
-  falls back to the verifier's exit code, so also exit non-zero on failure.
+  `0` (or `0.0`) for fail. A fraction such as `0.75` (partial credit) is kept
+  as the cell's reward and counts as a fail. The harness copies that file out;
+  if it is missing it falls back to the verifier's exit code, so also exit
+  non-zero on failure.
 - Do not let a failure abort before the reward file is written (capture the
   pytest exit code, write the file, then exit with it).
 

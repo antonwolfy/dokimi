@@ -16,7 +16,8 @@ Design decisions taken here:
   ``coverage_status`` fields live alongside identity rather than in a third
   sync surface.
 * **work signal is *derived*, not hand-listed:** a product's tasks are computed
-  by scanning ``<tasks-root>/*/task.toml`` ``tags`` for the product key, where
+  by scanning the ``metadata.tags`` of each task under ``<tasks-root>``
+  (``task.toml`` or ``task.md``) for the product key, where
   ``<tasks-root>`` is supplied by the caller (``--tasks-root``, or the
   ``tasks_dir`` argument). This avoids making a per-product ``tasks`` list a second place task
   identity lives — the task directory stays the single source of truth.
@@ -38,15 +39,12 @@ Awareness and work are never blended into one scalar.
 from __future__ import annotations
 
 import argparse
-
-try:
-    import tomllib  # Python 3.11+
-except ModuleNotFoundError:  # Python 3.10 fallback
-    import tomli as tomllib  # type: ignore[no-redef]
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
+
+from agent_benchmarks.harnesses.tasks import is_task_dir, read_task_config
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -99,19 +97,20 @@ def _load_products(path: Path | None = None) -> dict:
 
 
 def _task_product_tags(tasks_dir: Path) -> dict[str, set[str]]:
-    """Map each task dir name -> set of lowercased tags from its task.toml."""
+    """Map each task dir name -> set of lowercased tags from its metadata.
+
+    Either task layout counts (``task.toml`` or ``task.md``); tags live under
+    ``metadata``. A task that does not parse is skipped, not fatal.
+    """
     out: dict[str, set[str]] = {}
     if not tasks_dir.is_dir():
         return out
-    for task_dir in sorted(p for p in tasks_dir.iterdir() if p.is_dir()):
-        toml_path = task_dir / "task.toml"
-        if not toml_path.is_file():
-            continue
+    for task_dir in sorted(p for p in tasks_dir.iterdir() if is_task_dir(p)):
         try:
-            meta = tomllib.loads(toml_path.read_text(encoding="utf-8"))
-        except (tomllib.TOMLDecodeError, OSError):
+            meta = read_task_config(task_dir)
+        except (ValueError, OSError):
             continue
-        # tags live under [metadata] in task.toml; fall back to top level.
+        # tags live under metadata; fall back to top level.
         meta_tbl = meta.get("metadata", {})
         tags = meta_tbl.get("tags") if isinstance(meta_tbl, dict) else None
         if not tags:
@@ -161,7 +160,7 @@ def resolve_coverage(
     Args:
         products: registry mapping (defaults to the canonical ``products.yaml``).
         tasks_dir: root holding one directory per executable task, each with a
-            ``task.toml``. Omit it to leave the work half unresolved.
+            ``task.toml`` or ``task.md``. Omit it to leave the work half unresolved.
         questions_dir: root holding ``<product_key>_golden.json`` question sets.
             Omit it to leave the awareness half unresolved.
 
@@ -313,7 +312,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tasks-root",
         default=None,
-        help="Directory of executable task dirs (each with task.toml) whose "
+        help="Directory of executable task dirs (each with task.toml or task.md) whose "
              "tags derive the work half, e.g. "
              "/path/to/content-repo/evaluation/harbor/tasks",
     )
