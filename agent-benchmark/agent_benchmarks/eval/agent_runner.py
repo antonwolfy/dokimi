@@ -75,6 +75,24 @@ def _summarize_tool_usage(
     skill_tools = [t for t in offered if t.get("kind") == "skill"]
     skill_tool_names = {t["name"] for t in skill_tools}
     skill_calls = sum(calls_by_name.get(name, 0) for name in skill_tool_names)
+    # Skill names in the order the model first loaded them; the head is what a
+    # selection metric scores (a catalog arm offers many skill tools at once).
+    skill_by_tool = {t["name"]: t.get("skill_name") for t in skill_tools}
+    skills_loaded: List[str] = []
+    # Every skill loaded in the first turn that loaded any: one turn can load
+    # several in parallel, and their order within the turn is not a choice.
+    first_turn_loaded: List[str] = []
+    first_turn = None
+    for call in transcript:
+        skill_name = skill_by_tool.get(call.get("tool"))
+        if not skill_name:
+            continue
+        if first_turn is None:
+            first_turn = call.get("iteration")
+        if call.get("iteration") == first_turn and skill_name not in first_turn_loaded:
+            first_turn_loaded.append(skill_name)
+        if skill_name not in skills_loaded:
+            skills_loaded.append(skill_name)
 
     return {
         "offered_tools": offered,
@@ -87,6 +105,10 @@ def _summarize_tool_usage(
             "offered_tools": skill_tools,
             "called": skill_calls > 0,
             "call_count": skill_calls,
+            "offered_count": len(skill_tools),
+            "loaded": skills_loaded,
+            "selected": skills_loaded[0] if skills_loaded else None,
+            "first_turn_loaded": first_turn_loaded,
             "first_call_iteration": min(
                 (
                     first_iteration_by_name[name]
@@ -130,14 +152,21 @@ def run_agent_loop(
     stopped_reason = "answered"
     answer = ""
 
+    def _complete(**kwargs):
+        # A failed call loses the answer, not what the loop already did: the
+        # caller can still see which skill was loaded before the failure.
+        try:
+            return chat_completion(messages=messages, model=model, provider=provider,
+                                   api_key=api_key, max_tokens=max_tokens, **kwargs)
+        except Exception as exc:
+            exc.tool_usage = _summarize_tool_usage(tools, transcript)  # type: ignore[attr-defined]
+            raise
+
     iteration = 0
     while iteration < max_iterations:
         iteration += 1
         t_turn = time.time()
-        resp = chat_completion(
-            messages=messages, model=model, provider=provider,
-            tools=schemas, api_key=api_key, max_tokens=max_tokens,
-        )
+        resp = _complete(tools=schemas)
         turn_usage = _extract_usage(resp, model, provider, latency_sec=time.time() - t_turn)
         usage_total = usage_total + turn_usage
         per_turn.append({
@@ -207,8 +236,9 @@ def run_agent_loop(
             "content": "Provide your final answer now without calling tools.",
         })
         t_turn = time.time()
-        resp = chat_completion(messages=messages, model=model, provider=provider, api_key=api_key,
-                               max_tokens=max_tokens)
+        # No ``tools``: litellm refuses ``tool_choice="none"`` for Bedrock, and
+        # turns the history's tool blocks into text when ``tools`` is absent.
+        resp = _complete()
         turn_usage = _extract_usage(resp, model, provider, latency_sec=time.time() - t_turn)
         usage_total = usage_total + turn_usage
         per_turn.append({

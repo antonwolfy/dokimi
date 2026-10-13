@@ -14,6 +14,7 @@ measure the marginal value of any context-augmentation artifact:
 | `skill:<path>` | agent skill | injects a `SKILL.md` as context |
 | `agent[:source]` | **agentic** doc use | gives the model a doc-search tool; it decides when to call it |
 | `skill-agent:<path>` | **agentic** skill use | offers the skill via progressive disclosure |
+| `skill-catalog:<dir>` | **agentic** skill selection | offers every skill under `<dir>`; scores the one loaded against `expected_skill` |
 | `<spec1>+<spec2>[+...]` | **combined** treatment | merges multiple treatments into one arm (e.g., `docs+skill:path`) |
 
 The last two run through a tool-calling loop
@@ -30,7 +31,9 @@ arm's average score and its delta vs the baseline arm.
 The judge scores each answer against the material its arm was given: the full
 injected chunks for `docs`, the skill body plus its bundled-file list for
 `skill:`, and the same body and list for `skill_agent:`, whose agent reads them
-only through a tool. `baseline`, `mcp_agent:` and `profile:` arms give it none.
+only through a tool. A `skill-catalog:` arm gives the bodies of the skills its agent
+loaded plus every catalog file list (see [Skill selection](#skill-selection-does-the-agent-load-the-right-skill)).
+`baseline`, `mcp_agent:` and `profile:` arms give it none.
 The output records this as `judge_context: treatment_material.v1`; runs judged
 before it saw 200-character snippets, so re-judge them before comparing.
 
@@ -227,6 +230,10 @@ artifact per cell, a `matrix_rollup.v1` JSON/Markdown report, and paired
 - **`skill-agent:<path>`** — agentic skill use. The model sees only the skill's
   name + one-line description and calls a `view_skill_*` tool to load the full
   instructions on demand (progressive disclosure).
+- **`skill-catalog:<dir>`** — skill selection. Every skill under `<dir>` is offered
+  the same way, so the question is answered among its rivals. Questions that carry
+  `expected_skill` are scored on the skill loaded first; see
+  [Skill selection](#skill-selection-does-the-agent-load-the-right-skill).
 - **`<spec1>+<spec2>`** — combined treatment. Merges multiple treatments into a
   single arm by concatenating their contexts. Example:
   `docs+skill:<content-checkout>/skills/onetbb-quickstart`
@@ -403,6 +410,113 @@ The `SKILL.md` should contain a navigation table mapping user contexts to files:
 loaded. Multi-file structure only activates in agentic mode (`skill-agent:<path>`).
 For best results with injected mode, consolidate content into a single `SKILL.md`
 file rather than relying on multi-file progressive disclosure.
+
+## Skill selection: does the agent load the right skill?
+
+Answer-quality arms ask whether a skill *helps once loaded*. Selection is a separate
+question — whether the agent loads it at all, and loads it rather than a rival — and
+it needs its own query set: the questions a skill helps with are usually not the
+messages that make an agent reach for it.
+
+**Relation to `novelty routing`.** [`novelty routing`](skill-novelty.md#can-the-artifact-be-selected-at-all)
+asks the same question for one artifact: can its card win against named competitors?
+The two differ in unit and in what the model sees:
+
+| | `novelty routing` | `skill-catalog:` arm |
+|---|---|---|
+| Unit | one artifact vs `--competitors` | a whole catalog; every skill is a target |
+| Model sees | cards (name + description) in one pick prompt, order permuted per query | one `view_skill_*` tool per skill in the agent loop; it may load none |
+| Negatives | none; an abstention is a miss | `expected_skill: null`, scored as false triggers |
+| Reports | BM25 floor; model `selection_rate`, recall@1/@3, MRR | accuracy, recall, misroute, false-trigger rate, confusion |
+| Use it | while writing one skill's description, before content work | to compare models and find rival skills across a catalog |
+
+Both are upper bounds on harness behaviour (see *Real harness* below). The positives of
+a trigger set are routing queries for their skill:
+
+```bash
+jq '[.questions[] | select(.expected_skill == "linux-perf") | .text]' trigger_questions.json > linux-perf.queries.json
+```
+
+*Trigger set* here means a selection query set: messages labelled with the skill that
+should load. It is unrelated to the `trigger` axis of the
+[difficulty rubric](difficulty-rubric.md#axis-0--trigger-what-starts-the-work), which tags
+what input starts a task (`counter`, `source`, `new_code`). `catalog trigger-set` does not
+carry `metadata.trigger` into its output.
+
+**Build the set.** `catalog trigger-set` labels question files, lints them, and writes
+the format a selection tool reads:
+
+```bash
+python cli.py catalog trigger-set --catalog <skills-checkout>/skills \
+  --questions <content>/questions/intel_performance_skills_golden.json=@metadata.skill_under_test \
+  --questions <content>/questions/onetbb_golden.json=onetbb-quickstart \
+  --questions <content>/questions/onedal_golden.json=none \
+  --rewrite --model <model> --format reach --out trigger_set.json
+```
+
+- `PATH=LABEL`: a skill name, `none` (no catalog skill should load — the negatives),
+  or `@field.path` read per question. A label that names no catalog skill fails the run;
+  a question without the field is left unlabelled (`label_unresolved`), and a path that
+  resolves for no question in its file fails the run as a typo. Unlabelled rows are
+  dropped from `reach` and `skill-creator` (stderr warns; `--strict` fails instead).
+  A question with no usable text (`text`, `question`, `prompt` or `question_text`) fails
+  the run rather than becoming an empty query.
+- `--rewrite` turns exam-style questions ("Scenario: … Describe how …") into the
+  first-person request a developer would type. The rewriting model is given only the
+  question text, never the catalog, so it cannot copy a description into the query.
+- Lint per query, summarised on stdout: `names_skill` (the query tells the agent the
+  answer), `echo_terms` (words only the expected skill's description uses),
+  `exam_framing`, and `lexical_rank` (1 = word overlap alone picks the skill).
+  `--strict` fails on named skills, exam framing or unresolved labels.
+- `--format reach` writes a [google/skill-reach](https://github.com/google/skill-reach)
+  `QuerySet`. A label listing several skills keeps the first as `expected_skill` and the
+  rest as `acceptable_skills`, which skill-reach treats as neutral helpers rather than
+  hits, so on those queries it is stricter than the `skill-catalog:` arm; `skill-creator --target <skill>` (a catalog skill) writes an
+  [anthropics/skills skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator)
+  eval set; `questions` writes `questions.v1` with `expected_skill` for the arm below.
+
+**Proxy: the `skill-catalog:` arm.** Runs in the normal arms loop on any model, and the
+report gains a *Skill selection* table (accuracy, recall, recall (any), multi-load,
+misroute, false-trigger rate):
+
+```bash
+python cli.py arms run --product <p> --questions trigger_questions.json \
+  --arms skill-catalog:<skills-checkout>/skills --model <model>
+```
+
+`expected_skill` labels are checked against the offered skills before any call. A cell
+that fails is counted in the table's *Failed* column, not dropped; skills loaded together
+in the first loading turn count as one choice. A first turn that loads several skills is a
+hit only if all of them are acceptable; *Recall (any)* and *Multi-load* show the lenient
+reading. When judged, the arm's reference is each skill the agent loaded (the
+20,000-character budget split evenly among them) plus every catalog manifest. Skills that
+were offered but not loaded are not shown.
+
+It over-predicts: one tool per skill with the full description always visible, and no
+reason to explore first. Use it to compare models and to find rival skills that absorb
+each other's queries, not as the trigger rate users see.
+
+**Real harness: an external tool.** Selection inside a coding agent depends on the
+harness — how it renders the catalog, and whether it truncates it — so it is measured
+by driving the harness itself, with a selection tool used as-is rather than vendored:
+
+```bash
+git clone https://github.com/google/skill-reach && cd skill-reach && uv sync
+uv run reach eval --skills <skills-checkout>/skills --queries trigger_set.json \
+  --agent claude-code --model <model> -O skill_listing_budget_fraction=0.03 \
+  --attempts 3 --workdir /tmp/reach-run --out eval.json -y
+uv run reach diff --vary description control.json treatment.json   # A/B vs noise floor
+```
+
+Two things decide whether such a number means anything:
+
+- **Listing budget.** Claude Code shows skill descriptions only up to a budget (a
+  fraction of the model's context window); past it, skills appear as bare names. The
+  `skill-catalog:` arm records `catalog_listing_chars` so the size can be compared with
+  the budget; pin `skillListingBudgetFraction` (above) or the run measures names, not
+  descriptions.
+- **Repeats.** Selection varies run to run; use `--attempts 3` or more and read the
+  noise floor `reach diff` reports before calling a description change an improvement.
 
 ## Comparing cells across runs
 

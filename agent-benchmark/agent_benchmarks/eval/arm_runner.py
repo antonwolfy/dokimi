@@ -20,7 +20,9 @@ from typing import Any, Dict, List, Optional
 
 from agent_benchmarks.llm import llm_call_with_usage
 from agent_benchmarks.eval import stats as arm_stats
-from agent_benchmarks.eval.arm_summary import cost_summary, summarize_agentic_usage
+from agent_benchmarks.eval.arm_summary import (
+    cost_summary, summarize_agentic_usage, summarize_skill_selection,
+)
 from agent_benchmarks.eval.cells import Cell
 from agent_benchmarks.eval.judge_context import PROTOCOL as JUDGE_CONTEXT_PROTOCOL
 from agent_benchmarks.eval.judge_context import JudgeContextStore
@@ -86,6 +88,16 @@ def _ground_truth_from_topics(q: Dict[str, Any]) -> Optional[str]:
     if mean_len < MIN_GROUND_TRUTH_TOPIC_CHARS:
         return None
     return "\n".join(f"- {s}" for s in statements)
+
+
+def _static_arm_kind(treatment: Treatment) -> Dict[str, Any]:
+    """The ``arm_kind`` metadata of a treatment whose ``prepare()`` never returned."""
+    t = getattr(treatment, "inner", treatment)  # a plugin wrapper
+    subs = getattr(t, "treatments", None)  # a combined arm
+    if isinstance(subs, list):
+        return {"arm_kind": "combined",
+                "treatments": [{"name": s.name, **_static_arm_kind(s)} for s in subs]}
+    return {"arm_kind": getattr(t, "arm_kind", None)}
 
 
 class ArmRunner:
@@ -210,6 +222,10 @@ class ArmRunner:
             "persona": q.get("persona"),
             "arms": arms,
         }
+        # Selection label: present-and-None means "no skill should load", which is
+        # why presence is tested rather than truthiness.
+        if "expected_skill" in q:
+            rec["expected_skill"] = q["expected_skill"]
         ground_truth = q.get("ground_truth_chunk")
         if not ground_truth and self.grounded_from_topics:
             ground_truth = _ground_truth_from_topics(q)
@@ -230,7 +246,10 @@ class ArmRunner:
             cfg = treatment.prepare(question_text, library_name, library_id)
         except Exception as exc:
             logger.exception("Arm %s prepare() failed", treatment.name)
-            return {"error": f"prepare_failed: {exc}", "answer": None}
+            # The arm kind still says what failed, so a failure-counting summary
+            # can attribute it (there is no config to read it from).
+            return {"error": f"prepare_failed: {exc}", "answer": None,
+                    "metadata": _static_arm_kind(treatment)}
 
         # Record the treatment material before the answer exists: this is what
         # the arm was given, and the judge needs all of it, not the 200-char
@@ -239,19 +258,31 @@ class ArmRunner:
         # and system prompt reach the loop), so the judge gets none of it
         # either — a combined `skill:x+skill_agent:y` arm would otherwise show
         # the judge a skill body the answerer never received.
-        self.judge_context.put(
-            question_id,
-            treatment.name,
-            build_judge_context([] if cfg.is_agentic else cfg.injected_context,
-                                cfg.judge_reference,
-                                injected_chars=MAX_CONTEXT_CHARS),
-        )
+        # A catalog's material does not fit the judge: its reference is built
+        # from what the agent loaded, so it can only be stored after the loop.
+        deferred = cfg.is_agentic and cfg.judge_reference_for_loaded is not None
+        if not deferred:
+            self.judge_context.put(
+                question_id,
+                treatment.name,
+                build_judge_context([] if cfg.is_agentic else cfg.injected_context,
+                                    cfg.judge_reference,
+                                    injected_chars=MAX_CONTEXT_CHARS),
+            )
 
         from agent_benchmarks.plugins import take_output_shapers
         shapers, cfg_metadata = take_output_shapers(cfg)
 
         if cfg.is_agentic:
-            return self._answer_agentic_arm(cfg, question_text, t0, shapers, cfg_metadata)
+            out = self._answer_agentic_arm(cfg, question_text, t0, shapers, cfg_metadata)
+            if deferred:
+                loaded = ((out.get("tool_usage") or {}).get("skill") or {}).get("loaded") or []
+                assert cfg.judge_reference_for_loaded is not None
+                self.judge_context.put(
+                    question_id, treatment.name,
+                    build_judge_context([], cfg.judge_reference_for_loaded(loaded)),
+                )
+            return out
 
         cache_prefix = None
         if cfg.has_context:
@@ -321,7 +352,7 @@ class ArmRunner:
         self, cfg, question_text: str, t0: float, shapers=None, cfg_metadata=None
     ) -> Dict[str, Any]:
         """Run an arm whose treatment offers tools via the agent loop."""
-        from agent_benchmarks.eval.agent_runner import run_agent_loop
+        from agent_benchmarks.eval.agent_runner import _summarize_tool_usage, run_agent_loop
 
         shapers = shapers or []
         cfg_metadata = cfg_metadata if cfg_metadata is not None else cfg.metadata
@@ -339,8 +370,10 @@ class ArmRunner:
             )
         except Exception as exc:
             logger.exception("Agentic arm failed")
+            # Keep what was offered and loaded before the failure.
+            tool_usage = getattr(exc, "tool_usage", None) or _summarize_tool_usage(cfg.tools, [])
             return {"error": f"agent_failed: {exc}", "answer": None,
-                    "metadata": cfg_metadata}
+                    "tool_usage": tool_usage, "metadata": cfg_metadata}
 
         raw_answer = result["answer"]
         final_answer = self._apply_shapers(shapers, raw_answer)
@@ -468,6 +501,7 @@ class ArmRunner:
             "answers": records,
             "cost_summary": self._cost_summary(records),
             "agentic_usage_summary": self._summarize_agentic_usage(records),
+            "skill_selection_summary": summarize_skill_selection(records),
         }
         if self.matrix_cell:
             out["matrix_cell"] = self.matrix_cell

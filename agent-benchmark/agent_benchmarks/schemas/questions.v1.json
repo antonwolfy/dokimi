@@ -74,6 +74,17 @@
           },
           "expected_topics": {
             "type": "array"
+          },
+          "expected_skill": {
+            "description": "Skill-selection label for the skill-catalog: arm: the skill that should load, a list of acceptable skills, or null when no catalog skill should load. Absent = unlabelled.",
+            "type": [
+              "string",
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       }

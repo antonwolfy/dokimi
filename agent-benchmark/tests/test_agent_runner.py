@@ -216,6 +216,55 @@ def test_agent_loop_hits_max_iterations(monkeypatch):
     assert result["answer"] == "Forced final answer."
 
 
+def test_forced_final_turn_passes_litellm_bedrock_mapping(monkeypatch):
+    # Every request goes through litellm's own Bedrock parameter mapping and
+    # Converse request build, offline: `tool_choice="none"` is refused there, and a
+    # tool-call history without `tools=` has to be accepted.
+    import litellm
+    from litellm.llms.bedrock.chat.converse_transformation import AmazonConverseConfig
+    from litellm.utils import get_optional_params
+
+    tool = DocQueryTool(_FakeDocClient(), "lib/x")
+    loop_step = _FakeMessage(tool_calls=[_FakeToolCall("c", "search_documentation", "{}")])
+    sent = []
+
+    def fake_completion(model, messages, api_key=None, **kw):
+        bedrock_model = model.split("/", 1)[1]
+        optional = get_optional_params(model=bedrock_model, custom_llm_provider="bedrock", **kw)
+        AmazonConverseConfig().transform_request(
+            model=bedrock_model, messages=messages, optional_params=optional,
+            litellm_params={}, headers={},
+        )
+        sent.append(kw)
+        return _FakeResp(loop_step if len(sent) < 2 else _FakeMessage(content="done"))
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    result = run_agent_loop("q", [tool], model="anthropic.claude-3-5-haiku-20241022-v1:0",
+                            provider="amazon-bedrock", api_key="k", max_iterations=1)
+    assert result["answer"] == "done" and len(sent) == 2
+    assert "tool_choice" not in sent[-1]
+
+
+def test_failed_call_keeps_the_tool_usage_so_far(monkeypatch):
+    tool = DocQueryTool(_FakeDocClient(), "lib/x")
+    loop_step = _FakeMessage(tool_calls=[_FakeToolCall("c", "search_documentation", "{}")])
+    calls = []
+
+    def fake(messages, model, **kw):
+        calls.append(1)
+        if len(calls) > 1:
+            raise RuntimeError("provider refused")
+        return _FakeResp(loop_step)
+
+    monkeypatch.setattr(ar_mod, "chat_completion", fake)
+    try:
+        run_agent_loop("q", [tool], model="m", max_iterations=3)
+    except RuntimeError as exc:
+        assert exc.tool_usage["called_tools"] == ["search_documentation"]
+    else:
+        raise AssertionError("expected the provider error to propagate")
+
+
 def test_agent_loop_unknown_tool_is_handled(monkeypatch):
     tool = DocQueryTool(_FakeDocClient(), "lib/x")
     steps = [

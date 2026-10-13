@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 class BaselineTreatment(Treatment):
     """No augmentation — the control arm (equivalent to ``without_docs``)."""
 
+    arm_kind = "baseline"
+
     def __init__(self, name: str = "baseline"):
         self.name = name
 
@@ -147,6 +149,8 @@ class SkillAgentTreatment(Treatment):
     sandbox and stays on the terminal-bench task track.
     """
 
+    arm_kind = "skill_agent"
+
     def __init__(self, skill: Skill, name: Optional[str] = None, max_chars: int = 12_000):
         self.skill = skill
         self.max_chars = max_chars
@@ -173,8 +177,86 @@ class SkillAgentTreatment(Treatment):
         )
 
 
+class SkillCatalogTreatment(Treatment):
+    """Skill selection — offer a whole catalog and record which skill the model loads.
+
+    One progressive-disclosure tool per skill, so a question is answered in the
+    presence of every rival the catalog holds. Which skill the model loads first
+    is compared with the question's ``expected_skill`` (``None`` = no skill should
+    load) by :func:`agent_benchmarks.eval.arm_summary.summarize_skill_selection`.
+
+    This is a tool-calling proxy, not a coding harness: a real harness renders the
+    catalog as one listing it may truncate, and lets the model explore before it
+    decides. Real-harness selection is measured with an external tool against the
+    trigger set ``catalog trigger-set`` writes (docs/evaluating-treatments.md).
+    """
+
+    arm_kind = "skill_catalog"
+
+    def __init__(self, skills: List[Skill], name: Optional[str] = None, max_chars: int = 12_000):
+        if not skills:
+            raise ValueError("skill catalog is empty")
+        from .tools import ViewSkillTool
+
+        # The model tells skills apart by tool name, which sanitises the skill name:
+        # `a-b` and `a_b` collide there, and providers cap function names at 64 chars.
+        tools = [ViewSkillTool(s, max_chars) for s in skills]
+        names = [t.name for t in tools]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            raise ValueError(f"skill catalog has duplicate tool names: {', '.join(dupes)}")
+        too_long = [n for n in names if len(n) > 64]
+        if too_long:
+            raise ValueError(f"skill tool names over the 64-char function-name limit: {', '.join(too_long)}")
+        self.skills = skills
+        self.max_chars = max_chars
+        self.name = name or f"skill_catalog:{len(skills)}"
+
+    def _judge_reference_for(self, loaded: List[str]) -> str:
+        """Loaded skills' bodies (budget split evenly) + every catalog manifest."""
+        from agent_benchmarks.eval.judge_context import MAX_JUDGE_REFERENCE_CHARS
+
+        by_name = {s.name: s for s in self.skills}
+        manifests = "\n\n".join(m for s in self.skills if (m := s.resource_manifest()))
+        picked = [by_name[n] for n in loaded if n in by_name]
+        if not picked:
+            return manifests
+        # Each loaded skill keeps an equal share, so a second load cannot push
+        # the first out of the judge's view the way a whole-string cut does.
+        share = max(0, MAX_JUDGE_REFERENCE_CHARS - len(manifests) - 2) // len(picked) - 2
+        bodies = []
+        for s in picked:
+            text = s.as_context(self.max_chars)
+            bodies.append(text if len(text) <= share else text[:max(0, share - 2)].rstrip() + "\n…")
+        return "\n\n".join(bodies + ([manifests] if manifests else []))
+
+    def prepare(self, question_text, library_name, library_id=None) -> AgentConfig:
+        from .tools import ViewSkillTool
+
+        return AgentConfig(
+            tools=[ViewSkillTool(s, self.max_chars) for s in self.skills],
+            # A whole catalog does not fit the judge's cap (intel/skills: 285k
+            # chars vs 20k, so the judge saw the alphabetically first 2-3 skills).
+            # The judge gets every manifest (paths are in the tool schemas too)
+            # plus the body of each skill the agent loaded, which the tool serves
+            # deterministically, so the transcript's 200-char previews suffice.
+            judge_reference_for_loaded=self._judge_reference_for,
+            metadata={
+                "arm_kind": "skill_catalog",
+                "catalog_size": len(self.skills),
+                "catalog_skills": [s.name for s in self.skills],
+                # What a harness listing of this catalog would cost: the number a
+                # listing budget is compared against (Claude Code shows bare names
+                # once its budget is exceeded).
+                "catalog_listing_chars": sum(len(s.name) + len(s.description) for s in self.skills),
+            },
+        )
+
+
 class AgentProfileTreatment(Treatment):
     """Agent persona prompt — swaps the answering agent's system prompt."""
+
+    arm_kind = "agent_profile"
 
     def __init__(
         self,
@@ -227,6 +309,8 @@ class SkillTreatment(Treatment):
     chunk. The faithful agentic mode (the agent decides to invoke the skill and
     run its bundled scripts) belongs on the terminal-bench task track.
     """
+
+    arm_kind = "skill"
 
     def __init__(self, skill: Skill, name: Optional[str] = None, max_chars: int = 12_000):
         self.skill = skill
@@ -314,6 +398,13 @@ class CombinedTreatment(Treatment):
         merged_tools = []
         for cfg in configs:
             merged_tools.extend(cfg.tools)
+        # Two sub-arms can offer the same tool (a catalog plus a skill-agent arm for one
+        # of its skills); duplicate function names make selection ambiguous and most
+        # providers reject them.
+        tool_names = [t.name for t in merged_tools]
+        dupes = sorted({n for n in tool_names if tool_names.count(n) > 1})
+        if dupes:
+            raise ValueError(f"combined arm '{self.name}' offers duplicate tools: {', '.join(dupes)}")
 
         # Merge metadata - track each sub-treatment's contribution
         merged_metadata = {
@@ -345,19 +436,28 @@ class CombinedTreatment(Treatment):
             c.context_is_static for c in configs if c.injected_context
         )
 
+        # A loaded-skill reference (catalog sub-arm) composes with the static ones.
+        dynamic = [c.judge_reference_for_loaded for c in configs
+                   if c.judge_reference_for_loaded is not None and c.is_agentic]
+        static_ref = "\n\n".join(
+            c.judge_reference for c in configs
+            if c.judge_reference and (c.is_agentic or not merged_tools)
+        )
+
+        def reference_for_loaded(loaded: List[str]) -> str:
+            return "\n\n".join(p for p in [static_ref] + [f(loaded) for f in dynamic] if p)
+
         return AgentConfig(
             system_prompt=system_prompt,
             injected_context=merged_context,
             tools=merged_tools,
             context_is_static=context_is_static,
+            judge_reference_for_loaded=reference_for_loaded if dynamic else None,
             # The reference is what the judge may treat as available to the
             # arm. On the plain path every sub-treatment's material is. On the
             # agentic path only the agentic sub-treatments' is: that path does
             # not put injected context in front of the agent, so a non-agentic
             # skill's manifest names files the agent has no tool to reach.
-            judge_reference="\n\n".join(
-                c.judge_reference for c in configs
-                if c.judge_reference and (c.is_agentic or not merged_tools)
-            ),
+            judge_reference=static_ref,
             metadata=merged_metadata,
         )

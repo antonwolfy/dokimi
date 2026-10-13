@@ -240,6 +240,33 @@ def render_arms_report(data: Dict[str, Any]) -> str:
             )
         lines.append("")
 
+    selection = data.get("skill_selection_summary") or {}
+    if selection:
+        def pct(v: Any) -> str:
+            return "—" if v is None else f"{v * 100:.0f}%"
+
+        lines.append("## Skill selection")
+        lines.append("")
+        lines.append(
+            "Skills loaded in the first loading turn vs the question's `expected_skill`: "
+            "a hit only if all are acceptable; *Recall (any)* counts one acceptable "
+            "among them. A tool-calling proxy: it over-predicts what a real coding "
+            "harness does."
+        )
+        lines.append("")
+        lines.append("| Arm | Accuracy | Recall | Recall (any) | Multi-load | Misroute | False trigger "
+                     "| +/− | n | Failed |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+        for arm_name, s in selection.items():
+            lines.append(
+                f"| `{arm_name}` | {pct(s.get('selection_accuracy'))} | {pct(s.get('recall'))} | "
+                f"{pct(s.get('recall_any'))} | {pct(s.get('multi_load_rate'))} | "
+                f"{pct(s.get('misroute_rate'))} | {pct(s.get('false_trigger_rate'))} | "
+                f"{s.get('n_positive', 0)}/{s.get('n_negative', 0)} | {s.get('n', 0)} | "
+                f"{s.get('n_failed', 0)} |"
+            )
+        lines.append("")
+
     evaluations = data.get("evaluations")
     if evaluations:
         lines.append("## Per-question scores")

@@ -21,6 +21,15 @@ arm is deliberately not the same as the subset the agent chose to read — the
 transcript keeps only previews, and availability is the thing the judge cannot
 otherwise check. Query-driven treatments (``mcp_agent``) contribute nothing,
 because what they would serve is unknown until the agent asks.
+
+The exception is a ``skill-catalog:`` arm, whose material does not fit: the
+33-skill intel/skills catalog is ~285k characters against the 20,000 cap, so a
+whole-catalog reference showed the judge the alphabetically first two or three
+skills whatever the agent loaded. Its reference
+(``AgentConfig.judge_reference_for_loaded``) is built after the loop from the
+skills the agent loaded — each body given an equal share of the cap — plus
+every catalog file list. A view tool serves a skill deterministically, so the
+loaded names are enough to rebuild what was read.
 """
 
 import logging
@@ -49,7 +58,8 @@ DEFAULT_INJECTED_CHARS = 15_000
 #: Cap on the reference part (manifest, or the skill itself for an agentic arm).
 #: A skill body is capped at 12,000 by ``Skill.as_context`` and the manifest at
 #: 200 paths (~6,000 chars), so this is a ceiling for pathological input, not a
-#: cut that ordinary arms reach.
+#: cut that ordinary arms reach. A ``skill-catalog:`` arm does reach it, and
+#: splits it among the skills it loaded rather than being cut at the end.
 MAX_JUDGE_REFERENCE_CHARS = 20_000
 
 NO_CONTEXT = "(No documentation retrieved)"

@@ -379,6 +379,42 @@ def _load_questions(path: str) -> list[dict]:
     return questions
 
 
+def _validate_expected_skills(questions: list[dict], treatments) -> None:
+    """Refuse ``expected_skill`` labels the selection summary cannot score.
+
+    Checked before any call is spent: a label of the wrong type crashes the
+    summary after the run, and a name no skill arm offers silently scores as a
+    miss. Names are checked only when some arm offers skills.
+    """
+    from agent_benchmarks.treatments import SkillAgentTreatment, SkillCatalogTreatment
+
+    def leaves(t):
+        t = getattr(t, "inner", t)
+        for sub in getattr(t, "treatments", None) or [t]:
+            yield sub
+
+    known: set = set()
+    for t in treatments:
+        for sub in leaves(t):
+            if isinstance(sub, SkillCatalogTreatment):
+                known.update(s.name for s in sub.skills)
+            elif isinstance(sub, SkillAgentTreatment):
+                known.add(sub.skill.name)
+    for i, q in enumerate(questions):
+        if "expected_skill" not in q:
+            continue
+        label = q["expected_skill"]
+        qid = q.get("id") or q.get("question_id") or f"#{i}"
+        names = label if isinstance(label, list) else [label] if label is not None else []
+        if not all(isinstance(n, str) and n for n in names):
+            raise ValueError(f"question {qid}: expected_skill must be a skill name, a list of "
+                             f"names, or null; got {label!r}")
+        unknown = [n for n in names if known and n not in known]
+        if unknown:
+            raise ValueError(f"question {qid}: expected_skill names no offered skill: "
+                             f"{', '.join(unknown)}")
+
+
 def _apply_named_matrix_cell(args: argparse.Namespace) -> None:
     from agent_benchmarks.eval.cells import load_matrix_cells, select_matrix_cell
 
@@ -410,6 +446,7 @@ def _build_arms_output(args: argparse.Namespace, specs: list[str], questions: li
     from agent_benchmarks.treatments import create_treatments
 
     treatments = create_treatments(specs, top_k=args.top_k, rerank_threshold=args.rerank_threshold)
+    _validate_expected_skills(questions, treatments)
     try:
         library_id = _resolve_doc_library_id(treatments, args.product, args.context7_id)
     except ValueError as exc:

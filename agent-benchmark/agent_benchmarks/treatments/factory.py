@@ -12,6 +12,7 @@ from .arms import (
     DocTreatment,
     MCPAgentTreatment,
     SkillAgentTreatment,
+    SkillCatalogTreatment,
     AgentProfileTreatment,
     SkillTreatment,
     CombinedTreatment,
@@ -30,6 +31,7 @@ def _parse_combined_spec(spec: str) -> List[str]:
         "docs",
         "skill:",
         "skill-agent:",
+        "skill-catalog:",
         "agent:",
         "profile:",
         "mcp:",
@@ -87,6 +89,10 @@ def create_treatment(
     ``skill-agent:<path>``
         Agentic skill use — the model is offered the skill via progressive
         disclosure and decides whether to load it.
+    ``skill-catalog:<dir>``
+        Skill selection — every skill under ``<dir>`` is offered via progressive
+        disclosure; which one the model loads is scored against each question's
+        ``expected_skill``.
     ``<spec1>+<spec2>[+...]``
         Combined treatment — merges multiple treatments into one arm.
         Example: ``docs+skill:data/skills/fastcontext``
@@ -123,6 +129,20 @@ def create_treatment(
                 "'skill-agent:/path/to/skills-repo/skills/<name>'"
             )
         return SkillAgentTreatment(load_skill(path))
+
+    if spec.startswith("skill-catalog:"):
+        from agent_benchmarks.skills import discover_skills
+        root = spec[len("skill-catalog:"):]
+        if not root:
+            raise ValueError(
+                "'skill-catalog:' arm requires a directory of skills, e.g. "
+                "'skill-catalog:/path/to/skills-repo/skills'"
+            )
+        if not Path(root).is_dir():
+            raise ValueError(f"'skill-catalog:' path is not a directory: {root}")
+        # Named by the spec, not the skill count: two catalogs of one size (a
+        # description before/after a fix) must be able to run side by side.
+        return SkillCatalogTreatment(discover_skills(root), name=f"skill_catalog:{root}")
 
     if spec == "agent" or spec.startswith("agent:"):
         from agent_benchmarks.mcp.factory import create_doc_source_client

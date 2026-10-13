@@ -34,6 +34,7 @@ from .arms import (
     DocTreatment,
     MCPAgentTreatment,
     SkillAgentTreatment,
+    SkillCatalogTreatment,
     AgentProfileTreatment,
     SkillTreatment,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "DocTreatment",
     "MCPAgentTreatment",
     "SkillAgentTreatment",
+    "SkillCatalogTreatment",
     "AgentProfileTreatment",
     "SkillTreatment",
     "create_treatment",

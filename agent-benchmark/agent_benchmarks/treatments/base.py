@@ -5,7 +5,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 
 class Tool(ABC):
@@ -85,6 +85,10 @@ class AgentConfig:
     metadata: Dict[str, Any] = field(default_factory=dict)
     context_is_static: bool = False
     judge_reference: str = ""
+    #: For an agentic arm whose material is too large to show whole (a skill
+    #: catalog): builds the reference from the skills the agent loaded, called
+    #: after the loop. Replaces ``judge_reference`` when set.
+    judge_reference_for_loaded: Optional[Callable[[List[str]], str]] = None
 
     @property
     def has_context(self) -> bool:
