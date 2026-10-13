@@ -79,14 +79,10 @@ jobs:
   test:
     name: Tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    # 3.15 runs but does not gate yet: `import litellm` fails there (it imports
-    # sre_constants, gone in 3.15; BerriAI/litellm#46060). Gate it, and list 3.15
-    # in pyproject.toml's classifiers, once a fixed litellm is in the lock.
-    continue-on-error: ${{ matrix.python-version == '3.15' }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12', '3.13', '3.14', '3.15']
+        python-version: ['3.11', '3.12', '3.13', '3.14']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -98,21 +94,7 @@ jobs:
       # The lock, not the ranges: a PR's result should not depend on what was
       # released upstream that morning. test-latest below watches the ranges.
       - name: Install deps
-        if: matrix.python-version != '3.15'
         run: pip install -r requirements.lock.txt
-      # 3.15 until its wheels catch up: ormsgpack (langgraph-checkpoint, via
-      # ragas -> langchain) has no cp315 wheel, and its sdist does not build (its
-      # PyO3 predates 3.15, and the stable-ABI fallback lacks the CPython string
-      # internals it uses), so it is left out; nothing the suite runs imports it.
-      # The lock is the full closure, so --no-deps installs the rest as pinned.
-      # The other Rust sdists (jiter, fastuuid, uuid-utils) build only through
-      # that fallback. Drop this step and the `if:` above once ormsgpack ships
-      # cp315 wheels.
-      - name: Install deps (3.15)
-        if: matrix.python-version == '3.15'
-        env:
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: '1'
-        run: grep -v '^ormsgpack==' requirements.lock.txt | pip install --no-deps -r /dev/stdin
       # Offline by construction: pytest-socket (addopts in pyproject.toml) fails
       # any test that opens a network socket.
       - name: Run tests
