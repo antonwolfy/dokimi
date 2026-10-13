@@ -1,39 +1,36 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Parse and record the result object ``claude -p --output-format json`` prints."""
+"""Parse the result object ``claude -p`` prints (``json``, or the last ``type: result`` ``stream-json`` event)."""
 
 from __future__ import annotations
 
 import json
 import re
-import subprocess
-from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from agent_benchmarks.metrics.usage import UsageRecord
 
-from .models import OperationRecord
-
 
 def _parse_claude_json(stdout: str, task: str, model: str, latency: float) -> Optional[UsageRecord]:
-    """Parse ``claude -p --output-format json`` into a :class:`UsageRecord`.
+    """Parse the ``claude -p`` result object into a :class:`UsageRecord`.
 
-    The CLI prints a single result object with ``total_cost_usd``, a nested
-    ``usage`` block (input/output/cache tokens), ``duration_ms``, ``ttft_ms``,
-    and ``num_turns``. Returns ``None`` when no parseable object is found (the
-    elapsed wall-clock ``latency`` is used as a fallback for ``latency_sec``).
+    ``--output-format json`` prints the result object alone; ``stream-json``
+    prints it as the final ``type: result`` event (see :func:`result_event`).
+    It carries ``total_cost_usd``, a nested ``usage`` block (input/output/cache
+    tokens), ``modelUsage`` (the same, per model), ``duration_ms``, ``ttft_ms``,
+    and ``num_turns``. Tokens are summed over ``modelUsage`` when it is there:
+    ``usage`` covers the parent session only, while ``total_cost_usd`` and
+    ``modelUsage`` also cover helper models and subagents. Returns ``None``
+    when there is no result object (the elapsed wall-clock ``latency`` is used
+    as a fallback for ``latency_sec``).
     """
-    obj = _last_json_object(stdout)
+    obj = result_event(stdout)
     if obj is None:
         return None
     if not model:  # no --model: record what the CLI actually used, not ""
         model = _main_model(obj.get("modelUsage"))
-    u = obj.get("usage") or {}
-    input_tokens = int(u.get("input_tokens", 0) or 0)
-    output_tokens = int(u.get("output_tokens", 0) or 0)
-    cache_read = int(u.get("cache_read_input_tokens", 0) or 0)
-    cache_write = int(u.get("cache_creation_input_tokens", 0) or 0)
+    input_tokens, output_tokens, cache_read, cache_write = _tokens(obj)
     duration_ms = obj.get("duration_ms")
     ttft_ms = obj.get("ttft_ms")
     cost = obj.get("total_cost_usd")
@@ -51,6 +48,28 @@ def _parse_claude_json(stdout: str, task: str, model: str, latency: float) -> Op
         n_calls=int(obj.get("num_turns", 1) or 1),
         cost_known_calls=1 if cost is not None else 0,
     )
+
+
+def _tokens(obj: dict) -> tuple[int, int, int, int]:
+    """Input, output, cache-read and cache-write tokens of a result object."""
+
+    def n(block: dict, key: str) -> int:
+        try:
+            return int(block.get(key, 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    keys = ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheCreationInputTokens")
+    by_model = obj.get("modelUsage")
+    per_model = [m for m in by_model.values() if isinstance(m, dict) and any(k in m for k in keys)] \
+        if isinstance(by_model, dict) else []
+    if per_model:
+        i, o, r, w = (sum(n(m, k) for m in per_model) for k in keys)
+        return i, o, r, w
+    usage = obj.get("usage")
+    u: dict = usage if isinstance(usage, dict) else {}
+    return (n(u, "input_tokens"), n(u, "output_tokens"), n(u, "cache_read_input_tokens"),
+            n(u, "cache_creation_input_tokens"))
 
 
 def _main_model(model_usage: object) -> str:
@@ -90,6 +109,32 @@ def _last_json_object(text: str) -> Optional[dict]:
     return None
 
 
+def result_event(stdout: str) -> Optional[dict]:
+    """The result object, from ``json`` output or a ``stream-json`` stream.
+
+    In a stream the last line is not necessarily the result: a CLI that was
+    killed or crashed ends on an ``assistant`` or ``system`` event, and taking
+    the last object would read a partial run as a finished one. So the last
+    ``type: result`` event wins, and a stream without one has no result. An
+    object with no ``type`` at all is the older bare ``json`` shape.
+    """
+    typed = False
+    for line in reversed((stdout or "").splitlines()):
+        line = line.strip()
+        if not (line.startswith("{") and line.endswith("}")):
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        if obj.get("type") == "result":
+            return obj
+        typed = typed or "type" in obj
+    return None if typed else _last_json_object(stdout)
+
+
 def solver_error(stdout: str, edited: bool = False) -> Optional[str]:
     """Why the CLI made no attempt at all, or ``None`` if it made one.
 
@@ -104,7 +149,7 @@ def solver_error(stdout: str, edited: bool = False) -> Optional[str]:
     529 at turn 40, ``prompt_too_long`` from a skill arm reading too much) is
     the arm's outcome and is scored; :func:`terminal_reason` records it.
     """
-    obj = _last_json_object(stdout)
+    obj = result_event(stdout)
     if obj is None:
         return None if edited else "no result object on stdout"
     if not (obj.get("is_error") or obj.get("terminal_reason") == "api_error"):
@@ -122,37 +167,8 @@ def solver_error(stdout: str, edited: bool = False) -> Optional[str]:
 
 def terminal_reason(stdout: str) -> Optional[str]:
     """How the CLI ended the run (``terminal_reason``, else ``subtype``), for every row."""
-    obj = _last_json_object(stdout)
+    obj = result_event(stdout)
     if obj is None:
         return None
     reason = obj.get("terminal_reason") or obj.get("subtype")
     return str(reason) if reason else None
-
-
-def record_solver(proc: subprocess.CompletedProcess, task: str, model: Optional[str],
-                  latency: float, output_dir: Path, operations: list[OperationRecord], log,
-                  extra_metrics: dict[str, Any], edited: bool = False) -> Optional[UsageRecord]:
-    """Log one solver run, save ``solver.json``, and fold its telemetry into the run.
-
-    *edited*: the work tree changed during the run (see :func:`solver_error`).
-    """
-    log.write(proc.stdout or "")
-    log.write(proc.stderr or "")
-    error = solver_error(proc.stdout, edited=edited)
-    if error:  # no attempt was made: the runner leaves the cell out, like metrics.error
-        extra_metrics["solver_error"] = error
-    usage = _parse_claude_json(proc.stdout, task, model or "", latency)
-    reason = terminal_reason(proc.stdout) or ("no_result" if usage is None else None)
-    if reason:
-        extra_metrics["terminal_reason"] = reason
-    (output_dir / "solver.json").write_text(proc.stdout or "", encoding="utf-8")
-    if usage is not None:
-        # Kept if a later step fails (the copy back): the solve was paid for either way.
-        extra_metrics.update(usage.as_metrics_dict())
-        if usage.model:
-            extra_metrics["model"] = usage.model
-        operations.append(
-            OperationRecord(type="loop", name="claude-turns", elapsed_sec=usage.latency_sec,
-                            metadata={"n_calls": usage.n_calls})
-        )
-    return usage

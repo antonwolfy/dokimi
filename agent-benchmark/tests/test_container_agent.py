@@ -306,7 +306,8 @@ def docker_calls(tmp_path, monkeypatch):
 
     monkeypatch.setattr(solver_mod, "_docker", fake_docker)
     monkeypatch.setattr(container_mod, "claude_binary", lambda: tmp_path / "claude")
-    monkeypatch.setattr(DockerSolverHarness, "_build_image", lambda self, t, i, log: None)
+    monkeypatch.setattr(DockerSolverHarness, "_build_image",
+                        lambda self, t, i, log: calls.append(["build"]))  # a step like the rest
     monkeypatch.setattr(DockerSolverHarness, "_verify", lambda *a, **k: 1.0)
     monkeypatch.setattr(DockerSolverHarness, "_recompile", lambda *a, **k: [])
     return calls
@@ -316,8 +317,8 @@ def _fake_claude(monkeypatch, seen: dict):
     import agent_benchmarks.harnesses.docker_solver as solver_mod
 
     def fake_run(argv, **kwargs):
-        seen["argv"], seen["env"] = argv, kwargs["env"]
-        return subprocess.CompletedProcess(argv, 0, '{"num_turns": 1}', "")
+        seen["argv"], seen["env"], seen["stdin"] = argv, kwargs["env"], kwargs.get("stdin")
+        return subprocess.CompletedProcess(argv, 0, seen.get("stream", '{"num_turns": 1}'), "")
 
     monkeypatch.setattr(solver_mod.subprocess, "run", fake_run)
 
@@ -357,6 +358,139 @@ def test_container_solve_lifecycle(tmp_path, docker_calls, monkeypatch):
     assert result.metrics["egress"] == {"allowed": [], "denied": ["evil.example"], "errors": [],
                                         "denied_entries": ["evil.example:443"]}
     assert json.loads((out / "egress.jsonl").read_text(encoding="utf-8"))["host"] == "evil.example"
+
+
+def test_container_skill_arm_installs_a_plugin_outside_app(tmp_path, docker_calls, monkeypatch):
+    seen: dict = {}
+    _fake_claude(monkeypatch, seen)
+    skill = tmp_path / "skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: demo-skill\ndescription: Use for demo things.\n---\n# Demo\n",
+        encoding="utf-8")
+    task = load_task(_task(tmp_path))
+    out = tmp_path / "out"
+    create_harness(f"docker-claude-skill:{skill}").run(task, model="haiku", output_dir=out)
+
+    def at(pred):
+        return next(i for i, c in enumerate(docker_calls) if pred(c))
+
+    mkdir = at(lambda c: c[-3:] == ["mkdir", "-p", "/opt/abskill"])
+    cp_plugin = at(lambda c: c[0] == "cp" and c[-1].endswith(":/opt/abskill"))
+    chmod = at(lambda c: c[-4:] == ["chmod", "-R", "u=rwX,go=rX", "/opt/abskill"])
+    rm_plugin = at(lambda c: c[-3:] == ["rm", "-rf", "/opt/abskill"])
+    # Copy the plugin's contents into a target that exists, so it never nests.
+    assert docker_calls[cp_plugin][1].endswith("/plugin/.")
+    assert mkdir < cp_plugin < chmod < rm_plugin
+    # Gone before anything the verifier runs is copied in.
+    tests_in = [i for i, c in enumerate(docker_calls) if c[0] == "cp" and c[-1].endswith(":/tests")]
+    assert all(rm_plugin < i for i in tests_in)
+    argv = seen["argv"]
+    assert argv[argv.index("--plugin-dir") + 1] == "/opt/abskill"
+    prompt = argv[argv.index("-p") + 1]
+    assert prompt.startswith("A skill named `demo-skill:demo-skill` is installed.")
+    assert "/app/.skill" not in " ".join(" ".join(c) for c in docker_calls)
+    assert cp_plugin < rm_plugin
+    assert not (out / "plugin").exists()   # the staged copy is not kept with the run
+
+
+def _demo_skill(tmp_path, extra=""):
+    skill = tmp_path / "skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        f"---\nname: demo-skill\ndescription: Use for demo things.\n{extra}---\n# Demo\n",
+        encoding="utf-8")
+    return skill
+
+
+def _stream(*plugins, skill="demo-skill:demo-skill"):
+    return "\n".join(json.dumps(e) for e in [
+        {"type": "system", "subtype": "init", "skills": ["doctor"],
+         "plugins": [{"name": p} for p in plugins]},
+        {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": "a", "name": "Skill", "input": {"skill": skill}}]}},
+        {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "a"}]}},
+        {"type": "result", "num_turns": 2, "total_cost_usd": 0.01},
+    ])
+
+
+def test_container_skill_arm_counts_the_treatment_and_flags_one_not_offered(
+        tmp_path, docker_calls, monkeypatch):
+    skill = _demo_skill(tmp_path)
+    task = load_task(_task(tmp_path))
+    seen: dict = {"stream": _stream("demo-skill")}
+    _fake_claude(monkeypatch, seen)
+    ok = create_harness(f"docker-claude-skill:{skill}").run(task, model="haiku",
+                                                            output_dir=tmp_path / "ok")
+    assert ok.metrics["n_skill_invocations"] == 1 and "solver_error" not in ok.metrics
+    assert ok.metrics["treatment"]["plugin"] == "demo-skill"
+    assert ok.metrics["offered_plugins"] == ["demo-skill"]
+    assert "--verbose" in seen["argv"] and seen["stdin"] is subprocess.DEVNULL
+    seen["stream"] = _stream()  # the plugin did not load
+    bad = create_harness(f"docker-claude-skill:{skill}").run(task, model="haiku",
+                                                             output_dir=tmp_path / "bad")
+    assert bad.metrics["solver_error"].startswith("treatment not offered")
+    base = create_harness("docker-claude").run(task, model="haiku", output_dir=tmp_path / "base")
+    assert "n_skill_invocations" not in base.metrics and "treatment" not in base.metrics
+
+
+@pytest.mark.parametrize("make", ["missing", "readme", "outside-link", "fork", "link-loop"])
+def test_a_bad_skill_fails_before_any_docker_step(tmp_path, docker_calls, monkeypatch, make):
+    skill = _demo_skill(tmp_path, extra="context: fork\n" if make == "fork" else "")
+    path = skill
+    if make == "missing":
+        path = tmp_path / "nope"
+    elif make == "readme":
+        (skill / "README.md").write_text("x", encoding="utf-8")
+        path = skill / "README.md"
+    elif make == "outside-link":
+        (skill / "repo").symlink_to("..")
+    elif make == "link-loop":  # each link is inside the skill and not its ancestor
+        (skill / "a").mkdir()
+        (skill / "c").mkdir()
+        try:
+            (skill / "a" / "b").symlink_to("../c", target_is_directory=True)
+            (skill / "c" / "d").symlink_to("../a", target_is_directory=True)
+        except OSError:
+            pytest.skip("cannot create symlinks here")
+    _fake_claude(monkeypatch, {})
+    with pytest.raises(ValueError):
+        create_harness(f"docker-claude-skill:{path}").run(load_task(_task(tmp_path)), model="haiku",
+                                                          output_dir=tmp_path / "out")
+    assert docker_calls == []
+    assert not (tmp_path / "out" / "plugin").exists()
+
+
+def test_a_failed_plugin_copy_leaves_no_staged_plugin(tmp_path, docker_calls, monkeypatch):
+    import agent_benchmarks.harnesses.docker_solver as solver_mod
+
+    skill = _demo_skill(tmp_path)
+    real = solver_mod._docker
+
+    def failing(args, log, **kwargs):
+        if args[0] == "cp" and args[-1].endswith(":/opt/abskill"):
+            raise RuntimeError("docker cp failed")
+        return real(args, log, **kwargs)
+
+    monkeypatch.setattr(solver_mod, "_docker", failing)
+    _fake_claude(monkeypatch, {})
+    out = tmp_path / "out"
+    harness = create_harness(f"docker-claude-skill:{skill}")
+    with pytest.raises(RuntimeError):
+        harness._install_plugin_in_container("c1", out, None, {})
+    out.mkdir(exist_ok=True)
+    assert not (out / "plugin").exists()
+
+
+def test_container_baseline_gets_no_plugin_and_no_notice(tmp_path, docker_calls, monkeypatch):
+    seen: dict = {}
+    _fake_claude(monkeypatch, seen)
+    task = load_task(_task(tmp_path))
+    create_harness("docker-claude").run(task, model="haiku", output_dir=tmp_path / "out")
+    argv = seen["argv"]
+    assert "--plugin-dir" not in argv
+    assert argv[argv.index("-p") + 1].startswith("Solve this coding task.")
+    assert "Skill" in argv[argv.index("--tools") + 1].split(",")
 
 
 def test_public_task_gets_bridge_only_after_the_agent(tmp_path, docker_calls, monkeypatch):
@@ -453,6 +587,40 @@ def test_container_timeout_reaps_and_keeps_the_tree(tmp_path, docker_calls, monk
     snapshot = next(i for i, c in enumerate(docker_calls) if c[0] == "cp" and c[1].endswith(":/app/."))
     assert reap < snapshot and (out / "work").is_dir()
     assert not any(c[0] == "cp" and c[-1].endswith(":/tests") for c in docker_calls)
+
+
+_LEAKED = {"ANTHROPIC_API_KEY": "box-key-0001",
+           "ANTHROPIC_CUSTOM_HEADERS": "X-Fake-A: hdrSecretAAAA1111\nX-Fake-B: hdrSecretBBBB2222"}
+
+
+def _leaked_stream():
+    return "\n".join([
+        json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "a", "content": json.dumps(_LEAKED)}]}}),
+        json.dumps({"type": "result", "num_turns": 2, "result": " ".join(_LEAKED.values())})])
+
+
+@pytest.mark.parametrize("timeout", [False, True])
+def test_a_container_solve_redacts_the_credentials_it_saves(
+        tmp_path, docker_calls, monkeypatch, timeout):
+    import agent_benchmarks.harnesses.docker_solver as solver_mod
+
+    for name, value in _LEAKED.items():
+        monkeypatch.setenv(name, value)
+    if timeout:
+        def slow(argv, **kwargs):
+            raise subprocess.TimeoutExpired(argv, 1, output=_leaked_stream().encode())
+
+        monkeypatch.setattr(solver_mod.subprocess, "run", slow)
+    else:
+        _fake_claude(monkeypatch, {"stream": _leaked_stream()})
+    out = tmp_path / "out"
+    create_harness("docker-claude").run(load_task(_task(tmp_path)), model="haiku", output_dir=out)
+    saved = (out / "solver.jsonl").read_text(encoding="utf-8")
+    assert "[REDACTED]" in saved
+    assert [p for v in _LEAKED.values() for p in v.splitlines() if p in saved] == []
+    if not timeout:  # the result event is kept as solver.json
+        assert "hdrSecret" not in (out / "solver.json").read_text(encoding="utf-8")
 
 
 def test_container_probe_with_a_skill_forbids_it(tmp_path, docker_calls, monkeypatch):
@@ -822,31 +990,27 @@ def test_a_verifier_on_a_dead_container_is_errored_not_zero(tmp_path, monkeypatc
 def test_container_skill_arm_ships_the_skill_with_links_followed(tmp_path, docker_calls, monkeypatch):
     import agent_benchmarks.harnesses.docker_solver as solver_mod
 
-    shared = tmp_path / "skills" / "shared" / "refs"
+    skill = tmp_path / "skills" / "demo"
+    shared = skill / "shared" / "refs"
     shared.mkdir(parents=True)
     (shared / "a.md").write_text("ref", encoding="utf-8")
-    skill = tmp_path / "skills" / "demo"
-    skill.mkdir()
-    (skill / "SKILL.md").write_text("x", encoding="utf-8")
-    (skill / "references").symlink_to(shared)
+    (skill / "SKILL.md").write_text("---\nname: demo\ndescription: d\n---\nx", encoding="utf-8")
+    (skill / "references").symlink_to("shared/refs")
     staged: dict = {}
     real = solver_mod._docker
 
     def record(args, log, **kwargs):
-        if args[0] == "cp" and args[-1].endswith(":/app/.skill"):
-            src = Path(args[1])
-            staged.update(is_link=(src / "references").is_symlink(),
-                          ref=(src / "references" / "a.md").read_text(encoding="utf-8"))
+        if args[0] == "cp" and args[-1].endswith(":/opt/abskill"):
+            links = [p for p in Path(args[1].rstrip(".")).rglob("*") if p.is_symlink()]
+            refs = list(Path(args[1].rstrip(".")).rglob("references/a.md"))
+            staged.update(links=links, ref=refs[0].read_text(encoding="utf-8") if refs else None)
         return real(args, log, **kwargs)
 
     monkeypatch.setattr(solver_mod, "_docker", record)
-    seen: dict = {}
-    _fake_claude(monkeypatch, seen)
+    _fake_claude(monkeypatch, {})
     create_harness(f"docker-claude-skill:{skill}").run(load_task(_task(tmp_path)), model="haiku",
                                                       output_dir=tmp_path / "out")
-    assert staged == {"is_link": False, "ref": "ref"}
-    assert any(c[-3:] == ["rm", "-rf", "/app/.skill"] for c in docker_calls)
-    assert "./.skill/" in " ".join(seen["argv"])
+    assert staged == {"links": [], "ref": "ref"}
 
 
 def test_probe_finds_a_proxy_that_forwards_plain_http(tmp_path, monkeypatch):
@@ -988,3 +1152,18 @@ def test_ctrl_c_while_the_sidecar_starts_still_cleans_up():
         ContainerSandbox.open("r1", docker, None, source_env={"ANTHROPIC_API_KEY": "k"}, with_agent=False)
     assert calls[-1] == ["network", "rm", "abnet-r1"]
     assert set(Path(tempfile.gettempdir()).glob("abenv-*")) == scratch
+
+
+def test_the_plugin_modes_are_reset_not_widened(tmp_path, monkeypatch):
+    import agent_benchmarks.harnesses.docker_solver as solver_mod
+    skill = tmp_path / "skill"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: demo-skill\ndescription: Use for demo things.\n---\n# Demo\n", encoding="utf-8")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(solver_mod, "_docker", lambda args, log, **kw: calls.append(args))
+    harness = create_harness(f"docker-claude-skill:{skill}")
+    harness._install_plugin_in_container("c1", tmp_path / "out", None, {})
+    chmod = next(c for c in calls if "chmod" in c)
+    # a+rX would keep a setuid or world-writable file from the source as it is.
+    assert chmod == ["exec", "-u", "root", "c1", "chmod", "-R", "u=rwX,go=rX", "/opt/abskill"]

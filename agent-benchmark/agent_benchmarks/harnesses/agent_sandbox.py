@@ -43,8 +43,27 @@ _LOG = logging.getLogger(__name__)
 
 # Tools the solver may use. ``--tools`` sets the available set; ``--allowedTools``
 # alone only pre-approves, and under --dangerously-skip-permissions everything is
-# approved anyway, so it would leave WebFetch/WebSearch/Task on.
-SOLVER_TOOLS = ("Read", "Edit", "Write", "Bash", "Glob", "Grep")
+# approved anyway, so it would leave WebFetch/WebSearch/Task on. ``Skill`` is in
+# both arms so they differ by the skill offered, not by the tool set; with no
+# skill installed it has nothing to load.
+SOLVER_TOOLS = ("Read", "Edit", "Write", "Bash", "Glob", "Grep", "Skill")
+
+# With the Skill tool on, Claude Code 2.1.286 also offers 13 bundled skills
+# (dataviz, code-review, loop, ...), two built-in plugins' skills, and any
+# managed (policy) skill under /etc/claude-code, which loads whatever
+# --setting-sources says, to *both* arms. These switch them off. In the
+# container only the core ``doctor`` command remains; the host route also lists
+# ``design``, which the model cannot invoke (2.1.288). The stream records any
+# other offered skill as ``unexpected_skills``.
+_SEAL_ENV = {
+    "CLAUDE_CODE_DISABLE_BUNDLED_SKILLS": "1",
+    "CLAUDE_CODE_DISABLE_CLAUDE_API_SKILL": "1",
+    "CLAUDE_CODE_DISABLE_POLICY_SKILLS": "1",
+}
+_SEAL_SETTINGS = {"enabledPlugins": {
+    "cc-plugin-agents-md@builtin": False,
+    "cc-plugin-plugin-authoring@builtin": False,
+}}
 
 # Environment variables passed through to the agent. Everything else is dropped:
 # the operator's tokens for unrelated services, nested-session markers
@@ -75,6 +94,12 @@ _ENV_EXACT = frozenset({
     "AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE",
 })
 _ENV_PREFIXES = ("LC_", "AWS_CONTAINER_CREDENTIALS_", "VERTEX_REGION_")
+# The allowlisted names whose values are secrets, redacted from the saved stream.
+_CREDENTIAL_VARS = frozenset({
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_FOUNDRY_API_KEY",
+    "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
+    "AWS_BEARER_TOKEN_BEDROCK", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+})
 
 # Leak classes the probe reports, in report order.
 LEAK_CLASSES = ("task_files", "treatment", "operator_config", "checkout_walk", "network", "env",
@@ -108,8 +133,14 @@ def operator_source_env(environ: Optional[dict[str, str]] = None) -> dict[str, s
 def agent_env(source: dict[str, str], extra: Optional[dict[str, str]] = None) -> dict[str, str]:
     """Allowlisted copy of *source*; *extra* (the harness's own env) is added verbatim."""
     env = {k: v for k, v in source.items() if k in _ENV_EXACT or k.startswith(_ENV_PREFIXES)}
+    env.update(_SEAL_ENV)
     env.update(extra or {})
     return env
+
+
+def credential_values(env: dict[str, str]) -> list[str]:
+    """The secret values in an agent *env*, for :func:`.solver_stream.redact`."""
+    return [v for k, v in env.items() if k in _CREDENTIAL_VARS and v]
 
 
 def solver_cli_flags() -> list[str]:
@@ -118,6 +149,7 @@ def solver_cli_flags() -> list[str]:
         "--dangerously-skip-permissions",
         "--tools", ",".join(SOLVER_TOOLS),
         "--setting-sources", "",
+        "--settings", json.dumps(_SEAL_SETTINGS),
         "--strict-mcp-config",
         "--no-session-persistence",
     ]
@@ -169,14 +201,12 @@ class AgentWorkspace:
         }
 
     def state(self) -> frozenset[tuple[str, int, int]]:
-        """``(path, size, mtime_ns)`` of every file in the work tree but the skill copy.
+        """``(path, size, mtime_ns)`` of every file in the work tree.
 
         Two states differ if the agent wrote, created or deleted a file between them.
         """
         out = set()
-        for dirpath, dirnames, filenames in os.walk(self.work):
-            if Path(dirpath) == self.work:
-                dirnames[:] = [d for d in dirnames if d != ".skill"]
+        for dirpath, _dirnames, filenames in os.walk(self.work):
             for name in filenames:
                 path = os.path.join(dirpath, name)
                 try:
@@ -195,8 +225,9 @@ def default_forbidden(task_path: Path, skill_dirs: Iterable[Path] = (),
     """Paths a solve of *task_path* must not read.
 
     ``treatment`` is every ``skills/`` tree on the way up from the task (a git
-    checkout or not; an inner one must not hide the content repo's): the leak that matters is a *baseline* agent reading it. A with-skill arm gets
-    its own copy under ``./.skill`` and has no reason to look there either.
+    checkout or not; an inner one must not hide the content repo's): the leak that
+    matters is a *baseline* agent reading it. A with-skill arm gets it as a plugin
+    outside the work tree and has no reason to look there either.
     *skill_dirs* adds skills kept elsewhere (``docker-probe:<skill>``), so a
     baseline probe can check the treatment its with-skill arm is offered.
     ``task_files`` names the grader dirs of both layouts (Harbor ``solution/``
@@ -414,8 +445,13 @@ def probe_env(forbidden: dict[str, list[Path]], deny_env: Iterable[str],
 
 
 def denied_env_names(source: dict[str, str]) -> list[str]:
-    """Names present in *source* that the allowlist drops (the probe checks every one)."""
+    """Names present in *source* that the allowlist drops (the probe checks every one).
+
+    The names the harness sets itself (:data:`_SEAL_ENV`) are not a leak when
+    the operator happens to set them too.
+    """
     return sorted(k for k in source if k not in _ENV_EXACT and not k.startswith(_ENV_PREFIXES)
+                  and k not in _SEAL_ENV
                   and k not in ("HOME", "PWD", "OLDPWD", "SHLVL", "_", "TMPDIR",
                                 "CLAUDE_CONFIG_DIR", "HOSTNAME", "container"))
 

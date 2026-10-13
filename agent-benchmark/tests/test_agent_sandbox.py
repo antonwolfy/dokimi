@@ -25,6 +25,7 @@ from agent_benchmarks.harnesses.agent_sandbox import (
     LEAK_CLASSES,
     AgentWorkspace,
     agent_env,
+    denied_env_names,
     default_forbidden,
     parse_probe_output,
     probe_reward,
@@ -84,7 +85,8 @@ def _content_checkout(tmp_path: Path) -> Path:
     root = tmp_path / "content"
     (root / ".git").mkdir(parents=True)
     (root / "skills" / "demo").mkdir(parents=True)
-    (root / "skills" / "demo" / "SKILL.md").write_text("the answer", encoding="utf-8")
+    (root / "skills" / "demo" / "SKILL.md").write_text(
+        "---\nname: demo\ndescription: Use for demo things.\n---\nthe answer\n", encoding="utf-8")
     task = root / "evaluation" / "harbor" / "tasks" / "demo-task"
     (task / "solution").mkdir(parents=True)
     (task / "solution" / "solve.sh").write_text("cp fixed.cpp /app/", encoding="utf-8")
@@ -110,6 +112,10 @@ def test_agent_env_is_an_allowlist():
     assert env == {
         "PATH": "/usr/bin", "LC_ALL": "C", "HTTPS_PROXY": "http://p:1",
         "AWS_BEARER_TOKEN_BEDROCK": "tok", "CLAUDE_CODE_USE_BEDROCK": "1", "EXTRA": "kept",
+        # Bundled skills off in both arms, so the Skill tool offers only the treatment.
+        "CLAUDE_CODE_DISABLE_BUNDLED_SKILLS": "1", "CLAUDE_CODE_DISABLE_CLAUDE_API_SKILL": "1",
+        # Managed skills under /etc/claude-code load whatever --setting-sources says.
+        "CLAUDE_CODE_DISABLE_POLICY_SKILLS": "1",
     }
 
 
@@ -117,11 +123,24 @@ def test_cli_flags_restrict_the_tool_set_and_load_no_settings():
     flags = solver_cli_flags()
     tools = flags[flags.index("--tools") + 1].split(",")
     # Exactly these: a denylist check would miss a new Agent, Skill or Workflow.
-    assert tools == ["Read", "Edit", "Write", "Bash", "Glob", "Grep"]
+    assert tools == ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "Skill"]
     # --allowedTools only pre-approves; it must not be mistaken for the restriction.
     assert "--allowedTools" not in flags
     assert flags[flags.index("--setting-sources") + 1] == ""
     assert "--strict-mcp-config" in flags
+    # Both arms carry the Skill tool; the built-in plugins' skills are switched off.
+    assert "Skill" in tools
+    settings = json.loads(flags[flags.index("--settings") + 1])
+    # By name: without the plugin-authoring key the CLI offers that skill to both arms.
+    assert settings == {"enabledPlugins": {"cc-plugin-agents-md@builtin": False,
+                                           "cc-plugin-plugin-authoring@builtin": False}}
+
+
+def test_names_the_harness_sets_itself_are_not_probed_as_leaks():
+    """An operator who exports a seal variable has leaked nothing: the harness sets it too."""
+    source = {"CLAUDE_CODE_DISABLE_BUNDLED_SKILLS": "1", "CLAUDE_CODE_DISABLE_CLAUDE_API_SKILL": "1",
+              "CLAUDE_CODE_DISABLE_POLICY_SKILLS": "1", "GITHUB_TOKEN": "x"}
+    assert denied_env_names(source) == ["GITHUB_TOKEN"]
 
 
 def test_workspace_is_scratch_with_its_own_home_and_config(tmp_path):
@@ -348,10 +367,19 @@ def test_claude_solve_runs_in_scratch_with_sealed_env(tmp_path, monkeypatch):
         if cmd[0] != "claude":
             return real_run(cmd, **kwargs)
         cwd = Path(kwargs["cwd"])
-        seen.update(cmd=cmd, cwd=cwd, env=kwargs["env"],
-                    skill_seen=(cwd / ".skill" / "SKILL.md").is_file())
+        plugin = Path(cmd[cmd.index("--plugin-dir") + 1])
+        seen.update(cmd=cmd, cwd=cwd, env=kwargs["env"], plugin=plugin, stdin=kwargs.get("stdin"),
+                    skill_seen=(plugin / "skills" / "demo" / "SKILL.md").is_file(),
+                    manifest=json.loads((plugin / ".claude-plugin" / "plugin.json").read_text()))
         (cwd / "main.cpp").write_text("fixed", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, '{"num_turns": 1}', "")
+        stream = "\n".join([
+            json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "Skill", "input": {"skill": "demo:demo"}}]}}),
+            json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "Edit", "input": {}}]}}),
+            json.dumps({"type": "result", "num_turns": 2, "total_cost_usd": 0.01}),
+        ])
+        return subprocess.CompletedProcess(cmd, 0, stream, "")
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
     out = tmp_path / "out"
@@ -363,10 +391,24 @@ def test_claude_solve_runs_in_scratch_with_sealed_env(tmp_path, monkeypatch):
     assert "GITHUB_TOKEN" not in seen["env"]
     assert seen["env"]["CLAUDE_CODE_USE_BEDROCK"] == "1"  # the operator's settings env block
     assert "--tools" in seen["cmd"] and "--allowedTools" not in seen["cmd"]
-    assert seen["skill_seen"] is True
-    # The tree is kept with the run, without the skill, and the scratch root is gone.
+    # The skill is a plugin beside the work tree, never inside it.
+    assert seen["skill_seen"] is True and seen["manifest"]["name"] == "demo"
+    assert cwd not in seen["plugin"].parents
+    prompt = seen["cmd"][seen["cmd"].index("-p") + 1]
+    assert prompt.startswith("A skill named `demo:demo` is installed.")
+    assert seen["cmd"][seen["cmd"].index("--output-format") + 1] == "stream-json"
+    # stream-json under -p exits 1 with "requires --verbose" without it.
+    assert "--verbose" in seen["cmd"]
+    assert seen["stdin"] is subprocess.DEVNULL
+    assert result.metrics["treatment"] == {"skill": "demo", "plugin": "demo",
+                                           "delivery": "plugin-dir"}
+    assert result.metrics["n_skill_invocations"] == 1
+    assert result.metrics["tool_calls"] == {"Skill": 1, "Edit": 1}
+    assert result.metrics["cost_usd"] == 0.01
+    assert json.loads((out / "solver.json").read_text())["type"] == "result"
+    # The tree is kept with the run, and the scratch root is gone.
     assert (out / "work" / "main.cpp").read_text(encoding="utf-8") == "fixed"
-    assert not (out / "work" / ".skill").exists()
+    assert not list((out / "work").rglob("SKILL.md"))
     assert not cwd.parent.exists()
     assert result.metrics["isolation"]["network"] == "open"
 
@@ -416,7 +458,8 @@ def test_a_timed_out_solve_keeps_the_agent_tree(tmp_path, monkeypatch):
     assert (out / "work" / "half-done.cpp").read_text(encoding="utf-8") == "partial"
 
 
-def _run_fake_claude(tmp_path, monkeypatch, stdout, *, edit=False, fail_copy_back=False):
+def _run_fake_claude(tmp_path, monkeypatch, stdout, *, edit=False, fail_copy_back=False,
+                     stderr=""):
     import agent_benchmarks.harnesses.docker_solver as mod
 
     task = load_task(_content_checkout(tmp_path))
@@ -439,7 +482,7 @@ def _run_fake_claude(tmp_path, monkeypatch, stdout, *, edit=False, fail_copy_bac
             return real_run(cmd, **kwargs)
         if edit:
             (Path(kwargs["cwd"]) / "fixed.cpp").write_text("the fix", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, stdout, "")
+        return subprocess.CompletedProcess(cmd, 0, stdout, stderr)
 
     monkeypatch.setattr(mod.subprocess, "run", claude)
     return create_harness("docker-claude-host").run(task, output_dir=tmp_path / "out")
@@ -583,7 +626,7 @@ def test_allowlist_keeps_the_provider_variables_the_cli_reads():
              "CLAUDE_CODE_USE_MANTLE", "CLAUDE_CODE_USE_GATEWAY", "ANTHROPIC_AWS_WORKSPACE_ID",
              "ANTHROPIC_GOOGLE_CLOUD_PROJECT", "ANTHROPIC_GOOGLE_CLOUD_LOCATION",
              "ANTHROPIC_GOOGLE_CLOUD_WORKSPACE_ID", "ANTHROPIC_DEFAULT_FABLE_MODEL"]
-    assert set(agent_env({n: "x" for n in names})) == set(names)
+    assert set(agent_env({n: "x" for n in names})) == set(names) | set(sandbox._SEAL_ENV)
 
 
 def test_isolation_states_what_the_host_launch_leaves_readable():
@@ -682,7 +725,7 @@ def test_scratch_root_is_removed_when_the_skill_copy_fails(tmp_path, monkeypatch
     def interrupted(src, dest):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(mod, "_copytree", interrupted)
+    monkeypatch.setattr(mod, "build_plugin", interrupted)
     with pytest.raises(KeyboardInterrupt):
         create_harness(f"docker-claude-skill:{skill}")._prepare_workspace(task, "c1", log=None)
     assert not list((tmp_path / "scratch").iterdir())
@@ -736,3 +779,84 @@ def test_a_failed_copy_back_keeps_the_paid_solve_metrics(tmp_path, monkeypatch):
     assert "docker cp failed" in result.metrics["error"]
     assert result.metrics["cost_usd"] == 1.25
     assert result.metrics["isolation"]["agent_location"] == "host"
+
+
+def test_a_skill_path_to_another_file_is_refused(tmp_path):
+    skill = tmp_path / "skills" / "foo"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("x", encoding="utf-8")
+    (skill / "README.md").write_text("x", encoding="utf-8")
+    assert create_harness(f"docker-claude-skill:{skill / 'SKILL.md'}")._resolve_skill_dir() == skill
+    with pytest.raises(ValueError, match="skill directory or its SKILL.md"):
+        create_harness(f"docker-claude-skill:{skill / 'README.md'}")._resolve_skill_dir()
+
+
+# The names agent_sandbox treats as secrets, spelled out so dropping one turns this red.
+_CREDENTIAL_NAMES = (
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_FOUNDRY_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
+    "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE", "AWS_BEARER_TOKEN_BEDROCK",
+    "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+)
+# Built, not spelled out, so no line of this file reads like a credential assignment. Two values
+# are shaped on purpose: a multi-line header and a quote plus backslash, which JSON escapes.
+_SHAPED = {
+    "ANTHROPIC_CUSTOM_HEADERS": chr(10).join(f"X-Fake-{c}: hdr{c * 4}{n}" for c, n in (("A", 1111), ("B", 2222))),
+    "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE": 'pass"phrase' + chr(92) + "0006",
+}
+_SECRETS = {name: _SHAPED.get(name, f"{name.lower()}-{i:04d}") for i, name in enumerate(_CREDENTIAL_NAMES, 1)}
+
+
+def _pieces():
+    return [piece for value in _SECRETS.values() for piece in value.splitlines()]
+
+
+def _leaky_stream():
+    printed = json.dumps({"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "a", "content": json.dumps(_SECRETS)}]}})
+    return "\n".join([printed, json.dumps({"type": "result", "num_turns": 2,
+                                           "result": " ".join(_SECRETS.values())})])
+
+
+def test_a_host_solve_redacts_every_credential_variable_everywhere_it_saves_output(
+        tmp_path, monkeypatch):
+    for name, value in _SECRETS.items():
+        monkeypatch.setenv(name, value)
+    _run_fake_claude(tmp_path, monkeypatch, _leaky_stream(), stderr=" ".join(_SECRETS.values()))
+    out = tmp_path / "out"
+    for name in ("solver.jsonl", "solver.json", "run.log"):
+        saved = (out / name).read_text(encoding="utf-8")
+        assert [p for p in _pieces() if p in saved] == [], name
+    assert "[REDACTED]" in (out / "solver.jsonl").read_text(encoding="utf-8")
+
+
+def test_a_timed_out_host_solve_redacts_the_stream_it_kept(tmp_path, monkeypatch):
+    import agent_benchmarks.harnesses.docker_solver as mod
+
+    for name, value in _SECRETS.items():
+        monkeypatch.setenv(name, value)
+    _patch_docker(monkeypatch, [])
+    real_run = subprocess.run
+
+    def slow_claude(cmd, **kwargs):
+        if cmd[0] != "claude":
+            return real_run(cmd, **kwargs)
+        raise subprocess.TimeoutExpired(cmd, 1, output=_leaky_stream().encode())
+
+    monkeypatch.setattr(mod.subprocess, "run", slow_claude)
+    out = tmp_path / "out"
+    result = create_harness("docker-claude-host").run(
+        load_task(_content_checkout(tmp_path)), output_dir=out)
+    assert result.returncode == 124 and "solver_timeout" in result.metrics
+    saved = (out / "solver.jsonl").read_text(encoding="utf-8")
+    assert saved and [p for p in _pieces() if p in saved] == []
+
+
+def test_state_sees_a_file_the_agent_writes_under_a_dot_skill_dir():
+    ws = AgentWorkspace.create()
+    try:
+        before = ws.state()
+        (ws.work / ".skill").mkdir()
+        (ws.work / ".skill" / "x.txt").write_text("x", encoding="utf-8")
+        assert ws.state() != before
+    finally:
+        ws.cleanup()

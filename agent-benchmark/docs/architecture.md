@@ -170,7 +170,7 @@ and the agent's sandbox all still work.
 `claude-code`, and `terminal-bench:<agent>`; each runs a Harbor-compatible agent,
 records operation telemetry (`harness`, `loop`, `tool`, `subagent`, ...), and
 summarizes pass-rate deltas against a baseline harness. Entry point:
-`python cli.py tasks run`. Three modules own the solver's launch:
+`python cli.py tasks run`. These modules own the solver's launch:
 
 - `harnesses/container_agent.py` runs the agent in the task container, on an
   internal network.
@@ -178,6 +178,9 @@ summarizes pass-rate deltas against a baseline harness. Entry point:
   way out goes through.
 - `harnesses/agent_sandbox.py` is the host launch for the `-host` variants,
   and holds the `docker-probe` isolation probe that measures both launches.
+- `harnesses/skill_treatment.py` installs the `docker-claude-skill:` arm's
+  skill as a plugin and reads skill reach from the agent's stream;
+  `harnesses/solver_stream.py` runs the solver and records that stream.
 
 See [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)
 to add a task and [coding-harnesses.md](coding-harnesses.md) to run harness

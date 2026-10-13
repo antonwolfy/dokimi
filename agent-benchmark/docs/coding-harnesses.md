@@ -19,17 +19,21 @@ latency, turns):
 
 - `docker-oracle` — apply the task's own `solution/solve.sh` (no LLM). Free; use
   it to validate that a task image + verifier work end to end.
-- `docker-claude` — solve with `claude -p --output-format json` **inside the
-  task container**, with egress to the LLM endpoint only (see
-  [What the agent can reach](#what-the-agent-can-reach)). The JSON result
-  carries `total_cost_usd`, token `usage`, `duration_ms`, `ttft_ms`, and
-  `num_turns`, which are folded into the run artifact's `metrics{}`. A run
-  the CLI ended with an error before any attempt carries
-  `metrics.solver_error` and is counted as errored, not as a miss (see
-  below).
-- `docker-claude-skill:<skill-path>` — `docker-claude` with a skill directory
-  exposed to the agent. This is the **with-skill treatment arm**; compare it
-  against `docker-claude` (without-skill) as the baseline.
+- `docker-claude` — solve with `claude -p --output-format stream-json`
+  **inside the task container**, with egress to the LLM endpoint only (see
+  [What the agent can reach](#what-the-agent-can-reach)). The final result
+  event carries `total_cost_usd`, token `usage`, `duration_ms`, `ttft_ms`, and
+  `num_turns`, which are folded into the run artifact's `metrics{}`, together
+  with `tool_calls` (by tool name) and `offered_skills`. A run the CLI
+  ended with an error before any attempt carries `metrics.solver_error` and
+  is counted as errored, not as a miss (see below). A solve that ran out of
+  time is a miss: it carries `metrics.solver_timeout`, and stays in the
+  comparison unless it also carries `solver_error` (a skill arm whose plugin
+  did not load).
+- `docker-claude-skill:<skill-path>` — `docker-claude` with the skill installed
+  the way Claude Code installs one. This is the **with-skill treatment arm**;
+  compare it against `docker-claude` (without-skill) as the baseline. See
+  [How the skill arm offers the skill](#how-the-skill-arm-offers-the-skill).
 - `docker-probe` — no LLM, free. Runs an isolation probe in exactly the work
   tree and environment `docker-claude` would get, writes
   `isolation_probe.json`, and passes only when nothing in
@@ -72,8 +76,8 @@ The result is in `metrics.isolation_probe` and `isolation_probe.json`:
   by `docker cp`: the `claude` binary, the files named by the file-valued
   variables below (CA bundles, `AWS_SHARED_CREDENTIALS_FILE` with every
   profile in it, `AWS_CONFIG_FILE`, `GOOGLE_APPLICATION_CREDENTIALS`), and
-  the skill arm's `/app/.skill` (copied with symlinks followed, as the host
-  arm's copy does).
+  the skill arm's plugin at `/opt/abskill` (built with symlinks followed, as
+  for the host arm).
 - **Image needs.** A glibc image (the host's `claude` binary is copied in; a
   musl image fails the `--version` check), and an `/app` that uid 10001 can
   own (it is `chown`ed before the agent starts).
@@ -173,12 +177,14 @@ dropped) and its command line and cwd (`--tasks-root`, `--output-dir`, the
 skill arm's path). Yama `ptrace_scope=1` does not stop this; it only gates
 attach.
 
-Both launches run `claude` with `--tools Read,Edit,Write,Bash,Glob,Grep
---setting-sources "" --strict-mcp-config --no-session-persistence`. An older
-launch used `--allowedTools`, which only pre-approves tools, so `WebFetch`,
-`Agent`, `Skill`, and the operator's skills, CLAUDE.md files and MCP servers
-were loaded in both arms. The Bash tool can still start a nested `claude -p`
-with the default tool set; its spend is not in the outer `total_cost_usd`.
+Both launches run `claude` with `--tools Read,Edit,Write,Bash,Glob,Grep,Skill
+--setting-sources "" --strict-mcp-config --no-session-persistence`, built-in
+plugins disabled through `--settings`, and
+`CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1`. An older launch used `--allowedTools`,
+which only pre-approves tools, so `WebFetch`, `Agent`, `Skill`, and the
+operator's skills, CLAUDE.md files and MCP servers were loaded in both arms.
+The Bash tool can still start a nested `claude -p` with the default tool set;
+its spend is not in the outer `total_cost_usd`.
 
 Provider credentials come from the environment, for example
 `AWS_BEARER_TOKEN_BEDROCK`, `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`.
@@ -193,13 +199,16 @@ point at it (they pass through).
 Every run records how the CLI ended it in `metrics.terminal_reason`. A run
 the CLI ended with an error before any attempt (no output tokens, or at most
 one turn: missing or rejected credentials, a flagged first request, an
-unknown model id) also carries `metrics.solver_error`. The runner counts that
-cell as errored, like `metrics.error`: it is out of `pass_rate` and out of the
+unknown model id), or a skill arm whose plugin did not load ("treatment not
+offered"), also carries `metrics.solver_error`. The runner counts that cell
+as errored, like `metrics.error`: it is out of `pass_rate` and out of the
 McNemar pairing (`n_excluded`), so do not drop cells by hand. An error after
 an attempt (a 529 at turn 40, `prompt_too_long` in a skill arm that read too
 much) is the arm's own outcome and is scored. So is a host-launch CLI that dies with no
 result object (`terminal_reason: no_result`) after it edited the work tree; with
-the tree untouched, or in the container launch, it is a `solver_error`. Without `--model`,
+the tree untouched, or in the container launch, it is a `solver_error`. A timed-out solve is a model miss and
+is not marked `solver_error` (it carries `metrics.solver_timeout`); it stays in,
+or the arm that times out more would look better than it is. Without `--model`,
 `metrics.model` is the `modelUsage` entry that cost the most.
 
 `docker-probe*` and `docker-oracle` rows are never compared against
@@ -343,6 +352,76 @@ python cli.py tasks run \
   so `summary.comparisons` reports the skill arm's `pass_rate_delta` and
   `cost_delta_usd`.
 
+### How the skill arm offers the skill
+
+The arms differ by the skill and one notice, and by nothing else:
+
+- **Delivery.** The skill directory is wrapped in a one-skill plugin and passed
+  with `--plugin-dir`, at `/opt/abskill` in the container (outside `/app`, and
+  removed before the verifier runs) or beside the scratch work tree on the
+  host. The agent loads it with its own `Skill` tool. The skill's top-level
+  `evals/` (its prompts and expected outputs) is not copied. Symlinks are
+  copied as the files they point to, and only when they point inside the
+  skill directory and outside its `evals/`: a link out of the skill could
+  ship a task's `solution/` and `tests/`, and a link to an ancestor would copy
+  the checkout into itself. Such a skill fails the cell before the image build.
+  - `$CLAUDE_CONFIG_DIR/skills` does not work here: it is not loaded under
+    `--setting-sources ""` (measured, Claude Code 2.1.286).
+  - `--setting-sources project` would also read the task tree's own
+    `.claude/settings.json` and `CLAUDE.md`.
+- **Tool set.** Both arms have the `Skill` tool. With it on, Claude Code also
+  offers 13 bundled skills, two built-in plugins' skills, and any managed
+  (policy) skill under `/etc/claude-code`. Both arms switch those off. In the
+  container only the core `doctor` command remains; the host route also lists
+  `design`, which the model cannot invoke. Any other offered skill is recorded
+  in `metrics.unexpected_skills`, so a later CLI that adds one to both arms
+  shows up in the rows.
+- **Frontmatter.** The skill's frontmatter is part of the treatment. A skill
+  with `model:` or `context: fork` is refused (a forked subagent can switch
+  models mid-cell), and so is one with `disable-model-invocation: true` (the
+  agent could never load it) or `hooks:` (code or another model runs in the
+  skill arm only, and none of it shows in `tool_calls`).
+- **Notice.** The skill arm's prompt opens with a fixed notice: a skill named
+  `<plugin>:<plugin>` (the id the CLI lists it under) is installed; load it before you start, and trust the environment
+  where it disagrees. The notice names no task, API or fix, and follows
+  intel/skills' `evaluation/harbor/instructions/use-<skill>.md`. Without it the
+  arm would also measure whether the description gets the skill selected,
+  which is a second variable in the reward delta. Measure discoverability
+  separately. Changing the notice changes what past deltas mean.
+- **Evidence it reached the agent.** Read from the stream, per cell:
+  - `metrics.offered_plugins` and `metrics.offered_skills` are what the
+    session's `init` event lists, with `metrics.plugin_errors` when it reports
+    any. If the treatment's plugin is not in `offered_plugins`, it did not
+    load, and the cell gets `metrics.solver_error: "treatment not offered:
+    ..."`. (`offered_skills` lists what a user can invoke, so a
+    `user-invocable: false` skill is missing from it even when it loaded.)
+  - `metrics.n_skill_invocations`, on skill-arm rows only, counts `Skill`
+    calls for the treatment that the CLI did not reject: by `<plugin>:<plugin>`
+    or the frontmatter name (a leading `/` is stripped), or by the command the
+    CLI resolved the call to. At 0 the agent never loaded the skill through
+    the `Skill` tool; it may still have `Read` the `SKILL.md` under the plugin
+    directory, which this does not count. BenchFlow rows use the same key but
+    count every successful skill load, distractors included, so the two are
+    not the same rate.
+  - `metrics.treatment` records the skill's name and the plugin id it was
+    installed under. The plugin id is a slug of the name (`[a-z0-9_-]`),
+    because Claude Code refuses a plugin name with whitespace or any of
+    `@ : / \`.
+  - A solve that timed out keeps the stream it produced before it was killed,
+    so these fields are filled in for it too. It is marked
+    `metrics.solver_timeout`, and counts as a miss unless the plugin also did
+    not load (`solver_error`).
+- **Comparability.** The baseline changed with this delivery: it now has the
+  `Skill` tool, with the bundled, built-in-plugin and policy skills off.
+  `docker-claude` numbers from before it are not a baseline for runs after it.
+- **Inputs.** `docker-claude-skill:<path>` takes a skill directory or its
+  `SKILL.md`. A path with no loadable `SKILL.md`, a refused link or refused
+  frontmatter fails the cell before the image build, rather than announcing a
+  skill that is not there.
+- **Tokens.** `prompt_tokens` and the other token counts are summed over the
+  result's `modelUsage`, which also covers helper models; the result's own
+  `usage` covers the parent session only. `metrics.models_used` lists them.
+
 ### Report and raw data
 
 `tasks run` writes a Markdown report next to `--out-json` (override with
@@ -372,8 +451,8 @@ python cli.py dataset export --kind task_runs \
 What the harnesses handle for you:
 pass the host proxy through to `docker build` (corporate networks), run the
 oracle and the verifier as root for images that set a non-root `USER` (the
-agent runs as uid 10001), expose the whole skill tree to the agent (not just
-`SKILL.md`), and re-run the `g++`/`gcc` command from `instruction.md` inside
+agent runs as uid 10001), install the skill tree as a plugin (not just
+`SKILL.md`; without its top-level `evals/`), and re-run the `g++`/`gcc` command from `instruction.md` inside
 the container after the solve — a `-host` agent builds against the host's
 newer glibc, and an in-container agent may not have built at all.
 
@@ -401,8 +480,11 @@ python cli.py tasks run --tasks <task-name> \
   `UsageRecord` fields — `cost_usd`, `prompt_tokens`, `completion_tokens`,
   `total_tokens`, `cache_read_tokens`, `cache_write_tokens`, `latency_sec`,
   `ttft_sec`, `n_calls` (agent turns) — plus `operation_count` /
-  `operations_by_type`, `model`, `terminal_reason`, `solver_error` and
-  `recompile_failed` when set. The `docker-claude*` and `docker-probe*` rows
+  `operations_by_type`, `model`, `models_used`, `terminal_reason`,
+  `tool_calls` and `offered_skills`, and when set `offered_plugins`,
+  `plugin_errors`, `unexpected_skills`, `solver_error`, `solver_timeout` and
+  `recompile_failed`. Skill-arm rows add `treatment` and
+  `n_skill_invocations`. The `docker-claude*` and `docker-probe*` rows
   also carry `isolation` (`agent_location`, `work_tree`, `operator_config`,
   `env`, `tools`, `host_filesystem`, `network`, and `memory` for the
   container launch); container rows carry `egress`, probe rows
@@ -417,9 +499,12 @@ python cli.py tasks run --tasks <task-name> \
 
 The artifact is schema-validated on write, like question/answer/eval/arms
 artifacts. Per-run detail is written under each cell's output directory: the
-agent's `claude --output-format json` result (`solver.json`), `prompt.txt`,
-`run.log`, `reward.txt`, the agent's final tree (`work/`), `egress.jsonl` for
-a container launch and `isolation_probe.json` for a probe.
+agent's result event (`solver.json`) and full stream (`solver.jsonl`; the
+values of the agent's credential variables are redacted, also line by line and
+in their JSON-escaped form, but anything else the agent printed, such as a credential file's contents, is not, so do not share
+it),
+`prompt.txt`, `run.log`, `reward.txt`, the agent's final tree (`work/`),
+`egress.jsonl` for a container launch and `isolation_probe.json` for a probe.
 
 ## Statistics on the execution-verified track
 

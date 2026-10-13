@@ -14,11 +14,12 @@ Three solver modes:
     Apply the task's own ``solution/solve.sh`` (no LLM). Validates that the task
     image + verifier work end to end. Free; no telemetry.
 ``claude``
-    Run ``claude -p --output-format json`` to solve from ``instruction.md``.
-    The JSON result carries ``total_cost_usd`` / ``usage`` / ``duration_ms`` /
-    ``ttft_ms`` / ``num_turns``, which we parse into a :class:`UsageRecord` and
-    fold into ``HarnessResult.metrics``. An optional skill directory is copied
-    next to the work tree (the with-skill treatment arm).
+    Run ``claude -p --output-format stream-json`` to solve from ``instruction.md``.
+    The final result event carries ``total_cost_usd`` / ``usage`` / ``duration_ms``
+    / ``ttft_ms`` / ``num_turns``, which we parse into a :class:`UsageRecord` and
+    fold into ``HarnessResult.metrics``, with tool calls counted by name. An
+    optional skill is installed as a plugin (the with-skill treatment arm, see
+    :mod:`.skill_treatment`).
 ``probe``
     No LLM: run the isolation probe from :mod:`.agent_sandbox` in exactly the
     cwd and env ``claude`` would get, and score 1.0 only when nothing the agent
@@ -43,7 +44,6 @@ import re
 import shlex
 import shutil
 import subprocess
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -54,16 +54,19 @@ from agent_benchmarks.metrics.usage import UsageRecord
 from .agent_sandbox import (
     LEAK_CLASSES,
     AgentWorkspace,
+    credential_values,
     default_forbidden,
     operator_source_env,
     probe_reward,
     run_probe,
     solver_cli_flags,
 )
-from .claude_json import _last_json_object, _parse_claude_json, record_solver  # noqa: F401
+from .claude_json import _last_json_object, _parse_claude_json  # noqa: F401
 from .command import _parse_reward_text
 from .container_agent import AGENT_BIN, FILES_DIR, ContainerSandbox
 from .models import HarnessResult, OperationRecord
+from .skill_treatment import Treatment, build_plugin, check_skill, treatment_notice
+from .solver_stream import record_solver, run_solver
 from .tasks import (  # noqa: F401  (timeouts re-exported)
     _DEFAULT_BUILD_TIMEOUT,
     _DEFAULT_VERIFY_TIMEOUT,
@@ -78,6 +81,7 @@ from .tasks import (  # noqa: F401  (timeouts re-exported)
 _RECOMPILE_RE = re.compile(r"(g\+\+|gcc) [^`\n]*-o /app/[^ `\n]*")
 _PROXY_VARS = ("http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
 _DEFAULT_SOLVE_TIMEOUT = 600.0
+_CONTAINER_PLUGIN = "/opt/abskill"
 
 
 @dataclass(frozen=True)
@@ -85,9 +89,10 @@ class DockerSolverHarness:
     """Build → solve → verify a task with local Docker; emit reward + telemetry.
 
     ``mode`` is ``oracle``, ``claude`` or ``probe``. ``skill_path`` points at a
-    skill directory or its ``SKILL.md``; in claude mode the whole skill tree is
-    exposed to the agent as the with-skill treatment arm, in probe mode it is a
-    path the probe must not reach.
+    skill directory or its ``SKILL.md``; in claude mode the skill tree, less its
+    top-level ``evals/``, is installed as a plugin for the with-skill treatment
+    arm (see :mod:`.skill_treatment`), in probe mode it is a path the probe must
+    not reach.
     ``agent_location`` is ``container`` (the agent runs in the task container,
     see :mod:`.container_agent`) or ``host`` (see :mod:`.agent_sandbox`).
     """
@@ -138,6 +143,9 @@ class DockerSolverHarness:
 
         if output_dir is None:
             raise ValueError("DockerSolverHarness requires an output_dir")
+        skill_dir = self._resolve_skill_dir()
+        if self.mode == "claude" and skill_dir is not None:
+            check_skill(skill_dir)  # a bad skill fails here, not after the image and network
 
         log_path = output_dir / "run.log"
         log = log_path.open("w", encoding="utf-8")
@@ -304,7 +312,7 @@ class DockerSolverHarness:
     ) -> Optional[UsageRecord]:
         """Solve with ``claude -p`` in the task container (*sandbox*) or on the host.
 
-        Returns a :class:`UsageRecord` parsed from ``claude --output-format json``
+        Returns a :class:`UsageRecord` parsed from the ``claude`` result event
         (cost/tokens/cache/latency/turns), or ``None`` if the JSON was missing.
         """
         # A rerun must not find its own previous tree or verdict during the solve.
@@ -313,25 +321,26 @@ class DockerSolverHarness:
         if sandbox is not None:
             return self._solve_claude_in_container(task, container, output_dir, model, timeout,
                                                    operations, log, extra_metrics, sandbox)
-        workspace, skill_note = self._prepare_workspace(task, container, log, output_dir)
+        workspace, treatment = self._prepare_workspace(task, container, log, extra_metrics,
+                                                       output_dir=output_dir)
         extra_metrics["isolation"] = workspace.isolation()
         try:
             work = workspace.work
-            cmd = ["claude", *self._claude_args(task, skill_note, model, output_dir)]
+            plugin = str(workspace.root / "plugin") if treatment else None
+            cmd = ["claude", *self._claude_args(task, treatment, plugin, model, output_dir)]
             before = workspace.state()
             t0 = time.time()
-            proc = subprocess.run(
-                cmd, cwd=str(work), text=True, capture_output=True,
-                timeout=timeout, check=False, env=workspace.env(operator_source_env(), self.env),
-            )
+            env = workspace.env(operator_source_env(), self.env)
+            secrets = credential_values(env)
+            proc = run_solver(cmd, output_dir, extra_metrics, treatment, secrets, cwd=str(work),
+                              timeout=timeout, env=env)
             usage = record_solver(proc, task.name, model, time.time() - t0, output_dir,
-                                  operations, log, extra_metrics,
+                                  operations, log, extra_metrics, treatment, secrets,
                                   edited=workspace.state() != before)
-            _rmtree(work / ".skill")  # don't ship the skill files into /app for the verifier
             _docker(["cp", f"{str(work)}/.", f"{container}:/app/"], log)
         finally:
-            # Keep the agent's tree with the run (also after a timeout), without the skill.
-            _rmtree(workspace.work / ".skill")
+            # Keep the agent's tree with the run (also after a timeout); the plugin is
+            # beside it, not in it.
             _rmtree(output_dir / "work")
             try:
                 shutil.copytree(workspace.work, output_dir / "work", symlinks=True)
@@ -350,44 +359,37 @@ class DockerSolverHarness:
     ) -> Optional[UsageRecord]:
         """The agent edits ``/app`` in place; the grader files are not in the container yet."""
         extra_metrics["isolation"] = sandbox.isolation()
-        skill_note = ""
-        skill_dir = self._resolve_skill_dir()
-        if skill_dir is not None:
-            # docker cp ships symlinks as links (dangling in the container); copy
-            # with links followed first, as the host arm's copytree does.
-            staged = Path(tempfile.mkdtemp(prefix="abskill-"))
-            try:
-                _copytree(skill_dir, staged / "skill")
-                _docker(["cp", str(staged / "skill"), f"{container}:/app/.skill"], log)
-            finally:
-                shutil.rmtree(staged, ignore_errors=True)
-            skill_note = self._skill_note(skill_dir)
+        treatment = self._install_plugin_in_container(container, output_dir, log, extra_metrics)
         sandbox.prepare(container, _docker, log)
         env = sandbox.env(operator_source_env(), self.env)
+        secrets = credential_values(env)
         argv, client_env = sandbox.exec_argv(container, env, [AGENT_BIN, *self._claude_args(
-            task, skill_note, model, output_dir)])
+            task, treatment, _CONTAINER_PLUGIN if treatment else None, model, output_dir)])
         t0 = time.time()
         try:
-            proc = subprocess.run(argv, text=True, capture_output=True, timeout=timeout,
-                                  check=False, env=client_env)
+            proc = run_solver(argv, output_dir, extra_metrics, treatment, secrets, timeout=timeout,
+                              env=client_env)
         finally:  # also on a timeout: stop the agent, keep its tree for debugging
             sandbox.reap(container, _docker, log)  # nothing the agent backgrounded sees /tests
-            _docker(["exec", "-u", "root", container, "rm", "-rf", "/app/.skill"], log, check=False)
+            # Not on the verifier's side of the run.
+            _docker(["exec", "-u", "root", container, "rm", "-rf", _CONTAINER_PLUGIN], log, check=False)
             _rmtree(output_dir / "work")
             (output_dir / "work").mkdir(parents=True)
             _docker(["cp", f"{container}:/app/.", str(output_dir / "work")], log, check=False)
             # The verifier runs the agent's /app code as root, on bridge for a public task.
             _docker(["exec", "-u", "root", container, "rm", "-rf", FILES_DIR], log, check=False)
         usage = record_solver(proc, task.name, model, time.time() - t0, output_dir,
-                                    operations, log, extra_metrics)
+                              operations, log, extra_metrics, treatment, secrets)
         failed = self._recompile(task, container, log)
         if failed:
             extra_metrics["recompile_failed"] = failed
         return usage
 
     def _prepare_workspace(self, task: TaskSpec, container: str, log,
-                           output_dir: Optional[Path] = None) -> tuple[AgentWorkspace, str]:
-        """Snapshot ``/app`` into a fresh scratch work tree; expose the skill if this arm has one.
+                           extra_metrics: Optional[dict[str, Any]] = None,
+                           output_dir: Optional[Path] = None,
+                           ) -> tuple[AgentWorkspace, Optional[Treatment]]:
+        """Snapshot ``/app`` into a scratch work tree; install the arm's skill beside it.
 
         In probe mode the skill is not offered: it joins the paths the probe must not reach.
         """
@@ -398,34 +400,52 @@ class DockerSolverHarness:
         workspace = AgentWorkspace.create(forbidden=forbidden)
         try:
             _docker(["cp", f"{container}:/app/.", str(workspace.work)], log)
-            skill_note = ""
+            treatment = None
             if skill_dir is not None and not probing:
-                _copytree(skill_dir, workspace.work / ".skill")
-                skill_note = self._skill_note(skill_dir)
+                treatment = build_plugin(skill_dir, workspace.root / "plugin")
+                if extra_metrics is not None:
+                    extra_metrics["treatment"] = treatment.as_metrics()
         except BaseException:  # also Ctrl-C: don't leave the abrun-* snapshot behind
             workspace.cleanup()
             raise
-        return workspace, skill_note
+        return workspace, treatment
 
-    def _skill_note(self, skill_dir: Path) -> str:
-        entry = self._skill_entry(skill_dir)
-        return (
-            f"A performance skill is available at ./.skill/ "
-            f"(start with ./.skill/{entry}). Read the files it references "
-            "before fixing.\n\n"
-        )
+    def _install_plugin_in_container(self, container: str, output_dir: Path, log,
+                                     extra_metrics: dict[str, Any]) -> Optional[Treatment]:
+        """Copy the arm's skill, as a plugin, to ``/opt/abskill`` (outside ``/app``)."""
+        skill_dir = self._resolve_skill_dir()
+        if skill_dir is None:
+            return None
+        staged = output_dir / "plugin"
+        _rmtree(staged)
+        try:
+            treatment = build_plugin(skill_dir, staged)
+            extra_metrics["treatment"] = treatment.as_metrics()
+            # Create the target first and copy its contents: `docker cp dir path` nests
+            # dir inside an existing path, and fails where /opt does not exist.
+            _docker(["exec", "-u", "root", container, "mkdir", "-p", _CONTAINER_PLUGIN], log)
+            _docker(["cp", f"{staged}/.", f"{container}:{_CONTAINER_PLUGIN}"], log)
+            # Root-owned, read-only to the agent. u=rwX,go=rX also clears setuid/setgid and
+            # group/other write that copy2 and docker cp carry over (a+rX only adds bits).
+            _docker(["exec", "-u", "root", container, "chmod", "-R", "u=rwX,go=rX",
+                     _CONTAINER_PLUGIN], log)
+        finally:  # also when a docker step fails: the copy is not kept with the run
+            _rmtree(staged)
+        return treatment
 
-    def _claude_args(self, task: TaskSpec, skill_note: str, model: Optional[str],
+    def _claude_args(self, task: TaskSpec, treatment: Optional[Treatment],
+                     plugin_dir: Optional[str], model: Optional[str],
                      output_dir: Path) -> list[str]:
         """``claude`` argv after the executable; the prompt is also saved as ``prompt.txt``."""
         prompt = (
-            f"{skill_note}"
+            f"{treatment_notice(treatment)}"
             "Solve this coding task. Edit files in the current directory only. "
             "When done, leave the optimized source and any required outputs in place.\n\n"
             f"{task.instruction}"
         )
         (output_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
-        args = ["-p", prompt, "--output-format", "json", *solver_cli_flags()]
+        args = ["-p", prompt, "--output-format", "stream-json", "--verbose", *solver_cli_flags()]
+        args += ["--plugin-dir", plugin_dir] if plugin_dir else []
         return args + (["--model", model] if model else [])
 
     def _solve_probe(self, task: TaskSpec, container: str, output_dir: Path, log,
@@ -444,7 +464,7 @@ class DockerSolverHarness:
                 result = untested
             isolation = sandbox.isolation()
         else:
-            workspace, _ = self._prepare_workspace(task, container, log, output_dir)
+            workspace, _ = self._prepare_workspace(task, container, log, output_dir=output_dir)
             try:
                 result = run_probe(workspace, operator_source_env(), self.env)
             except subprocess.TimeoutExpired as exc:
@@ -510,12 +530,9 @@ class DockerSolverHarness:
         # Relative to the operator's cwd, not the agent's. absolute(), not resolve():
         # a symlinked SKILL.md must not swap in the link target's directory.
         p = Path(self.skill_path).absolute()
+        if p.is_file() and p.name != "SKILL.md":  # Claude Code loads SKILL.md only
+            raise ValueError(f"skill path must be a skill directory or its SKILL.md: {p}")
         return p.parent if p.is_file() else p
-
-    def _skill_entry(self, skill_dir: Path) -> str:
-        if self.skill_path and Path(self.skill_path).is_file():
-            return Path(self.skill_path).name
-        return "SKILL.md"
 
     def _describe_command(self, task: TaskSpec, model: Optional[str]) -> list[str]:
         parts = ["docker-solver", self.mode, task.name]
@@ -540,10 +557,6 @@ def _docker(args: list[str], log, *, check: bool = True,
     if check and proc.returncode != 0:
         raise RuntimeError(f"docker {args[0]} failed (exit {proc.returncode}); see run.log")
     return proc
-
-
-def _copytree(src: Path, dest: Path) -> None:
-    shutil.copytree(src, dest)
 
 
 def _rmtree(path: Path) -> None:
