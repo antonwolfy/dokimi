@@ -79,7 +79,7 @@ def _launch_mismatches(harnesses: list[str], baseline: str | None) -> list[str]:
 
 
 def cmd_tasks_run(args: argparse.Namespace) -> None:
-    from agent_benchmarks.harnesses import TaskSuiteRunner, discover_tasks, load_task
+    from agent_benchmarks.harnesses import PreflightError, TaskSuiteRunner, discover_tasks, load_task
 
     root = _tasks_root(args)
     try:
@@ -117,7 +117,11 @@ def cmd_tasks_run(args: argparse.Namespace) -> None:
         runner.validate_harnesses()
     except ValueError as exc:
         raise SystemExit(str(exc)) from None
-    output = runner.run()
+    try:
+        output = runner.run()
+    except PreflightError as exc:
+        # A missing tool (bench, Compose v2): one line, not a traceback.
+        raise SystemExit(f"error: {exc}") from None
 
     out_json = Path(args.out_json) if args.out_json else Path(args.output_dir) / "task_runs.json"
     from agent_benchmarks.artifacts import save_artifact

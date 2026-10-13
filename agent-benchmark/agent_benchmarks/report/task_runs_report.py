@@ -30,6 +30,10 @@ from agent_benchmarks.eval.binary_stats import PASS_RATE_CI_CONFIDENCE
 from agent_benchmarks.harnesses.runner import is_errored
 
 
+def _or_dash(value: object) -> object:
+    return "—" if value is None else value
+
+
 def _md_cell(text: str) -> str:
     """Make text safe for a single Markdown table cell."""
     return (text or "").replace("\n", " ").replace("|", r"\|")
@@ -185,8 +189,8 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
         lines.append(
             f"| `{h}` | {rate_s} | {s.get('errored', 0)} | {ci_s} | {_fmt_cost(c.get('total_cost_usd'))} | "
             f"{_fmt_cost(c.get('cost_per_pass_usd'))} | "
-            f"{s.get('elapsed_sec', 0)/60:.1f} | {c.get('completion_tokens', '—')} | "
-            f"{c.get('cache_read_tokens', '—')} | "
+            f"{s.get('elapsed_sec', 0)/60:.1f} | {_or_dash(c.get('completion_tokens'))} | "
+            f"{_or_dash(c.get('cache_read_tokens'))} | "
             f"{c.get('cost_known_n', '—')}/{s.get('n', 0)} | {sir_s} |"
         )
     lines.append("")

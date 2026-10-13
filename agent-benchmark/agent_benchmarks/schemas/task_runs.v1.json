@@ -175,7 +175,7 @@
                   "null"
                 ],
                 "minimum": 0,
-                "description": "Invocations of the treatment skill in this row's trajectory (not every skill loaded, nor distractor skills). Written only by harnesses that can see skill use (null when they could not count); feeds summary skill_invocation_rate."
+                "description": "Invocations of the arm's treatment skill in this row's trajectory (not every skill loaded). Where a harness deploys a root of packs (benchflow-*), every pack in that root is treatment, a distractor placed there included. Written only by harnesses that can see skill use (null when they could not count); feeds summary skill_invocation_rate."
               },
               "exploration_metrics": {
                 "type": "object",

@@ -47,6 +47,16 @@ class TaskSuiteRunner:
         generated_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
         rows: list[dict[str, Any]] = []
         repeats = max(1, self.repeats)
+        if not self.dry_run:
+            # A missing tool (bench, Compose v2) fails every cell the same way;
+            # say so once instead of recording N identical errored cells.
+            checked: set[type] = set()
+            for harness_id in self.harnesses:
+                harness = create_harness(harness_id, command_template=self.command_template)
+                preflight = getattr(type(harness), "preflight", None)
+                if callable(preflight) and type(harness) not in checked:
+                    checked.add(type(harness))
+                    preflight()
         for task in self.tasks:
             for harness_id in self.harnesses:
                 for rep in range(1, repeats + 1):
@@ -114,6 +124,7 @@ def summarize_task_results(
                 "_cost_sum": 0.0,
                 "_cost_known": 0,
                 "_tokens": {k: 0 for k in _COST_KEYS if k != "cost_usd"},
+                "_tokens_known": {k: 0 for k in _COST_KEYS if k != "cost_usd"},
                 "_by_task": {},   # task -> {"n", "passed", "errored"}
                 "_skill_reported": 0,
                 "_skill_invoked": 0,
@@ -143,6 +154,7 @@ def summarize_task_results(
             val = metrics.get(key)
             if isinstance(val, (int, float)):
                 stats["_tokens"][key] += int(val)
+                stats["_tokens_known"][key] += 1
         # Skill use, for harnesses that write metrics.n_skill_invocations;
         # rows that do not are left out of the rate, as are errored rows.
         invocations = _count(metrics.get("n_skill_invocations"))
@@ -180,7 +192,10 @@ def summarize_task_results(
         # Finalize telemetry: only surface cost when at least one call was priced.
         cost_known = stats.pop("_cost_known")
         cost_sum = stats.pop("_cost_sum")
-        tokens = stats.pop("_tokens")
+        # A token sum over no row that reported it is unknown, not 0 (an arm of
+        # rows without usage, such as a provider that never answered).
+        known = stats.pop("_tokens_known")
+        tokens = {k: (v if known[k] else None) for k, v in stats.pop("_tokens").items()}
         stats["cost"] = {
             "total_cost_usd": round(cost_sum, 6) if cost_known else None,
             "cost_known_n": cost_known,
@@ -299,9 +314,16 @@ def is_errored(row: dict[str, Any]) -> bool:
     return bool(metrics.get("error") or metrics.get("solver_error"))
 
 
+_BENCHFLOW_PREFIXES = ("benchflow", "benchflow-skill", "benchflow-selfgen")
+
+
 def _is_control_harness(harness: str) -> bool:
-    """``docker-oracle`` and the ``docker-probe*`` family: checks of the setup, not arms."""
-    return harness == "docker-oracle" or harness.split(":", 1)[0].startswith("docker-probe")
+    """``docker-oracle``, the ``docker-probe*`` family and BenchFlow's ``oracle``
+    agent (``benchflow[-skill|-selfgen]:oracle[:...]``): checks of the setup, not arms."""
+    if harness == "docker-oracle" or harness.split(":", 1)[0].startswith("docker-probe"):
+        return True
+    prefix, _, rest = harness.partition(":")
+    return prefix in _BENCHFLOW_PREFIXES and rest.split(":", 1)[0] == "oracle"
 
 
 def _count(value: Any) -> int | None:

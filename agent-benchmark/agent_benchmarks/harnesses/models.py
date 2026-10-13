@@ -9,6 +9,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+class PreflightError(RuntimeError):
+    """A harness cannot run at all on this host (a tool is missing).
+
+    Raised once, before the first cell, so a sweep stops with one message
+    instead of recording the same errored cell for every task.
+    """
+
+
 @dataclass(frozen=True)
 class OperationRecord:
     """One observed harness operation.

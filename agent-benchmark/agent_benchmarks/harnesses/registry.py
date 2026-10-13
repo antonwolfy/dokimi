@@ -7,6 +7,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .benchflow import (
+    SKILL_MODE_NO_SKILL,
+    SKILL_MODE_SELF_GEN,
+    SKILL_MODE_WITH_SKILL,
+    BenchflowHarness,
+)
 from .command import CommandHarness
 from .docker_solver import DockerSolverHarness
 
@@ -21,6 +27,13 @@ def known_harnesses() -> dict[str, str]:
         "docker-oracle": "Local Docker: apply the task's own solve.sh (no LLM)",
         "docker-claude": "Local Docker: `claude -p` inside the task container, egress to the LLM only",
         "docker-claude-skill:<skill>": "docker-claude with a skill dir exposed (with-skill arm)",
+        "benchflow:<agent>": "BenchFlow `bench eval run` (SkillsBench runner), no-skill arm",
+        "benchflow-skill:<agent>[:<skills_dir>]": (
+            "BenchFlow with-skill arm: the task's environment/skills, or a skills dir"
+        ),
+        "benchflow-selfgen:<agent>[:<skill_creator_dir>]": (
+            "BenchFlow self-generated-skill arm, optionally with a named skill-creator"
+        ),
         "docker-probe": "Local Docker: no LLM; report what a docker-claude agent could reach",
         "docker-claude-host": "docker-claude with the agent on the host (absolute paths, network open)",
         "docker-claude-host-skill:<skill>": "docker-claude-host with a skill dir exposed",
@@ -68,6 +81,8 @@ def create_harness(harness: str, *, command_template: str | None = None):
         if not agent:
             raise ValueError("terminal-bench harness requires an agent id, e.g. terminal-bench:codex")
         return _harbor(harness, agent)
+    if harness.startswith(("benchflow:", "benchflow-skill:", "benchflow-selfgen:")):
+        return _benchflow(harness)
     if harness.startswith("command:"):
         template = harness.split(":", 1)[1]
         if not template:
@@ -100,4 +115,38 @@ def _harbor(harness_id: str, agent: str) -> CommandHarness:
             "harbor run -p {task_path} -a " + agent + " -m {model} "
             "--jobs-dir {output_dir}"
         ),
+    )
+
+
+# BenchFlow's "<ns>:<id>" agent shorthand (acp:pi, ai-sdk:codex, omnigent:pi);
+# such an agent id spans two ':'-separated segments. (acpx is written
+# acpx/<id> in 0.7.8, so it needs no special case.)
+_BENCHFLOW_AGENT_NAMESPACES = ("acp", "ai-sdk", "omnigent")
+
+
+def _benchflow(harness_id: str) -> BenchflowHarness:
+    prefix, rest = harness_id.split(":", 1)
+    agent, _, skills_dir = rest.partition(":")
+    if agent in _BENCHFLOW_AGENT_NAMESPACES and skills_dir:
+        ident, _, skills_dir = skills_dir.partition(":")
+        agent = f"{agent}:{ident}"
+    if not agent:
+        raise ValueError(f"{prefix} harness requires a BenchFlow agent id, e.g. {prefix}:claude-agent-acp")
+    mode = {
+        "benchflow": SKILL_MODE_NO_SKILL,
+        "benchflow-skill": SKILL_MODE_WITH_SKILL,
+        "benchflow-selfgen": SKILL_MODE_SELF_GEN,
+    }[prefix]
+    if skills_dir and mode == SKILL_MODE_NO_SKILL:
+        raise ValueError(f"{prefix} takes no skills dir; use benchflow-skill:{agent}:<skills_dir>")
+    if mode == SKILL_MODE_SELF_GEN:
+        # The optional third segment names the skill-creator BenchFlow uses;
+        # without it BenchFlow searches the host (~/.claude/skills, ...), so
+        # the arm would depend on whatever that host has installed.
+        return BenchflowHarness(
+            harness_id=harness_id, agent=agent, skill_mode=mode,
+            skill_creator_dir=skills_dir or None,
+        )
+    return BenchflowHarness(
+        harness_id=harness_id, agent=agent, skill_mode=mode, skills_dir=skills_dir or None,
     )

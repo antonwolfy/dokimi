@@ -368,7 +368,7 @@ def _run_subject_work(descriptor, args: argparse.Namespace, *, out_dir: Path, ta
         harnesses.insert(0, args.work_baseline_harness)
 
     from agent_benchmarks.artifacts import save_artifact
-    from agent_benchmarks.harnesses import TaskSuiteRunner
+    from agent_benchmarks.harnesses import PreflightError, TaskSuiteRunner
     from agent_benchmarks.report.task_runs_report import render_task_runs_report
 
     work_dir = Path(args.work_output_dir) if args.work_output_dir else out_dir / "work"
@@ -387,7 +387,10 @@ def _run_subject_work(descriptor, args: argparse.Namespace, *, out_dir: Path, ta
         runner.validate_harnesses()
     except ValueError as exc:
         raise SystemExit(str(exc)) from None
-    artifact = runner.run()
+    try:
+        artifact = runner.run()
+    except PreflightError as exc:
+        raise SystemExit(f"error: {exc}") from None
     save_artifact("task_runs", artifact, task_runs_path)
     task_runs_md = task_runs_path.with_suffix(".md")
     task_runs_md.parent.mkdir(parents=True, exist_ok=True)

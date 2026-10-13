@@ -8,9 +8,9 @@ pass rate against a baseline harness.
 ## Task Layouts
 
 Two layouts are read, and a root may mix them. `task.md` is read by
-`tasks list`, `coverage` and `catalog scan`. No built-in harness runs a
-`task.md` task yet (`benchflow:*` will, once #75 lands); a `command:` harness
-runs whatever it is given. What each harness refuses follows the files it
+`tasks list`, `coverage` and `catalog scan`. Of the built-in harnesses, the
+`benchflow*:<agent>` ones run a `task.md` task (BenchFlow reads it natively);
+a `command:` harness runs whatever it is given. What each harness refuses follows the files it
 reads: the `docker-*` harnesses record an errored cell, instead of a verdict,
 for a task whose scripts are in `oracle/` or `verifier/` (they copy to
 `/solution` and `/tests`), and the Harbor-backed ones (`codex`, `claude-code`,
@@ -255,9 +255,43 @@ is not marked `solver_error` (it carries `metrics.solver_timeout`); it stays in,
 or the arm that times out more would look better than it is. Without `--model`,
 `metrics.model` is the `modelUsage` entry that cost the most.
 
-`docker-probe*` and `docker-oracle` rows are never compared against
-`--baseline-harness`: they are checks of the setup, not arms, and would only
-enlarge the Holm family.
+`docker-probe*`, `docker-oracle` and BenchFlow `oracle` rows
+(`benchflow:oracle`, `benchflow-skill:oracle[:<dir>]`, `benchflow-selfgen:oracle`)
+are never compared against `--baseline-harness`: they are checks of the setup,
+not arms, and would only enlarge the Holm family.
+
+BenchFlow-backed (delegate to an installed `bench`, the SkillsBench runner;
+the agent runs *inside* the task sandbox over ACP, and skills are installed
+into the agent's native skill directory). They need `bench` (`pip install
+benchflow`; written against 0.7.8) and Docker with the **Compose v2 plugin**
+(`docker compose version` must work; Ubuntu's `docker.io` package does not ship
+it, so install `docker-compose-plugin` or drop the binary into
+`$DOCKER_CONFIG/cli-plugins`). `tasks run` checks both once before the first
+cell and exits with one message when either is missing; `--dry-run` skips the
+check.
+
+- `benchflow:<agent>` — no-skill arm. `<agent>` is any id from
+  `bench agent list` (`claude-agent-acp`, `codex-acp`, `gemini`, `opencode`,
+  `openhands`, ...), a `<ns>:<id>` shorthand (`acp:pi`, `ai-sdk:codex`), or
+  `oracle`. BenchFlow strips the task's `environment/skills` and the
+  Dockerfile lines that copy it, so this arm sees no skill.
+- `benchflow-skill:<agent>` — with-skill arm using the task's own
+  `environment/skills`.
+- `benchflow-skill:<agent>:<path>` — with-skill arm using an external skill: a
+  skill directory, its `SKILL.md`, or a root whose children are skill
+  directories (`<root>/<name>/SKILL.md`; a root without one is refused, since
+  BenchFlow would run the arm with no skill).
+- `benchflow-selfgen:<agent>[:<dir>]` — BenchFlow's self-generated-skill arm.
+  `<dir>` names the skill-creator (the `skill-creator` dir, or a root holding
+  it); without it BenchFlow uses whichever skill-creator the host has
+  (`BENCHFLOW_SKILL_CREATOR_DIR`, `~/.claude/skills`, ...). A `<dir>` with no
+  skill-creator `SKILL.md` is refused rather than left to that fallback. The
+  named creator is copied alone to `<cell>/creator/<name>` (a symlink is read
+  through, not followed to its neighbours): BenchFlow prefers a `skill-creator`
+  pack next to the one it is given, so a stock creator beside a custom one
+  would otherwise win.
+
+How a BenchFlow cell is run and scored is in [BenchFlow Cells](#benchflow-cells).
 
 Custom:
 
@@ -290,6 +324,156 @@ internet the task forbade. A `harbor run` invocation exiting 0 is therefore
 a Harbor-backed harness result. The `docker-*` harnesses don't have this gap:
 `tasks run`'s own `task_runs.v1` artifact (`summary.per_harness.<h>.pass_rate`)
 is the reliable pass/fail signal for those.
+
+## BenchFlow Cells
+
+Skills are not bind-mounted: BenchFlow copies the `--skills-dir` root into the
+image build context, skipping symlinks, and bakes it into `/skills`, which it
+links into each agent's skill directory. An external path is therefore staged
+as a real copy under `<cell>/skills` first; a symlinked pack would otherwise be
+dropped (measured: `skill_deployment_missing`).
+
+The adapter runs, from `<cell>` as working directory:
+
+```bash
+bench eval run --tasks-dir <task> --agent <agent> --sandbox docker \
+  --skill-mode <mode> --jobs-dir <cell>/jobs --retry-attempts 0 \
+  --agent-idle-timeout 0 --quiet
+```
+
+`bench` reads `./.env` ahead of the exported environment, so it is not run from
+the directory `cli.py` was started in, where a credentials `.env` may live.
+Every path it is given is absolute, and so are the path variables it and
+`docker` read (`BENCHFLOW_SKILL_CREATOR_DIR`, `DOCKER_CONFIG`, a local-dir
+`BENCHFLOW_AGENTS_SOURCE`): a relative one is anchored at that directory. A
+project-local `./.claude/skills/skill-creator` there is not one of BenchFlow's
+candidates any more; name it in the id or in `BENCHFLOW_SKILL_CREATOR_DIR`.
+
+**One cell is one attempt.** BenchFlow's default (`max_retries=2`) reruns the
+whole rollout, agent included, after idle timeouts, ACP errors and verifier
+infrastructure errors, even when the attempt already has a reward. The adapter
+passes `--retry-attempts 0`, so `--repeats` is the only repetition, as for
+`docker-*` and Harbor cells. The row records `metrics.n_attempts`.
+
+**One agent budget.** BenchFlow's idle watchdog ends a prompt after 600 s
+without a tool call, message or thought, so a slow model call would end a
+cell long before a larger task budget. The adapter passes
+`--agent-idle-timeout 0`, which disables it: as for `docker-*`, the task's
+wall-clock budget is the agent's only limit.
+
+**When a BenchFlow cell is a verdict.** A cell is a verdict only if exactly one
+attempt ran, the agent attempted the task, and the verifier or the agent's own
+budget decided it. "Attempted" means the `oracle` agent, or at least one tool
+call, or completion tokens above 0, or an `agent_message`, `agent_thought` or
+`tool_call` event in the ACP trajectory. An `agent_message` that is one of
+Claude Code's synthetic error replies or notices ("API Error ...", "Failed to
+authenticate ...", "Credit balance is too low", ...) does not count:
+claude-agent-acp forwards those when the provider failed, with no model reply.
+Verdicts:
+
+- the verifier's reward, partial credit included (a 0.667 is kept as the
+  reward; `passed` needs `reward >= 1`);
+- an agent timeout after an attempt: 0, as for `docker-*`, whatever the
+  verifier BenchFlow still runs after the timeout then does. A reward other
+  than 0 it reads is kept as `metrics.reward_after_timeout`, not scored; a
+  verifier that fails leaves its `verifier_error`. The row keeps
+  `partial_trajectory`;
+- a verifier timeout after an attempt: 0, with `metrics.verifier_timeout`, as
+  for `docker-*`.
+
+Everything else is `metrics.error`, which is missing data and stays out of the
+McNemar pairing like a failed `docker build`:
+
+- our own outer kill (`returncode` 124, `metrics.timed_out`);
+- more than one rollout directory in the cell;
+- a failure before the agent started (image build, agent install, sandbox
+  start, a task BenchFlow rejects, BenchFlow's own hard deadline); with no
+  `result.json`, `metrics.error` quotes the line of `bench`'s stderr that names
+  the reason: the `[HARD-DEADLINE]` or `[ERR]` line once the job has started,
+  otherwise the first line after BenchFlow's progress and registry banners;
+- an ACP or provider error that leaves no reward (0.7.8 classifies a dead key,
+  which LiteLLM reports as a 500, as `acp_error`);
+- a timeout before any model response reached the agent (a provider that never
+  answers);
+- an `oracle` whose `solve.sh` overruns `agent.timeout_sec`: BenchFlow kills it
+  as an exec timeout and does not run the verifier (`docker-oracle` has no
+  limit on the oracle and would wait).
+
+A provider failure that starts after the agent's first model response and
+outlasts its budget (for example 429 backoff past the deadline) is a 0
+verdict, like any agent timeout after an attempt. BenchFlow sets
+`partial_trajectory` only when a tool call was still pending at the deadline:
+measured end to end, a model reply that hangs after a finished tool call
+leaves it `false`, a `sleep` still running sets it. BenchFlow's own `bench
+eval compare-lift` drops the rollouts that have it; this framework counts them,
+as it counts any agent timeout.
+
+**Budgets.** The agent budget is the task's `agent.timeout_sec`. For a
+non-oracle agent on a task without one, the adapter passes
+`--config-override '{"agent":{"timeout_sec":600}}'` (the `docker-*` default)
+and records `metrics.agent_timeout_defaulted_sec`; BenchFlow itself would use
+0 s and score the untouched workspace. The adapter sets BenchFlow's
+per-attempt hard deadline (`BENCHFLOW_ROLLOUT_HARD_DEADLINE`, unless it is
+already exported) to what 0.7.8 computes for a one-turn task: agent budget ×
+turns (2 for self-gen; an undeclared budget counts 900 s, since BenchFlow reads
+it from the task file and not from the override) + verifier `timeout_sec`
+(default 600) + `build_timeout_sec` (default 600) + the agent's install budget
+(900 s, 1200 s for `mimo` and `prime-agent`, none for `oracle`) + 1800 s
+margin. The outer kill is that deadline plus 600 s for job overhead, so
+BenchFlow's deadline always fires first, also for task shapes the adapter does
+not count (scenes, a `user:` loop, which then end at that deadline). A rollout
+that reaches it writes no `result.json`; the cell is an error naming the
+`[HARD-DEADLINE]`.
+
+**Metrics.** `rewards.reward` is the reward; tokens, `cost_usd`,
+`n_tool_calls`, `skill_source`, `usage_source`, `verifier_error`,
+`verifier_error_category`, `partial_trajectory` and BenchFlow's own
+`error`/`error_category` (as `benchflow_error*`) land in `metrics`. Skill use
+comes from the ACP trajectory, because BenchFlow 0.7.8 misses the
+`Load skill` calls of the claude-agent-acp it pins:
+
+| Field | Meaning |
+|---|---|
+| `skills_loaded` | every skill load in the trajectory, by name, once per `tool_call_id` |
+| `n_skill_invocations` | loads of the arm's treatment skills only: every pack in the deployed root (dir names and frontmatter names), so a distractor pack placed in that root counts; skills outside it and self-gen's `skill-creator` do not. Omitted on arms without a treatment (no-skill, self-gen) |
+| `n_skill_invocations_benchflow` | BenchFlow's own count |
+
+`prompt_tokens` is BenchFlow's `n_input_tokens`, which includes cache reads and
+writes (0.7.8 adds the writes twice), so it is not comparable with
+`docker-claude`'s uncached `prompt_tokens`; `total_tokens` and `cost_usd` are.
+When BenchFlow captured no usage (`usage_source: unavailable`) the token
+fields and `cost_usd` are omitted rather than written as 0.
+
+**Limits.**
+
+- One sweep per host. BenchFlow removes every `benchflow.owned` container on
+  the host at each job start and end, so a concurrent sweep (or any other
+  `bench` run) can remove a running cell's container. In 3 concurrent sweeps,
+  1 of 9 cells lost its container (an error cell).
+- Integrated review. BenchFlow starts it whenever a task has
+  `tests/rubric.json` and rejects a rubric in another format before any
+  rollout exists. The uxl answer-quality tasks ship their own, read by their
+  `test.sh`, so 8 of the 17 tasks at uxlfoundation/skills 6feb3f3 cannot run
+  through `benchflow:*`, even with the `artifacts` key BenchFlow also refuses
+  removed: `oneccl-datatype-count-mismatch`,
+  `oneccl-divergent-collective-sequence`, `onedal-sklearn-or-native-kmeans`,
+  `onednn-framework-blocked-layout`, `onedpl-missing-device-synchronization`,
+  `onetbb-bounded-image-flow-graph`, `sycl-cmake-compiler-cache`,
+  `sycl-loader-plugin-mismatch`.
+
+Model ids follow BenchFlow's provider prefixes, e.g.
+`aws-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0` with
+`AWS_BEARER_TOKEN_BEDROCK` and `AWS_REGION` exported. Behind an HTTP proxy,
+BenchFlow's image builds and in-sandbox agent installs need the proxy in the
+Docker client config (`proxies.default` in `$DOCKER_CONFIG/config.json`), and
+the docker bridge gateway must bypass it. The adapter adds the gateway (from
+`docker network inspect bridge`, so a custom `bip` works), `172.17.0.1` and
+`host.docker.internal` to both `no_proxy` and `NO_PROXY` for the `bench`
+process. The Docker config's `noProxy` needs the same gateway (the actual one
+on a custom `bip`, not `172.17.0.1`), or the agent's calls to BenchFlow's
+host-side LiteLLM proxy are refused with "Access Denied". If you point
+`DOCKER_CONFIG` at a scratch dir, symlink its `cli-plugins` too, or
+`docker compose` disappears.
 
 ## Run Examples
 
@@ -445,8 +629,9 @@ The arms differ by the skill and one notice, and by nothing else:
     CLI resolved the call to. At 0 the agent never loaded the skill through
     the `Skill` tool; it may still have `Read` the `SKILL.md` under the plugin
     directory, which this does not count. BenchFlow rows use the same key but
-    count every successful skill load, distractors included, so the two are
-    not the same rate.
+    treat every pack in the deployed skills root as the treatment, a
+    distractor placed there included, so the two rates match only for a root
+    that holds the treatment alone.
   - `metrics.treatment` records the skill's name and the plugin id it was
     installed under. The plugin id is a slug of the name (`[a-z0-9_-]`),
     because Claude Code refuses a plugin name with whitespace or any of
@@ -714,3 +899,14 @@ the agent solves on the internal network, and a solve that needs a host (pip,
 a package mirror) must list it under `environment.egress`. A `-host` agent
 solves with the host's network whatever the task declares
 (`metrics.isolation.network: open`).
+
+SkillsBench tasks (`task.md`) run through the `benchflow:*` harnesses:
+
+```bash
+git clone https://github.com/benchflow-ai/skillsbench /tmp/skillsbench
+python cli.py tasks run --tasks parallel-tfidf-search \
+  --tasks-root /tmp/skillsbench/tasks \
+  --harnesses benchflow:claude-agent-acp,benchflow-skill:claude-agent-acp \
+  --baseline-harness benchflow:claude-agent-acp \
+  --model aws-bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+```
