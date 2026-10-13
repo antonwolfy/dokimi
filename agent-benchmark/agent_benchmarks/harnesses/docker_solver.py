@@ -8,7 +8,7 @@ dependency**, and captures full LLM telemetry (cost, tokens, cache, latency,
 turns) into the ``task_runs.v1`` artifact so task experiments are tracked the
 same way the Q&A ``arms run`` path already is.
 
-Two solver modes:
+Three solver modes:
 
 ``oracle``
     Apply the task's own ``solution/solve.sh`` (no LLM). Validates that the task
@@ -19,10 +19,18 @@ Two solver modes:
     ``ttft_ms`` / ``num_turns``, which we parse into a :class:`UsageRecord` and
     fold into ``HarnessResult.metrics``. An optional skill directory is copied
     next to the work tree (the with-skill treatment arm).
+``probe``
+    No LLM: run the isolation probe from :mod:`.agent_sandbox` in exactly the
+    cwd and env ``claude`` would get, and score 1.0 only when nothing the agent
+    must not see (grader files, the content repo's skills, the operator's
+    ``~/.claude``, the network, host env) is reachable. Free; run it before a
+    paid sweep to know what the arms could have read.
 
 The agent runs on the HOST (the ``claude`` CLI is a host tool); we snapshot
-``/app`` out of the container, let the agent edit it, copy it back, and
-recompile inside the container so the binary matches the image's (older) glibc.
+``/app`` into a scratch tree outside any checkout (see
+:class:`~.agent_sandbox.AgentWorkspace`), let the agent edit it, copy it back,
+and recompile inside the container so the binary matches the image's (older)
+glibc. What the host cannot seal is recorded per run in ``metrics.isolation``.
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -39,6 +48,16 @@ from typing import Any, Optional
 
 from agent_benchmarks.metrics.usage import UsageRecord
 
+from .agent_sandbox import (
+    LEAK_CLASSES,
+    AgentWorkspace,
+    default_forbidden,
+    operator_source_env,
+    probe_reward,
+    run_probe,
+    solver_cli_flags,
+)
+from .claude_json import _last_json_object, _parse_claude_json, solver_error, terminal_reason  # noqa: F401
 from .command import _parse_reward_text
 from .models import HarnessResult, OperationRecord
 from .tasks import TaskSpec
@@ -56,9 +75,10 @@ _DEFAULT_VERIFY_TIMEOUT = 180.0
 class DockerSolverHarness:
     """Build → solve → verify a task with local Docker; emit reward + telemetry.
 
-    ``mode`` is ``oracle`` or ``claude``. ``skill_path`` (claude mode only)
-    points at a skill directory or its ``SKILL.md``; when set, the whole skill
-    tree is exposed to the agent as the with-skill treatment arm.
+    ``mode`` is ``oracle``, ``claude`` or ``probe``. ``skill_path`` points at a
+    skill directory or its ``SKILL.md``; in claude mode the whole skill tree is
+    exposed to the agent as the with-skill treatment arm, in probe mode it is a
+    path the probe must not reach.
     """
 
     harness_id: str
@@ -116,6 +136,7 @@ class DockerSolverHarness:
         start = time.time()
         returncode = 0
         extra_metrics: dict[str, Any] = {}
+        reward: Optional[float] = None
         try:
             try:
                 self._build_image(task, image, log)
@@ -136,15 +157,27 @@ class DockerSolverHarness:
                         task, container, output_dir, model, solve_timeout,
                         operations, log, extra_metrics,
                     )
+                elif self.mode == "probe":
+                    reward = self._solve_probe(task, container, output_dir, log, extra_metrics)
                 else:
                     raise ValueError(f"unknown mode {self.mode!r}")
-                reward = self._verify(task, container, output_dir, log)
+                if self.mode != "probe":  # the probe's reward is its own verdict
+                    reward = self._verify(task, container, output_dir, log)
             finally:
                 _docker(["rm", "-f", container], log, check=False)
         except subprocess.TimeoutExpired as exc:
             log.write(f"\nTIMEOUT: {exc}\n")
             returncode = 124
             reward = 0.0
+        except Exception as exc:
+            # Nothing recorded yet (a build failure): let the runner mark it errored.
+            # After a solve (a failed copy back), keep its cost and isolation record.
+            if not extra_metrics:
+                raise
+            log.write(f"\nERROR: {type(exc).__name__}: {exc}\n")
+            extra_metrics["error"] = f"{type(exc).__name__}: {exc}"
+            returncode = 1
+            reward = None
         finally:
             log.close()
 
@@ -153,6 +186,8 @@ class DockerSolverHarness:
         metrics: dict[str, Any] = {"dry_run": False, "mode": self.mode}
         if usage is not None:
             metrics.update(usage.as_metrics_dict())
+            if usage.model:
+                metrics["model"] = usage.model
         metrics.update(extra_metrics)
         return HarnessResult(
             harness=self.harness_id,
@@ -245,24 +280,74 @@ class DockerSolverHarness:
         Returns a :class:`UsageRecord` parsed from ``claude --output-format json``
         (cost/tokens/cache/latency/turns), or ``None`` if the JSON was missing.
         """
-        work = output_dir / "work"
-        if work.exists():
-            _rmtree(work)
-        work.mkdir(parents=True)
-        _docker(["cp", f"{container}:/app/.", str(work)], log)
+        # A rerun must not find its own previous tree or verdict during the solve.
+        _rmtree(output_dir / "work")
+        (output_dir / "reward.txt").unlink(missing_ok=True)
+        workspace, skill_note = self._prepare_workspace(task, container, log, output_dir)
+        extra_metrics["isolation"] = workspace.isolation()
+        try:
+            return self._run_claude(task, container, output_dir, model, timeout,
+                                    operations, log, extra_metrics, workspace, skill_note)
+        finally:
+            # Keep the agent's tree with the run (also after a timeout), without the skill.
+            _rmtree(workspace.work / ".skill")
+            _rmtree(output_dir / "work")
+            try:
+                shutil.copytree(workspace.work, output_dir / "work", symlinks=True)
+            except OSError as exc:  # never mask the solve's own outcome
+                log.write(f"\n[keep work tree] {exc}\n")
+            workspace.cleanup()
 
-        skill_note = ""
+    def _prepare_workspace(self, task: TaskSpec, container: str, log,
+                           output_dir: Optional[Path] = None) -> tuple[AgentWorkspace, str]:
+        """Snapshot ``/app`` into a fresh scratch work tree; expose the skill if this arm has one.
+
+        In probe mode the skill is not offered: it joins the paths the probe must not reach.
+        """
         skill_dir = self._resolve_skill_dir()
-        if skill_dir is not None:
-            dest = work / ".skill"
-            _copytree(skill_dir, dest)
-            entry = self._skill_entry(skill_dir)
-            skill_note = (
-                f"A performance skill is available at ./.skill/ "
-                f"(start with ./.skill/{entry}). Read the files it references "
-                "before fixing.\n\n"
-            )
+        probing = self.mode == "probe" and skill_dir is not None
+        forbidden = default_forbidden(task.path, [skill_dir] if probing and skill_dir else [],
+                                      output_dir=output_dir)
+        workspace = AgentWorkspace.create(forbidden=forbidden)
+        try:
+            _docker(["cp", f"{container}:/app/.", str(workspace.work)], log)
+            skill_note = ""
+            if skill_dir is not None and not probing:
+                _copytree(skill_dir, workspace.work / ".skill")
+                entry = self._skill_entry(skill_dir)
+                skill_note = (
+                    f"A performance skill is available at ./.skill/ "
+                    f"(start with ./.skill/{entry}). Read the files it references "
+                    "before fixing.\n\n"
+                )
+        except BaseException:  # also Ctrl-C: don't leave the abrun-* snapshot behind
+            workspace.cleanup()
+            raise
+        return workspace, skill_note
 
+    def _solve_probe(self, task: TaskSpec, container: str, output_dir: Path, log,
+                     extra_metrics: dict[str, Any]) -> float:
+        """Run the isolation probe where the agent would run; reward 1.0 only if sealed."""
+        workspace, _ = self._prepare_workspace(task, container, log, output_dir)
+        try:
+            result = run_probe(workspace, operator_source_env(), self.env)
+        except subprocess.TimeoutExpired as exc:  # a hung check: nothing was shown closed
+            log.write(f"\n[probe] TIMEOUT: {exc}\n")
+            result = {k: "untested" for k in LEAK_CLASSES}
+        finally:
+            workspace.cleanup()
+        log.write(f"\n[probe] {json.dumps(result)}\n")
+        (output_dir / "isolation_probe.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        extra_metrics["isolation"] = workspace.isolation()
+        extra_metrics["isolation_probe"] = result
+        return probe_reward(result)
+
+    def _run_claude(
+        self, task: TaskSpec, container: str, output_dir: Path,
+        model: Optional[str], timeout: float, operations: list[OperationRecord], log,
+        extra_metrics: dict[str, Any], workspace: AgentWorkspace, skill_note: str,
+    ) -> Optional[UsageRecord]:
+        work = workspace.work
         prompt = (
             f"{skill_note}"
             "Solve this coding task. Edit files in the current directory only. "
@@ -272,30 +357,37 @@ class DockerSolverHarness:
         prompt_file = output_dir / "prompt.txt"
         prompt_file.write_text(prompt, encoding="utf-8")
 
-        cmd = ["claude", "-p", prompt, "--output-format", "json",
-               "--dangerously-skip-permissions",
-               "--allowedTools", "Read", "Edit", "Write", "Bash"]
+        cmd = ["claude", "-p", prompt, "--output-format", "json", *solver_cli_flags()]
         if model:
             cmd += ["--model", model]
+        before = workspace.state()
         t0 = time.time()
         proc = subprocess.run(
             cmd, cwd=str(work), text=True, capture_output=True,
-            timeout=timeout, check=False, env={**os.environ, **self.env},
+            timeout=timeout, check=False, env=workspace.env(operator_source_env(), self.env),
         )
         latency = time.time() - t0
         log.write(proc.stdout or "")
         log.write(proc.stderr or "")
+        error = solver_error(proc.stdout, edited=workspace.state() != before)
+        if error:  # no attempt was made: the runner leaves the cell out, like metrics.error
+            extra_metrics["solver_error"] = error
         usage = _parse_claude_json(proc.stdout, task.name, model or "", latency)
+        reason = terminal_reason(proc.stdout) or ("no_result" if usage is None else None)
+        if reason:
+            extra_metrics["terminal_reason"] = reason
         (output_dir / "solver.json").write_text(proc.stdout or "", encoding="utf-8")
         if usage is not None:
+            # Kept if the copy back below fails: the solve was paid for either way.
+            extra_metrics.update(usage.as_metrics_dict())
+            if usage.model:
+                extra_metrics["model"] = usage.model
             operations.append(
                 OperationRecord(type="loop", name="claude-turns", elapsed_sec=usage.latency_sec,
                                 metadata={"n_calls": usage.n_calls})
             )
 
-        # Don't ship the skill files into /app for the verifier.
-        if (work / ".skill").exists():
-            _rmtree(work / ".skill")
+        _rmtree(work / ".skill")  # don't ship the skill files into /app for the verifier
         _docker(["cp", f"{str(work)}/.", f"{container}:/app/"], log)
         failed = self._recompile(task, container, log)
         if failed:
@@ -346,7 +438,9 @@ class DockerSolverHarness:
     def _resolve_skill_dir(self) -> Optional[Path]:
         if not self.skill_path:
             return None
-        p = Path(self.skill_path)
+        # Relative to the operator's cwd, not the agent's. absolute(), not resolve():
+        # a symlinked SKILL.md must not swap in the link target's directory.
+        p = Path(self.skill_path).absolute()
         return p.parent if p.is_file() else p
 
     def _skill_entry(self, skill_dir: Path) -> str:
@@ -397,63 +491,6 @@ def _docker(args: list[str], log, *, check: bool = True,
     if check and proc.returncode != 0:
         raise RuntimeError(f"docker {args[0]} failed (exit {proc.returncode}); see run.log")
     return proc
-
-
-def _parse_claude_json(stdout: str, task: str, model: str, latency: float) -> Optional[UsageRecord]:
-    """Parse ``claude -p --output-format json`` into a :class:`UsageRecord`.
-
-    The CLI prints a single result object with ``total_cost_usd``, a nested
-    ``usage`` block (input/output/cache tokens), ``duration_ms``, ``ttft_ms``,
-    and ``num_turns``. Returns ``None`` when no parseable object is found (the
-    elapsed wall-clock ``latency`` is used as a fallback for ``latency_sec``).
-    """
-    obj = _last_json_object(stdout)
-    if obj is None:
-        return None
-    u = obj.get("usage") or {}
-    input_tokens = int(u.get("input_tokens", 0) or 0)
-    output_tokens = int(u.get("output_tokens", 0) or 0)
-    cache_read = int(u.get("cache_read_input_tokens", 0) or 0)
-    cache_write = int(u.get("cache_creation_input_tokens", 0) or 0)
-    duration_ms = obj.get("duration_ms")
-    ttft_ms = obj.get("ttft_ms")
-    cost = obj.get("total_cost_usd")
-    return UsageRecord(
-        prompt_tokens=input_tokens,
-        completion_tokens=output_tokens,
-        total_tokens=input_tokens + output_tokens,
-        cache_read_tokens=cache_read,
-        cache_write_tokens=cache_write,
-        cost_usd=float(cost) if cost is not None else None,
-        latency_sec=(duration_ms / 1000.0) if duration_ms is not None else latency,
-        ttft_sec=(ttft_ms / 1000.0) if ttft_ms is not None else None,
-        model=model,
-        provider="claude-code",
-        n_calls=int(obj.get("num_turns", 1) or 1),
-        cost_known_calls=1 if cost is not None else 0,
-    )
-
-
-def _last_json_object(text: str) -> Optional[dict]:
-    """Return the last top-level JSON object printed on stdout, if any."""
-    if not text:
-        return None
-    # The result object is normally the final non-empty line.
-    for line in reversed(text.splitlines()):
-        line = line.strip()
-        if line.startswith("{") and line.endswith("}"):
-            try:
-                return json.loads(line)
-            except json.JSONDecodeError:
-                continue
-    # Fall back to the last {...} span anywhere in the output.
-    matches = re.findall(r"\{.*\}", text, re.DOTALL)
-    if matches:
-        try:
-            return json.loads(matches[-1])
-        except json.JSONDecodeError:
-            return None
-    return None
 
 
 def _copytree(src: Path, dest: Path) -> None:

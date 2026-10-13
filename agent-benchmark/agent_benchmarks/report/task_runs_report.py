@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from agent_benchmarks.eval.binary_stats import PASS_RATE_CI_CONFIDENCE
+from agent_benchmarks.harnesses.runner import is_errored
 
 
 def _md_cell(text: str) -> str:
@@ -191,9 +192,10 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
     lines.append("")
     if any(ph.get(h, {}).get("errored") for h in harnesses):
         lines.append("_Pass rate is over scored cells. An errored cell is one whose "
-                     "harness raised (docker build, exec, config): it produced no "
-                     "verdict, so it is missing data, not a 0. An agent or "
-                     "verifier timeout is a failure, not an error._")
+                     "harness raised (docker build, exec, config) or the solver CLI made "
+                     "no attempt (rejected credentials): it produced no verdict, so it is "
+                     "missing data, not a 0. An agent or verifier timeout is a failure, "
+                     "not an error._")
         lines.append("")
 
     # ── per-cell aggregation, keyed by full harness id ──
@@ -206,7 +208,7 @@ def render_task_runs_report(data: dict[str, Any]) -> str:
     for r in rows:
         key = (r["task"], r["harness"])
         c = cell[key]
-        errored = bool(r.get("metrics", {}).get("error"))
+        errored = is_errored(r)
         c["errored"] += 1 if errored else 0
         c["n"] += 0 if errored else 1
         c["passed"] += 1 if r.get("passed") and not errored else 0

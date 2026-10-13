@@ -253,6 +253,20 @@ def test_task_suite_summary_compares_to_baseline(tmp_path, monkeypatch):
     assert output["summary"]["comparisons"]["candidate"]["pass_rate_delta"] == 1.0
 
 
+def test_a_bad_harness_id_fails_before_any_cell_runs(tmp_path, monkeypatch):
+    task = load_task(_fixture_task(tmp_path))
+    ran = []
+    monkeypatch.setattr(CommandHarness, "run", lambda self, *a, **k: ran.append(self.harness_id))
+    suite = TaskSuiteRunner(
+        tasks=[task],
+        harnesses=["command:fake {task_path}", f"docker-claude-skill:{tmp_path / 'nope' / 'SKILL.md'}"],
+        output_root=tmp_path / "runs",
+    )
+    with pytest.raises(ValueError, match="does not exist"):
+        suite.run()
+    assert ran == []
+
+
 def test_summarize_task_results_counts_operations():
     rows = [
         {

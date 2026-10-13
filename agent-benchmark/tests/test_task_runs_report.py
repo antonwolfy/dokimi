@@ -175,6 +175,30 @@ def test_errored_cells_render_as_missing_data_not_failures():
     assert "| `skill` | 1 | null | ERR |" in md
 
 
+def test_solver_error_cells_are_errored_in_the_report_like_in_the_summary():
+    from agent_benchmarks.harnesses.runner import summarize_task_results
+
+    def row(task, harness, **extra):
+        return {"task": task, "harness": harness, "passed": True, "reward": 1.0,
+                "returncode": 0, "elapsed_sec": 1.0, "output_dir": None,
+                "metrics": {"operation_count": 0, "operations_by_type": {}, **extra}}
+
+    rows = [row("t1", "base", solver_error="api_error: 401"), row("t1", "skill"),
+            row("t2", "base"), row("t2", "skill")]
+    data = {
+        "schema_version": "task_runs.v1", "model": "m", "repeats": 1,
+        "baseline_harness": "base", "harnesses": ["base", "skill"],
+        "tasks": [{"name": t, "path": "p", "metadata": {"difficulty": "easy"},
+                   "verifier": {}, "agent": {}, "environment": {}} for t in ("t1", "t2")],
+        "results": rows,
+        "summary": summarize_task_results(rows, baseline_harness="base"),
+    }
+    md = render_task_runs_report(data)
+    assert "| `base` | 100.00% (1/1) | 1 |" in md          # headline agrees: 1 errored
+    assert "| t1 | easy | — (+1 err) | — | 1/1 | — |" in md
+    assert "| `base` | 1 | 1 | ERR |" in md
+
+
 # ── McNemar section ───────────────────────────────────────────────────────────
 
 

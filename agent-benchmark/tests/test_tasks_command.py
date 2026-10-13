@@ -104,6 +104,20 @@ def test_tasks_run_named_task_without_root_exits_with_a_readable_message(tmp_pat
     assert "--tasks-root" in str(excinfo.value)
 
 
+def test_tasks_run_with_a_missing_skill_path_exits_before_writing_anything(tmp_path):
+    _fixture_task(tmp_path)
+    out = tmp_path / "runs.json"
+    args = build_parser().parse_args([
+        "tasks", "run", "--tasks", "toy-task", "--tasks-root", str(tmp_path),
+        "--harnesses", f"docker-claude-skill:{tmp_path / 'nope' / 'SKILL.md'}",
+        "--out-json", str(out), "--dry-run",
+    ])
+    with pytest.raises(SystemExit) as excinfo:
+        args.func(args)
+    assert "does not exist" in str(excinfo.value)
+    assert not out.exists()
+
+
 def test_tasks_list_rejects_a_root_that_is_not_a_directory(tmp_path):
     """A mistyped --tasks-root must not read as a suite with zero tasks."""
     parser = build_parser()

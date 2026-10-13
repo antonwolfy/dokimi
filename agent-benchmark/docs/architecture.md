@@ -169,7 +169,9 @@ sure the harness, the task format, and the verifier path all still work.
 `claude-code`, and `terminal-bench:<agent>`; each runs a Harbor-compatible agent,
 records operation telemetry (`harness`, `loop`, `tool`, `subagent`, ...), and
 summarizes pass-rate deltas against a baseline harness. Entry point:
-`python cli.py tasks run`.
+`python cli.py tasks run`. `harnesses/agent_sandbox.py` owns the environment
+a `docker-claude` solver is launched in and the `docker-probe` isolation
+probe that measures it.
 
 See [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)
 to add a task and [coding-harnesses.md](coding-harnesses.md) to run harness

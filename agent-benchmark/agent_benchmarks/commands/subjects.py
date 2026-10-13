@@ -383,6 +383,10 @@ def _run_subject_work(descriptor, args: argparse.Namespace, *, out_dir: Path, ta
         dry_run=args.work_dry_run,
         repeats=args.work_repeats,
     )
+    try:
+        runner.validate_harnesses()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     artifact = runner.run()
     save_artifact("task_runs", artifact, task_runs_path)
     task_runs_md = task_runs_path.with_suffix(".md")

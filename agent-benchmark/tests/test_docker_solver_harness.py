@@ -256,13 +256,14 @@ def test_solve_oracle_copies_the_whole_solution_directory(tmp_path, monkeypatch)
 # ── registry wiring ───────────────────────────────────────────────────────────
 
 
-def test_registry_builds_docker_harnesses():
+def test_registry_builds_docker_harnesses(tmp_path):
     assert isinstance(create_harness("docker-oracle"), DockerSolverHarness)
     assert create_harness("docker-oracle").mode == "oracle"
     claude = create_harness("docker-claude")
     assert claude.mode == "claude" and claude.skill_path is None
-    skill = create_harness("docker-claude-skill:data/skills/x/SKILL.md")
-    assert skill.skill_path == "data/skills/x/SKILL.md"
+    (tmp_path / "SKILL.md").write_text("x", encoding="utf-8")
+    skill = create_harness(f"docker-claude-skill:{tmp_path / 'SKILL.md'}")
+    assert skill.skill_path == str(tmp_path / "SKILL.md")
     assert "docker-claude" in known_harnesses()
 
 
@@ -465,6 +466,78 @@ def test_recompile_failure_recorded_in_metrics(tmp_path, monkeypatch):
     result = create_harness("docker-claude").run(task, model="haiku", output_dir=tmp_path / "out")
     assert result.metrics["recompile_failed"] == ["g++ -O3 bench.cpp -o /app/bench"]
     assert result.passed is False
+
+
+def test_model_is_taken_from_the_result_when_not_given():
+    obj = json.loads(_CLAUDE_JSON)
+    # The first key is a cheap helper model; the run's model is the costliest entry.
+    obj["modelUsage"] = {"claude-haiku-4-5": {"inputTokens": 1, "costUSD": 0.001},
+                         "claude-opus-5-5": {"inputTokens": 1, "costUSD": 0.07}}
+    usage = _parse_claude_json(json.dumps(obj), "t", "", latency=1.0)
+    assert usage is not None and usage.model == "claude-opus-5-5"
+
+
+def test_the_model_used_is_recorded_in_metrics(tmp_path, monkeypatch):
+    obj = json.loads(_CLAUDE_JSON)
+    obj["modelUsage"] = {"claude-sonnet-4-5": {"costUSD": 0.07}}
+    task = load_task(_fixture_task(tmp_path))
+    _patch_pipeline(monkeypatch, reward=1.0, usage_json=json.dumps(obj))
+    result = create_harness("docker-claude").run(task, output_dir=tmp_path / "out")
+    assert result.metrics["model"] == "claude-sonnet-4-5"
+
+
+def test_solver_error_flags_api_errors_only():
+    from agent_benchmarks.harnesses.claude_json import solver_error
+
+    flagged = json.dumps({"type": "result", "is_error": True, "terminal_reason": "api_error",
+                          "result": "Invalid API key\nmore"})
+    assert solver_error(flagged) == "api_error: Invalid API key"
+    assert solver_error(_CLAUDE_JSON) is None
+    assert solver_error("") == "no result object on stdout"
+
+
+def test_an_error_after_a_real_attempt_is_not_a_solver_error():
+    from agent_benchmarks.harnesses.claude_json import solver_error, terminal_reason
+
+    late = json.dumps({"type": "result", "is_error": True, "terminal_reason": "api_error",
+                       "num_turns": 40, "total_cost_usd": 2.31, "usage": {"output_tokens": 9000},
+                       "result": "API Error: 529 overloaded"})
+    assert solver_error(late) is None
+    assert terminal_reason(late) == "api_error"
+    assert terminal_reason(_CLAUDE_JSON) == "success"
+
+
+def test_solver_error_reads_the_errors_list():
+    from agent_benchmarks.harnesses.claude_json import solver_error
+
+    obj = json.dumps({"type": "result", "subtype": "error_during_execution", "is_error": True,
+                      "num_turns": 0, "errors": ["spawn failed: ENOENT"]})
+    assert solver_error(obj) == "error_during_execution: spawn failed: ENOENT"
+
+
+def test_solver_error_cells_are_excluded_from_the_pairing():
+    def row(task, harness, passed, **metrics):
+        return {"task": task, "harness": harness, "passed": passed, "reward": 1.0 if passed else 0.0,
+                "elapsed_sec": 1.0, "metrics": metrics}
+
+    rows = [row("a", "base", True, solver_error="api_error: Invalid API key"), row("a", "skill", True)]
+    for t in "bcdef":
+        rows += [row(t, "base", False), row(t, "skill", True)]
+    summary = summarize_task_results(rows, baseline_harness="base")
+    assert summary["per_harness"]["base"]["errored"] == 1
+    assert summary["per_harness"]["base"]["pass_rate"] == 0.0
+    assert summary["comparisons"]["skill"]["mcnemar"]["n"] == 5
+    assert summary["comparisons"]["skill"]["mcnemar"]["n_excluded"] == 1
+
+
+def test_probe_and_oracle_rows_are_not_compared():
+    rows = [{"task": t, "harness": h, "passed": h != "base", "reward": 0.0, "elapsed_sec": 1.0,
+             "metrics": {}}
+            for t in ("a", "b") for h in ("base", "skill", "docker-probe", "docker-probe:x",
+                                           "docker-oracle")]
+    comparisons = summarize_task_results(rows, baseline_harness="base")["comparisons"]
+    assert set(comparisons) == {"skill"}
+    assert comparisons["skill"]["mcnemar"]["family_size"] == 1
 
 
 # ── timeouts: build is errored, solve/verify is a reward-0 failure ────────────

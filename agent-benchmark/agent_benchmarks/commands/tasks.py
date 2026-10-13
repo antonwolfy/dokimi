@@ -85,6 +85,10 @@ def cmd_tasks_run(args: argparse.Namespace) -> None:
         dry_run=args.dry_run,
         repeats=args.repeats,
     )
+    try:
+        runner.validate_harnesses()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
     output = runner.run()
 
     out_json = Path(args.out_json) if args.out_json else Path(args.output_dir) / "task_runs.json"

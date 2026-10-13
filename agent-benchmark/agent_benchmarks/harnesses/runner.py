@@ -36,7 +36,14 @@ class TaskSuiteRunner:
     dry_run: bool = False
     repeats: int = 1
 
+    def validate_harnesses(self) -> None:
+        """Build every harness id once; a bad id (e.g. a missing skill path)
+        raises ``ValueError`` before any cell has run and been paid for."""
+        for harness_id in self.harnesses:
+            create_harness(harness_id, command_template=self.command_template)
+
     def run(self) -> dict[str, Any]:
+        self.validate_harnesses()
         generated_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
         rows: list[dict[str, Any]] = []
         repeats = max(1, self.repeats)
@@ -112,7 +119,7 @@ def summarize_task_results(
                 "_skill_invoked": 0,
             },
         )
-        errored = _is_errored(row)
+        errored = is_errored(row)
         passed = bool(row.get("passed")) and not errored
         stats["n"] += 1
         stats["passed"] += 1 if passed else 0
@@ -198,7 +205,9 @@ def summarize_task_results(
         base_pass = base.get("pass_rate")
         outcomes, attempted = _outcomes_by_cell(rows)
         for harness, stats in per_harness.items():
-            if harness == baseline_harness:
+            # The probe and the oracle are no treatment: as a McNemar row they
+            # would only enlarge the Holm family and dilute a real arm's p.
+            if harness == baseline_harness or _is_control_harness(harness):
                 continue
             pass_rate = stats.get("pass_rate")
             base_cost = base["cost"].get("total_cost_usd")
@@ -257,7 +266,8 @@ def _outcomes_by_cell(
     """``(verdicts, attempted)`` keyed by harness, over ``(task, repeat)`` cells.
 
     ``verdicts`` holds only cells that produced a real pass/fail. Rows whose
-    harness raised carry ``metrics.error`` and are dropped: a docker build
+    harness raised (``metrics.error``) or whose solver CLI made no attempt
+    (``metrics.solver_error``) are dropped: a docker build
     failure is missing data, not a verified failure, and counting it against the
     treatment would charge infrastructure flakiness to the skill.
 
@@ -270,7 +280,7 @@ def _outcomes_by_cell(
     for row in rows:
         key = (row.get("task"), row.get("repeat", 1))
         attempted.setdefault(row["harness"], set()).add(key)
-        if _is_errored(row):
+        if is_errored(row):
             continue
         out.setdefault(row["harness"], {})[key] = bool(row.get("passed"))
     return out, attempted
@@ -282,9 +292,16 @@ def _errored_cells(
     return attempted.get(harness, set()) - set(outcomes.get(harness, {}))
 
 
-def _is_errored(row: dict[str, Any]) -> bool:
-    """A cell whose harness raised (``metrics.error``): no verdict, not a 0."""
-    return bool(row.get("metrics", {}).get("error"))
+def is_errored(row: dict[str, Any]) -> bool:
+    """No verdict, not a 0: the harness raised (``metrics.error``), or the solver
+    CLI made no attempt at all (``metrics.solver_error``, e.g. rejected credentials)."""
+    metrics = row.get("metrics", {})
+    return bool(metrics.get("error") or metrics.get("solver_error"))
+
+
+def _is_control_harness(harness: str) -> bool:
+    """``docker-oracle`` and the ``docker-probe*`` family: checks of the setup, not arms."""
+    return harness == "docker-oracle" or harness.split(":", 1)[0].startswith("docker-probe")
 
 
 def _count(value: Any) -> int | None:

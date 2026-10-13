@@ -25,6 +25,79 @@ latency, turns):
 - `docker-claude-skill:<skill-path>` — `docker-claude` with a skill directory
   exposed to the agent. This is the **with-skill treatment arm**; compare it
   against `docker-claude` (without-skill) as the baseline.
+- `docker-probe` — no LLM, free. Runs an isolation probe in exactly the work
+  tree and environment `docker-claude` would get, writes
+  `isolation_probe.json`, and passes only when nothing in
+  [What the agent can reach](#what-the-agent-can-reach) is open. Run it before
+  a paid sweep. `docker-probe:<skill-path>` also forbids that skill. Use it
+  when the with-skill arm's skill lives outside the task's checkout, so the
+  baseline is checked against the treatment it must not see.
+
+### What the agent can reach
+
+A task's `solution/` and `tests/` live beside the skills in one content
+checkout. A solver that can read them copies the answer instead of solving the
+task. A baseline arm that can read the skills is no longer a baseline. The
+probe reports six leak classes. Each is `open` or `closed`; `n/a` (nothing to
+protect was declared) passes, and `untested` (the image lacks the tool, or the
+probe timed out) fails like `open`. The result is in `metrics.isolation_probe`
+and `isolation_probe.json`:
+
+| class | what the probe tries |
+|---|---|
+| `task_files` | read the task's `solution/`, `tests/`, `oracle/` or `verifier/`, or this task's output dir (the other arms' work trees, prompts and transcripts), by absolute path |
+| `treatment` | read any `skills/` on the way up from the task (with or without a `.git`), or the `docker-probe:<skill>` skill, by absolute path. `n/a` if neither exists: nothing was tested, and that is not the same as `closed` |
+| `operator_config` | read the operator's `~/.claude`, `~/.claude.json`, or `$CLAUDE_CONFIG_DIR` and its `.claude.json` |
+| `checkout_walk` | find a `.git`, `task.toml`, or `CLAUDE.md` in a directory above the work tree |
+| `network` | fetch `https://example.com/` through whatever proxy variables it was given |
+| `env` | find the host value of a variable the allowlist drops in the environ of the probe, its parent chain or PID 1 (`/proc/<pid>/environ`). `n/a` if the allowlist dropped nothing |
+
+`docker-claude` runs the agent on the host. It cannot hide an absolute path or
+close the network there, so it states what it does and does not seal in every
+run's `metrics.isolation`. It does the following:
+
+- solves in a fresh `abrun-*` temp tree outside any checkout;
+- points `HOME` and `CLAUDE_CONFIG_DIR` at empty scratch dirs;
+- passes only an allowlist of variables: provider credentials, proxy, locale;
+- runs `claude` with `--tools Read,Edit,Write,Bash,Glob,Grep --setting-sources ""
+  --strict-mcp-config --no-session-persistence`. Before this change it used
+  `--allowedTools`, which only pre-approves tools, so `WebFetch`, `Agent`,
+  `Skill` and the operator's skills, CLAUDE.md files and MCP servers loaded in
+  both arms. The Bash tool can still start a nested `claude -p` with the
+  default tool set; its spend is not in the outer `total_cost_usd`.
+
+A host probe reports `checkout_walk` closed, and `task_files`, `treatment`,
+`operator_config`, `network` and `env` open. `env` is open because the agent
+runs as the operator's uid: it can read the harness's `/proc/<pid>/environ`
+(every variable the allowlist dropped) and its command line and cwd
+(`--tasks-root`, `--output-dir`, the skill arm's path). Yama `ptrace_scope=1`
+does not stop this; it only gates attach.
+
+Provider credentials come from the environment, for example
+`AWS_BEARER_TOKEN_BEDROCK`, `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`.
+The `env` block of the operator's `~/.claude/settings.json` (or
+`$CLAUDE_CONFIG_DIR/settings.json`) is merged in over the process
+environment, as Claude Code applies it, through the same allowlist; a
+malformed `settings.json` is logged and ignored. These are not visible from
+the scratch `HOME`: an `apiKeyHelper`, an interactive OAuth login, or an
+`~/.aws` profile unless `AWS_CONFIG_FILE` / `AWS_SHARED_CREDENTIALS_FILE`
+point at it (they pass through).
+
+Every run records how the CLI ended it in `metrics.terminal_reason`. A run
+the CLI ended with an error before any attempt (no output tokens, or at most
+one turn: missing or rejected credentials, a flagged first request, an
+unknown model id) also carries `metrics.solver_error`. The runner counts that
+cell as errored, like `metrics.error`: it is out of `pass_rate` and out of the
+McNemar pairing (`n_excluded`), so do not drop cells by hand. An error after
+an attempt (a 529 at turn 40, `prompt_too_long` in a skill arm that read too
+much) is the arm's own outcome and is scored. So is a CLI that dies with no
+result object (`terminal_reason: no_result`) after it edited the work tree; with
+the tree untouched it is a `solver_error`. Without `--model`,
+`metrics.model` is the `modelUsage` entry that cost the most.
+
+`docker-probe*` and `docker-oracle` rows are never compared against
+`--baseline-harness`: they are checks of the setup, not arms, and would only
+enlarge the Holm family.
 
 Custom:
 
@@ -266,7 +339,8 @@ Note the two similarly named deltas. `mcnemar.paired_pass_rate_delta` is
 `comparisons.<harness>.pass_rate_delta` subtracts two marginal pass rates.
 
 An errored cell is one whose harness raised (`metrics.error`: a docker build
-failure or timeout, or an exec failure). It produced no verdict, so it is
+failure or timeout, or an exec failure), or whose solver CLI made no attempt
+(`metrics.solver_error`). It produced no verdict, so it is
 missing data, not a 0. An agent that exceeds its timeout, or a verifier that
 does, is a failure (reward 0, returncode 124), not an error: otherwise an arm
 that hangs would score above one that fails fast.
@@ -302,7 +376,8 @@ Four properties are worth internalising before reading the number:
 
 `n_excluded` counts cells left out of the pairing, measured against every cell
 either harness *attempted*: present for one harness only, or belonging to a row
-whose harness itself errored (`metrics.error`, e.g. a docker build failure).
+whose harness itself errored (`metrics.error`, e.g. a docker build failure, or
+`metrics.solver_error`).
 Those are missing data, not verified failures — scoring them as failures would
 charge infrastructure flakiness to the treatment.
 
@@ -318,7 +393,7 @@ numbers, so do not read the two side by side without the caveats below:
 | Field | Meaning |
 |---|---|
 | `per_harness.<h>.pass_rate_ci` | Wilson 95% interval on `pass_rate`, over the same scored (non-errored) cells; same independence caveat as McNemar under `--repeats`. SkillsBench does not use Wilson: its paper uses a Wald interval (v4, App. G; a percentile bootstrap in v1) and its leaderboard a task-level `1.96·stdev(per-task means)/√87`, which is wider under repeats |
-| `per_harness.<h>.skill_invocation_rate` | share of the rows reporting `metrics.n_skill_invocations` (errored rows excluded) where it is > 0; `null` when no row reports it. Only harnesses that write `metrics.n_skill_invocations` contribute; the key counts invocations of the treatment skill. Rows marked `metrics.solver_error` are not errored, so they count if they report the key |
+| `per_harness.<h>.skill_invocation_rate` | share of the rows reporting `metrics.n_skill_invocations` (errored rows excluded) where it is > 0; `null` when no row reports it. Only harnesses that write `metrics.n_skill_invocations` contribute; the key counts invocations of the treatment skill. A row marked `metrics.solver_error` is errored too and is left out |
 | `per_harness.<h>.skill_invocation_n` | the rows behind `skill_invocation_rate` |
 | `per_harness.<h>.cost.cost_per_pass_usd` | total cost / passes, only when every row, errored rows included, carries `metrics.cost_usd`. A runner-errored row (no `cost_usd`) or an agent timeout whose result was never parsed therefore nulls it for the arm |
 | `comparisons.<h>.normalized_gain` | Hake's `(arm − base) / (1 − base)`, as SkillsBench uses it: the share of the baseline's headroom gained. It equals SkillsBench's per-configuration value only when every cell scored and rewards are binary (they average per-task mean rewards and count a missing cell as 0). Unbounded below (0.5 vs 0.95 is −9), so read regressions from the next field; `null` when the baseline passes everything, or when `pass_rate_delta` is withheld |
@@ -388,7 +463,8 @@ harbor run -p /tmp/uxl-skills/evaluation/harbor/tasks/onetbb-histogram-local-agg
 ```
 
 `docker-claude`/`docker-oracle` read `environment.network_mode` from the
-task's own `task.toml`, defaulting to no network at solve/verify time — a task
-that legitimately needs network at solve/verify time can declare
-`network_mode = "public"` and both harnesses will honor it, alongside
-`cpus`/`memory_mb` if declared.
+task's own `task.toml` for the task *container*, defaulting to no network — a
+task whose container legitimately needs network can declare
+`network_mode = "public"`, alongside `cpus`/`memory_mb` if declared. The
+`docker-claude` agent itself runs on the host and solves with the host's
+network whatever the task declares (`metrics.isolation.network: open`).
