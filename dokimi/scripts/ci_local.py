@@ -85,9 +85,15 @@ def tool_specs() -> list[str]:
                         continue
                     args = shlex.split(PIP_INSTALL.sub("", line))
                     for i, a in enumerate(args):
+                        if a in ("-r", "--requirement"):
+                            continue
                         if i and args[i - 1] in ("-r", "--requirement"):
-                            a = str(REPO / wd / a)
-                        if a not in specs:
+                            # Deduplicate the pair: a second `-r` on its own would leave
+                            # its file to be read as a package path.
+                            req = ["-r", str(REPO / wd / a)]
+                            if not any(specs[j:j + 2] == req for j in range(len(specs))):
+                                specs.extend(req)
+                        elif a not in specs:
                             specs.append(a)
     return specs
 
