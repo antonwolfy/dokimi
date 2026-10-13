@@ -170,16 +170,133 @@ def prompt_digests(run_data: dict, arm: str) -> set[str]:
     return digests
 
 
+def replicate_key(data: dict) -> tuple:
+    """Configuration identity: models, judge prompt and temperature, run_config,
+    harness, plugin set, cell and arm list.
+
+    The seed value is the replicate index, so only whether one was pinned counts."""
+    run_config = data.get("run_config") or {}
+    return (
+        data.get("model", ""),
+        data.get("provider", ""),
+        data.get("judge_model", ""),
+        data.get("judge_provider", ""),
+        data.get("judge_prompt_sha256"),
+        data.get("judge_temperature"),
+        tuple(sorted((k, repr(v)) for k, v in run_config.items() if k != "seed")),
+        run_config.get("seed") is not None,
+        data.get("harness"),
+        data.get("plugin_set_id"),
+        data.get("cell"),
+        tuple(data.get("arms") or ()),
+    )
+
+
+def group_replicates(runs: list[tuple[str, dict]]) -> dict[tuple, list[str]]:
+    """Map each configuration to the run_ids that measured it."""
+    groups: dict[tuple, list[str]] = {}
+    for run_id, data in runs:
+        groups.setdefault(replicate_key(data), []).append(run_id)
+    return groups
+
+
+def replicate_label(run_ids: list[str]) -> str:
+    """Label for a pooled group, derived from the caller's own run_ids.
+
+    Uses their longest common prefix with any trailing separator or run-number
+    fragment trimmed (``haiku45_run01..run10`` -> ``haiku45``), so the label
+    echoes the naming the caller chose. Falls back to the first run_id when the
+    ids share no usable prefix.
+    """
+    if len(run_ids) == 1:
+        return run_ids[0]
+    prefix = run_ids[0]
+    for rid in run_ids[1:]:
+        while prefix and not rid.startswith(prefix):
+            prefix = prefix[:-1]
+        if not prefix:
+            break
+    prefix = prefix.rstrip("0123456789").rstrip("_-. ")
+    if prefix.endswith("run"):
+        prefix = prefix[: -len("run")].rstrip("_-. ")
+    stem = prefix or run_ids[0]
+    return f"{stem}[n={len(run_ids)}]"
+
+
+_SUMMED_COST_FIELDS = ("n", "total_cost_usd", "cost_known_n", "total_llm_calls",
+                       "prompt_tokens", "completion_tokens", "total_tokens")
+
+
+def pool_cost_summaries(summaries: list[dict | None]) -> dict:
+    """Per-arm resource totals over replicates: counts summed, latency averaged.
+
+    A field any replicate lacks stays None, so a partial total is never shown as a full one.
+    """
+    summaries = [s or {} for s in summaries]
+    pooled: dict = {}
+    for arm in dict.fromkeys(a for s in summaries for a in s):
+        rows = [s.get(arm) or {} for s in summaries]
+        fields = (*_SUMMED_COST_FIELDS, "mean_latency_sec", "cache_hit_ratio")
+        known = {f: v for f in fields if None not in (v := [r.get(f) for r in rows])}
+        out: dict = {f: sum(known[f]) if f in known else None for f in _SUMMED_COST_FIELDS}
+        latency = known.get("mean_latency_sec")
+        out["mean_latency_sec"] = sum(latency) / len(latency) if latency else None
+        ratios, prompts = known.get("cache_hit_ratio"), known.get("prompt_tokens")
+        out["cache_hit_ratio"] = (sum(r * p for r, p in zip(ratios, prompts, strict=True)) / sum(prompts)
+                                  if ratios and prompts and sum(prompts) else None)
+        pooled[arm] = out
+    return pooled
+
+
+def pool_replicate_scores(
+    all_run_scores: dict[str, list[dict]],
+    run_ids: list[str],
+) -> list[dict]:
+    """Average per-question scores across replicates of one configuration.
+
+    Averaging per question (rather than averaging each replicate's summary)
+    keeps the paired structure the significance test depends on: a question is
+    still one observation, just a less noisy one. With more than one replicate,
+    a question is kept only if every replicate scored both arms, so every pooled
+    row is a mean over the same number of samples.
+    """
+    per_q: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for run_id in run_ids:
+        for row in all_run_scores.get(run_id, []):
+            qid = row["question_id"]
+            if qid not in per_q:
+                per_q[qid] = []
+                order.append(qid)
+            per_q[qid].append(row)
+
+    pooled: list[dict] = []
+    for qid in order:
+        rows = per_q[qid]
+        if len(run_ids) > 1:
+            rows = [r for r in rows if r.get("with_docs") is not None and r.get("without_docs") is not None]
+            if len(rows) < len(run_ids):
+                continue
+        merged = dict(rows[0])
+        for field in ("with_docs", "without_docs", "delta"):
+            vals = [r[field] for r in rows if r.get(field) is not None]
+            merged[field] = (sum(vals) / len(vals)) if vals else None
+        merged["n_replicates"] = len(rows)
+        pooled.append(merged)
+    return pooled
+
+
 def check_run_consistency(
     runs: list[tuple[str, dict]],
     group_name: str,
     treatment_arm: str | None = None,
+    pool_replicates: bool = False,
 ) -> list[str]:
     """Check runs for consistency problems; return warning strings.
 
-    Hard errors (different ``baseline_arm``, different treatment arms) raise
-    ``SystemExit`` immediately. Soft warnings (hash mismatch, identical models) are
-    collected and returned.
+    Hard errors (different ``baseline_arm``, different treatment arms, or
+    duplicate configurations without ``pool_replicates``) raise ``SystemExit``
+    immediately. Soft warnings (hash mismatch) are collected and returned.
     """
     if len(runs) < 2:
         return []
@@ -287,14 +404,25 @@ def check_run_consistency(
             "answers, so the scores cannot be pooled. Re-judge the older runs."
         )
 
-    # 5. identical model+provider across all runs likely means duplicate runs
-    models = [(data.get("model", ""), data.get("provider", "")) for _, data in runs]
-    if len(set(models)) == 1:
-        m, p = models[0]
-        warnings.append(
-            f"Warning [{group_name}]: all runs share the same model '{m}' ({p}). "
-            "Did you mean to compare different models?"
-        )
+    # 5. duplicate configurations are replicates, not rival models. Ranking them
+    #    against each other reports sampling noise as a model difference, so this
+    #    is an error unless the caller opts into pooling. Checked per group, not
+    #    only when *every* run matches — 3 replicates plus 1 other model is the
+    #    likelier accident and previously passed silently.
+    if not pool_replicates:
+        dupes = {k: ids for k, ids in group_replicates(runs).items() if len(ids) > 1}
+        if dupes:
+            detail = "; ".join(
+                f"{key[0]} ({key[1]}) judged by {key[2] or 'n/a'} -> runs {', '.join(ids)}"
+                for key, ids in dupes.items()
+            )
+            raise SystemExit(
+                f"Error [{group_name}]: {len(dupes)} configuration(s) appear more than "
+                f"once ({detail}). These are replicates of one measurement, not rival "
+                "models; ranking them against each other reports sampling noise as a "
+                "model difference. Pass --pool-replicates to average them into one "
+                "row per configuration, or pass one run per configuration."
+            )
 
     return warnings
 
@@ -540,6 +668,8 @@ def generate_combined_report(
     out_path: str,
     treatment_arm: str | None = None,
     correction: str = "holm",
+    pool_replicates: bool = False,
+    warnings: list[str] | None = None,
 ) -> None:
     """Write a Markdown comparison report to *out_path*.
 
@@ -553,6 +683,13 @@ def generate_combined_report(
         f"_Generated: {datetime.now(tz=_TZ).strftime('%Y-%m-%d %H:%M %Z') if _TZ else datetime.now().strftime('%Y-%m-%d %H:%M UTC')}_",
         "",
     ]
+
+    # Consistency warnings belong in the report, not only on stderr — a shared
+    # .md otherwise carries no trace of them.
+    if warnings:
+        lines += ["> **Consistency warnings**", ">"]
+        lines += [f"> - {w}" for w in warnings]
+        lines += [""]
 
     if regular_runs and golden_runs:
         lines += [
@@ -568,7 +705,8 @@ def generate_combined_report(
             "",
         ]
         lines += generate_section_report(regular_runs, run_ids, "Regular", treatment_arm,
-                                        correction)
+                                        correction,
+                                        pool_replicates=pool_replicates)
         lines += [
             "",
             "---",
@@ -577,15 +715,18 @@ def generate_combined_report(
             "",
         ]
         lines += generate_section_report(golden_runs, run_ids, "Golden", treatment_arm,
-                                        correction)
+                                        correction,
+                                        pool_replicates=pool_replicates)
 
     elif regular_runs:
         lines += generate_section_report(regular_runs, run_ids, "Regular", treatment_arm,
-                                        correction)
+                                        correction,
+                                        pool_replicates=pool_replicates)
 
     elif golden_runs:
         lines += generate_section_report(golden_runs, run_ids, "Golden", treatment_arm,
-                                        correction)
+                                        correction,
+                                        pool_replicates=pool_replicates)
 
     output = "\n".join(lines)
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
@@ -599,11 +740,16 @@ def generate_section_report(
     section_name: str,
     treatment_arm: str | None = None,
     correction: str = "holm",
+    pool_replicates: bool = False,
 ) -> list[str]:
     """Return Markdown lines for one question-set section.
 
     ``correction`` names the multiplicity correction applied across the runs
     compared in this section (``"holm"`` or ``"bh"``).
+
+    With ``pool_replicates``, runs sharing a configuration are averaged per
+    question into a single labelled row, so the report ranks configurations
+    rather than individual samples of one configuration.
     """
 
     # Extract and intersect to common questions only
@@ -612,6 +758,38 @@ def generate_section_report(
         all_run_scores_raw[run_id] = extract_scores(
             run_data, force_treatment_arm=treatment_arm
         )
+
+    replicate_note: list[str] = []
+    if pool_replicates:
+        groups = group_replicates(runs)
+        run_data_by_id = dict(runs)
+        pooled_runs: list[tuple[str, dict]] = []
+        pooled_ids: list[str] = []
+        pooled_scores: dict[str, list[dict]] = {}
+        for _key, ids in groups.items():
+            present = [rid for rid in run_ids if rid in ids]
+            if not present:
+                continue
+            label = replicate_label(present)
+            while label in pooled_scores:          # keep labels unique
+                label += "'"
+            pooled_scores[label] = pool_replicate_scores(all_run_scores_raw, present)
+            pooled_run = run_data_by_id[present[0]]
+            if len(present) > 1:
+                pooled_run = {**pooled_run, "cost_summary": pool_cost_summaries(
+                    [run_data_by_id[rid].get("cost_summary") for rid in present])}
+            pooled_runs.append((label, pooled_run))
+            pooled_ids.append(label)
+            if len(present) > 1:
+                seen = {s["question_id"] for rid in present for s in all_run_scores_raw.get(rid, [])}
+                dropped = len(seen) - len(pooled_scores[label])
+                replicate_note.append(
+                    f"- **{label}** pools {len(present)} replicates: {', '.join(present)}; "
+                    f"{dropped} question(s) dropped for not being scored in every replicate"
+                )
+        runs = pooled_runs
+        run_ids = pooled_ids
+        all_run_scores_raw = pooled_scores
 
     question_sets = [
         set(s["question_id"] for s in scores)
@@ -643,6 +821,20 @@ def generate_section_report(
     lines: list[str] = []
 
     # --- Models Compared ---
+    if replicate_note:
+        lines += [
+            "## Replicate Pooling",
+            "",
+            "Runs sharing a configuration were averaged per question, so each row "
+            "below is one configuration rather than one sample of it. Each pooled "
+            "score is a mean of k runs, so its spread and confidence intervals are "
+            "narrower than a single run's: that reflects the k runs spent, not a "
+            "sharper measurement.",
+            "",
+            *replicate_note,
+            "",
+        ]
+
     lines += [
         "## Models Compared",
         "| Run ID | Answer model | Judge model | Treatment arm |",
@@ -753,6 +945,9 @@ def generate_section_report(
                 f"| **{run_id}** | {cost_str} | {prompt_str} | {completion_str} | "
                 f"{total_str} | {latency_str} | {cache_str} |"
             )
+        if replicate_note:
+            lines += ["", "_A pooled `[n=k]` row shows the total cost, calls and tokens of its k runs "
+                          "and their mean latency._"]
 
         lines += [""]
 

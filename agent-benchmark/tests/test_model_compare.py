@@ -110,10 +110,15 @@ def test_consistency_hash_mismatch_warns():
     assert any("question_set_hash" in w for w in warns)
 
 
-def test_consistency_identical_model_warns():
+def test_consistency_identical_model_is_an_error_unless_pooling():
+    # Runs sharing a configuration are replicates, not rival models. This used
+    # to be a soft warning while the report still ranked them against each
+    # other, which reported sampling noise as a model difference.
     runs = [_run_pair("a", model="same"), _run_pair("b", model="same")]
-    warns = check_run_consistency(runs, "g")
-    assert any("same model" in w for w in warns)
+    with pytest.raises(SystemExit, match="--pool-replicates"):
+        check_run_consistency(runs, "g")
+    # Opting into pooling makes it acceptable.
+    assert check_run_consistency(runs, "g", pool_replicates=True) == []
 
 
 def test_consistency_ok_different_models():
@@ -748,6 +753,17 @@ def test_cli_exposes_stats_correction_for_model_compare():
         )
 
 
+def test_pooled_section_reports_dropped_questions_and_what_pooling_means():
+    from agent_benchmarks.report.model_compare import generate_section_report
+
+    full = [_q("Q1"), _q("Q2")]
+    runs = [("rep1", _eval_run(full)), ("rep2", _eval_run([_q("Q1")]))]
+    text = "\n".join(generate_section_report(runs, ["rep1", "rep2"], "Golden",
+                                             pool_replicates=True))
+    assert "1 question(s) dropped for not being scored in every replicate" in text
+    assert "mean of k runs" in text
+
+
 _V1 = "treatment_material.v1"
 
 
@@ -780,3 +796,55 @@ def test_consistency_ignores_the_stamp_on_unjudged_runs():
     """Only judged runs are stamped, so an unjudged one cannot disagree."""
     runs = [_stamped("a", _V1), _run_pair("b", model="other")]
     check_run_consistency(runs, "regular")
+
+
+MISSING = "\u2014"  # the report's marker for an unknown value
+
+
+def _costed_run(cost, tokens=100, latency=2.0, calls=4):
+    data = _eval_run([_q("Q1"), _q("Q2")])
+    data["cost_summary"] = {"baseline": {
+        "n": 2, "total_cost_usd": cost, "cost_known_n": calls, "total_llm_calls": calls,
+        "prompt_tokens": tokens, "completion_tokens": tokens // 2, "total_tokens": tokens + tokens // 2,
+        "mean_latency_sec": latency,
+    }}
+    return data
+
+
+def _resource_row(text, label):
+    return next(line for line in text.splitlines() if line.startswith(f"| **{label}** | $")
+                or line.startswith(f"| **{label}** | {MISSING}"))
+
+
+def test_pooled_resource_row_sums_cost_and_tokens_over_replicates():
+    runs = [("rep1", _costed_run(1.0, latency=1.0)), ("rep2", _costed_run(2.0, latency=2.0)),
+            ("rep3", _costed_run(3.0, latency=6.0))]
+    text = "\n".join(generate_section_report(runs, ["rep1", "rep2", "rep3"], "Golden",
+                                             pool_replicates=True))
+    assert _resource_row(text, "rep[n=3]") == f"| **rep[n=3]** | $6.0000 | 300 | 150 | 450 | 3.00s | {MISSING} |"
+    assert "total cost, calls and tokens of its k runs" in text
+
+
+def test_pooled_resource_row_keeps_a_field_missing_when_a_replicate_lacks_it():
+    lacking = _costed_run(2.0)
+    del lacking["cost_summary"]["baseline"]["total_cost_usd"]
+    runs = [("rep1", _costed_run(1.0)), ("rep2", lacking), ("rep3", _costed_run(3.0))]
+    text = "\n".join(generate_section_report(runs, ["rep1", "rep2", "rep3"], "Golden",
+                                             pool_replicates=True))
+    assert _resource_row(text, "rep[n=3]").startswith(f"| **rep[n=3]** | {MISSING} | 300 | 150 | 450 |")
+
+
+def test_single_run_resource_row_is_unchanged_and_has_no_pooling_footnote():
+    text = "\n".join(generate_section_report([("solo", _costed_run(1.5))], ["solo"], "Golden",
+                                             pool_replicates=True))
+    assert _resource_row(text, "solo") == f"| **solo** | $1.5000 | 100 | 50 | 150 | 2.00s | {MISSING} |"
+    assert "total cost, calls and tokens of its k runs" not in text
+
+
+def test_pooled_cache_hit_ratio_is_weighted_by_prompt_tokens():
+    from agent_benchmarks.report.model_compare import pool_cost_summaries
+
+    pooled = pool_cost_summaries([{"baseline": {"prompt_tokens": 100, "cache_hit_ratio": 0.5}},
+                                  {"baseline": {"prompt_tokens": 300, "cache_hit_ratio": 0.0}}])
+    assert pooled["baseline"]["cache_hit_ratio"] == 0.125
+    assert pooled["baseline"]["total_cost_usd"] is None

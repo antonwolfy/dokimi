@@ -130,6 +130,8 @@ def run_agent_loop(
     api_key: str = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     max_tokens: int = None,
+    temperature: float = None,
+    seed: int = None,
 ) -> Dict[str, Any]:
     """Drive a tool-calling conversation to a final answer.
 
@@ -157,7 +159,8 @@ def run_agent_loop(
         # caller can still see which skill was loaded before the failure.
         try:
             return chat_completion(messages=messages, model=model, provider=provider,
-                                   api_key=api_key, max_tokens=max_tokens, **kwargs)
+                                   api_key=api_key, max_tokens=max_tokens,
+                                   temperature=temperature, seed=seed, **kwargs)
         except Exception as exc:
             exc.tool_usage = _summarize_tool_usage(tools, transcript)  # type: ignore[attr-defined]
             raise

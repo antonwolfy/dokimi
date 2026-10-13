@@ -1061,6 +1061,7 @@ def test_mismatched_answer_is_drawn_per_base():
     assert len(pairs) == 6
     assert len({p["degraded"] for p in pairs}) > 2
 
+
 def _eval_subcommands():
     import argparse
 
@@ -1166,6 +1167,30 @@ def test_cli_warns_on_an_unmeasured_variant(tmp_path, monkeypatch, capsys, stric
         exit_code = exc.code
     assert exit_code == code
     assert "no pair was built for strip_code" in capsys.readouterr().err
+
+
+def test_judge_temperature_reaches_the_judge_and_the_report(tmp_path, monkeypatch):
+    import json
+
+    import agent_benchmarks.eval.judge as judge_mod
+    import agent_benchmarks.eval.judge_validity as jv
+    from agent_benchmarks.cli import build_parser
+
+    answers = tmp_path / "answers.json"
+    answers.write_text(json.dumps(_answers()))
+    out = tmp_path / "validity.json"
+    built = {}
+    monkeypatch.setattr(judge_mod, "Judge", lambda **kw: built.update(kw))
+    monkeypatch.setattr(jv, "judge_scorer", lambda judge: lambda lib, q, a: float(len(a)))
+    args = build_parser().parse_args(["eval", "judge-validity", "--answers", str(answers),
+                                      "--variants", "truncate_20", "--judge-temperature", "0",
+                                      "--output", str(out)])
+    try:
+        args.func(args)
+    except SystemExit:
+        pass
+    assert built["temperature"] == 0.0
+    assert json.loads(out.read_text())["judge_temperature"] == 0.0
 
 
 # --- degradations: contradiction names, code removal, figure scaling ----------

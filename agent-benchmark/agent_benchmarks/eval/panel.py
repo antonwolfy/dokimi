@@ -14,6 +14,7 @@ Design principles:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -169,6 +170,8 @@ class JudgeConfig:
     role: str
     model: str
     provider: str
+    temperature: Optional[float] = None
+    seed: Optional[int] = None
 
 
 # ── Panel ─────────────────────────────────────────────────────────────────────
@@ -182,12 +185,47 @@ class JudgePanel:
         default_model: str = "gpt-4o-mini",
         default_provider: str = "openai",
         concurrency: int = 6,
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
     ):
         self.judges = judges or [
-            JudgeConfig(role=role, model=default_model, provider=default_provider)
+            JudgeConfig(role=role, model=default_model, provider=default_provider,
+                       temperature=temperature, seed=seed)
             for role in DEFAULT_PANEL
         ]
         self.concurrency = concurrency
+
+    @property
+    def model(self) -> str:
+        """Panel identity, in the slot a single judge's model name occupies.
+
+        ``ArmRunner.build_output`` records ``judge.model``/``judge.provider`` as
+        the artifact's judge provenance, and ``replicate_key`` keys on those. A
+        panel exposing neither wrote nulls, which made two runs judged by
+        *different* panels indistinguishable — and so poolable as replicates.
+        Roles are listed in configured order; models are collapsed when the
+        panel shares one.
+        """
+        roles = "+".join(j.role for j in self.judges)
+        models = sorted({j.model for j in self.judges})
+        return f"panel[{roles}]:{models[0] if len(models) == 1 else ','.join(models)}"
+
+    @property
+    def prompt_sha256(self) -> str:
+        """Digest of the role prompts this panel sends, in configured order."""
+        text = "\0".join(JUDGE_ROLES.get(j.role, JUDGE_ROLES["technical_expert"]) for j in self.judges)
+        return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    @property
+    def temperature(self) -> Optional[float]:
+        """The judges' shared temperature, or None when they differ or none is pinned."""
+        temps = {j.temperature for j in self.judges}
+        return temps.pop() if len(temps) == 1 else None
+
+    @property
+    def provider(self) -> str:
+        providers = sorted({j.provider for j in self.judges})
+        return providers[0] if len(providers) == 1 else "mixed:" + ",".join(providers)
 
     def _build_prompt(self, role: str, question: str, answer: str,
                       library_name: str, context: str) -> str:
@@ -225,7 +263,8 @@ class JudgePanel:
             last_parse_exc: Exception | None = None
             data = None
             for attempt in range(3):
-                raw = llm_call(prompt, model=config.model, provider=config.provider)
+                raw = llm_call(prompt, model=config.model, provider=config.provider,
+                               temperature=config.temperature, seed=config.seed)
                 try:
                     data = self._extract_json(raw)
                     break
@@ -253,6 +292,49 @@ class JudgePanel:
                 role=config.role, model=config.model, provider=config.provider,
                 scores={}, reasoning="", error=str(exc),
             )
+
+    def score_answer(
+        self,
+        library_name: str,
+        question: str,
+        answer: str,
+        context: str = "(No documentation retrieved)",
+        ground_truth: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Score one answer, shaped like :meth:`Judge.score_answer`.
+
+        Lets a panel stand in wherever a single ``Judge`` is expected — notably
+        ``ArmRunner.judge``, which reaches for ``score_answer`` and previously
+        made panels unusable from the arms track. ``aggregate`` carries the
+        panel mean so existing readers need no change; the panel-only fields
+        (spread, agreement, per-role votes) are added alongside, and are the
+        reason to prefer a panel: they expose grader disagreement that a single
+        judge cannot report.
+
+        ``ground_truth`` is accepted for signature compatibility and ignored —
+        the panel's per-role prompts do not currently take a ground-truth chunk.
+        """
+        verdict = self.evaluate(
+            question=question, answer=answer,
+            library_name=library_name, context=context,
+        )
+        out: Dict[str, Any] = dict(verdict.mean_dimensions)
+        out["aggregate"] = verdict.mean_aggregate
+        out["panel"] = {
+            "n_judges": len(verdict.votes),
+            "n_valid": len(verdict.valid_votes),
+            "std_aggregate": verdict.std_aggregate,
+            "agreement_score": verdict.agreement_score,
+            "disagreement_flag": verdict.disagreement_flag,
+            "votes": [
+                {"role": v.role, "model": v.model, "provider": v.provider,
+                 "aggregate": v.aggregate, "error": v.error}
+                for v in verdict.votes
+            ],
+        }
+        if verdict.mean_aggregate is None:
+            out["error"] = "all panel judges failed"
+        return out
 
     def evaluate(self, question: str, answer: str, library_name: str,
                  context: str = "") -> PanelVerdict:
@@ -347,6 +429,7 @@ def _save_incremental(results: List[Dict], path: Path, library_name: str,
     output = {
         "evaluated_at": _timestamp(),
         "judge_model": f"panel({len(panel.judges)})",
+        "judge_temperature": panel.temperature,
         "panel_config": {
             "size": len(panel.judges),
             "roles": [j.role for j in panel.judges],

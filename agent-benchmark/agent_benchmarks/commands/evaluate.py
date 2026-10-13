@@ -87,7 +87,8 @@ def cmd_eval_panel_score(args: argparse.Namespace) -> None:
             if role not in JUDGE_ROLES:
                 print(f"Error: unknown role '{role}'. Valid: {list(JUDGE_ROLES)}", file=sys.stderr)
                 sys.exit(1)
-            judges.append(JudgeConfig(role=role.strip(), model=model.strip(), provider=provider.strip()))
+            judges.append(JudgeConfig(role=role.strip(), model=model.strip(), provider=provider.strip(),
+                                      temperature=args.judge_temperature))
         roles = [j.role for j in judges]
     else:
         roles = [r.strip() for r in args.roles.split(",")] if args.roles else DEFAULT_PANEL
@@ -95,7 +96,8 @@ def cmd_eval_panel_score(args: argparse.Namespace) -> None:
         if unknown:
             print(f"Error: unknown roles: {unknown}. Valid: {list(JUDGE_ROLES)}", file=sys.stderr)
             sys.exit(1)
-        judges = [JudgeConfig(role=r, model=args.model, provider=args.provider) for r in roles]
+        judges = [JudgeConfig(role=r, model=args.model, provider=args.provider,
+                              temperature=args.judge_temperature) for r in roles]
 
     panel = JudgePanel(judges=judges, concurrency=args.concurrency)
 
@@ -182,6 +184,7 @@ def cmd_eval_score(args: argparse.Namespace) -> None:
     judge = Judge(
         model=args.judge_model,
         provider=args.judge_provider,
+        temperature=args.judge_temperature,
         run_metadata={
             "question_model": answers_data.get("question_model", "unknown") if isinstance(answers_data, dict) else "unknown",
             "question_provider": answers_data.get("question_provider", "unknown") if isinstance(answers_data, dict) else "unknown",
@@ -280,7 +283,7 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
     # this block, not to each run path.
     typed = None
     if args.scorer == "judge":
-        judge = Judge(model=args.judge_model, provider=args.judge_provider)
+        judge = Judge(model=args.judge_model, provider=args.judge_provider, temperature=args.judge_temperature)
         scorer = judge_scorer(judge)
         label = f"{args.judge_provider}/{args.judge_model}"
     elif args.scorer != "typed" and not args.scorer.startswith("typed:"):
@@ -361,7 +364,7 @@ def cmd_eval_judge_validity(args: argparse.Namespace) -> None:
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        result = report.to_dict()
+        result = {**report.to_dict(), "judge_temperature": args.judge_temperature}
         # Which answers the gate was measured on: a judge that passes on one
         # answer model's output is not thereby validated on another's.
         result["summary"]["answers_model"] = data.get("model") if isinstance(data, dict) else None
@@ -427,6 +430,8 @@ def register(sub, positive_int) -> None:
     score_p.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="LLM model for judging")
     score_p.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=["openai", "anthropic", "amazon-bedrock", "google", "google-vertex", "openrouter"])
     score_p.add_argument("--concurrency", type=positive_int, default=DEFAULT_CONCURRENCY, help="Parallel judge calls (default: 5)")
+    score_p.add_argument("--judge-temperature", type=float, default=None, dest="judge_temperature",
+                         help="Judge sampling temperature, recorded as judge_temperature in the output")
     score_p.set_defaults(func=cmd_eval_score)
 
     # eval ragas
@@ -484,6 +489,8 @@ def register(sub, positive_int) -> None:
                             help=f"Parallel judge calls (default: {DEFAULT_CONCURRENCY})")
     validity_p.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL, help="LLM model for judging")
     validity_p.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=JUDGE_PROVIDERS)
+    validity_p.add_argument("--judge-temperature", type=float, default=None, dest="judge_temperature",
+                            help="Judge sampling temperature; match arms run --judge-temperature to certify the same judge")
     validity_p.add_argument("--scorer", default="judge",
                             help="Arm to grade: 'judge' (default, the shipped LLM judge) or "
                                  "'typed:<backend>[:<repo>]' for a local typed-decision "
@@ -524,4 +531,6 @@ def register(sub, positive_int) -> None:
                          help="Parallel judge API calls (default: 6)")
     panel_p.add_argument("--limit", type=positive_int, default=None,
                          help="Evaluate only first N answers (useful for testing)")
+    panel_p.add_argument("--judge-temperature", type=float, default=None, dest="judge_temperature",
+                         help="Sampling temperature for every panel judge, recorded as judge_temperature")
     panel_p.set_defaults(func=cmd_eval_panel_score)

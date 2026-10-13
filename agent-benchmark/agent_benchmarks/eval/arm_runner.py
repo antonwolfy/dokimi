@@ -122,6 +122,8 @@ class ArmRunner:
         max_tokens: Optional[int] = None,
         grounded_from_topics: bool = False,
         stats_correction: str = "holm",
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
     ):
         if not treatments:
             raise ValueError("ArmRunner requires at least one treatment arm")
@@ -140,6 +142,8 @@ class ArmRunner:
         self.api_key = api_key
         self.max_iterations = max_iterations
         self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.seed = seed
         self.grounded_from_topics = grounded_from_topics
         self.harness = harness
         self.matrix_cell = matrix_cell
@@ -165,11 +169,17 @@ class ArmRunner:
         truncated, and ``max_iterations`` decides whether an agentic arm ran out
         of tool-call rounds before answering. Without these, a truncated run and a
         complete one are indistinguishable in the artifact.
+
+        ``temperature`` and ``seed`` are recorded for the same reason: sampling is
+        non-deterministic by default, so a pinned run and a free-sampling one are
+        differently reproducible and should not be silently pooled as replicates.
         """
         return {
             "max_tokens": self.max_tokens,
             "max_iterations": self.max_iterations,
             "grounded_from_topics": self.grounded_from_topics,
+            "temperature": self.temperature,
+            "seed": self.seed,
         }
 
     def run(
@@ -307,6 +317,8 @@ class ArmRunner:
                 system=cfg.system_prompt,
                 max_tokens=self.max_tokens,
                 cache_prefix=cache_prefix,
+                temperature=self.temperature,
+                seed=self.seed,
             )
         except Exception as exc:
             logger.exception("Arm %s answer generation failed", treatment.name)
@@ -367,6 +379,8 @@ class ArmRunner:
                 api_key=self.api_key,
                 max_iterations=self.max_iterations,
                 max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                seed=self.seed,
             )
         except Exception as exc:
             logger.exception("Agentic arm failed")
@@ -449,7 +463,7 @@ class ArmRunner:
             base_agg = base.get("aggregate") if isinstance(base, dict) else None
             if base_agg is not None:
                 for arm_name, s in scores.items():
-                    if arm_name != baseline_arm and isinstance(s, dict) and "aggregate" in s:
+                    if arm_name != baseline_arm and isinstance(s, dict) and s.get("aggregate") is not None:
                         deltas[arm_name] = round(s["aggregate"] - base_agg, 1)
 
             return {
@@ -512,6 +526,8 @@ class ArmRunner:
             if judge is not None:
                 out["judge_model"] = getattr(judge, "model", None)
                 out["judge_provider"] = getattr(judge, "provider", None)
+                out["judge_temperature"] = getattr(judge, "temperature", None)
+                out["judge_prompt_sha256"] = getattr(judge, "prompt_sha256", None)
         # Judge-side token/cost telemetry, when a judge ran (mirrors the answer
         # cost_summary so a full run's spend is auditable from one artifact).
         if judge is not None and hasattr(judge, "_usage_totals"):

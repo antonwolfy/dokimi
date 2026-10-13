@@ -8,6 +8,7 @@ Usage:
     text = llm_call("Your prompt", model="gpt-4o-mini", provider="openai")
 """
 import os
+import re
 import time
 import logging
 from typing import Callable, Optional
@@ -27,15 +28,44 @@ LANGCHAIN_AVAILABLE = True
 _RETRYABLE_SUBSTRINGS = (
     "rate_limit", "ratelimit", "rate limit",
     "timeout", "timed out",
-    "connection", "server error", "503", "502", "529",
+    "connection", "server error",
     "overloaded",
     # Bedrock's transient 5xx arrives as ServiceUnavailableError with no status
     # code in the message ("The system encountered an unexpected error during
     # processing. Try your request again."). Matched on the exception class
     # name litellm puts in the message, not the bare word "unavailable", which
     # also appears in permanent errors ("model is unavailable in this region").
-    "serviceunavailable", "try your request again",
+    "serviceunavailable", "service unavailable",
+    "throttl",
+    "try your request again",
+    "internalserver", "internal server",
 )
+
+# Status codes only next to a status word: a bare "500" also matches
+# "context length 1500 exceeded", which is permanent.
+_RETRYABLE_STATUS = re.compile(r"\b(?:status|code|http|error)\W{0,3}(?:500|502|503|529)\b")
+
+# litellm's typed exceptions are a more reliable signal than prose. Matched by
+# class name so the check works whether or not litellm is importable here.
+_RETRYABLE_EXC_NAMES = frozenset({
+    "ratelimiterror",
+    "serviceunavailableerror",
+    "internalservererror",
+    "timeout",
+    "apiconnectionerror",
+    "apierror",
+})
+
+# Checked before the substrings: these are permanent, and their messages can
+# contain retryable-looking words ("connection" in an auth error's URL, say).
+_NON_RETRYABLE_EXC_NAMES = frozenset({
+    "authenticationerror",
+    "permissiondeniederror",
+    "notfounderror",
+    "badrequesterror",
+    "unsupportedparamserror",
+    "contentpolicyviolationerror",
+})
 
 
 class _Resp:
@@ -47,37 +77,67 @@ class _Resp:
 class ChatOpenAI:
     """LangChain-compatible shim backed by llm_call."""
 
-    def __init__(self, model: str, api_key: Optional[str] = None, **kwargs):
+    def __init__(self, model: str, api_key: Optional[str] = None,
+                 temperature: Optional[float] = None, seed: Optional[int] = None,
+                 **kwargs):
         self.model = model
         self.api_key = api_key
+        self.temperature = temperature
+        self.seed = seed
 
     def invoke(self, prompt: str, draw: int = 0,
                cache_if: Optional[Callable[[str], bool]] = None):
         """Invoke the model with a prompt; response carries a UsageRecord."""
-        text, usage = llm_call_with_usage(prompt, self.model, provider="openai", api_key=self.api_key,
-                                          draw=draw, cache_if=cache_if)
+        text, usage = llm_call_with_usage(
+            prompt, self.model, provider="openai", api_key=self.api_key,
+            temperature=self.temperature, seed=self.seed,
+            draw=draw, cache_if=cache_if,
+        )
         return _Resp(text, usage=usage)
 
 
 class ChatAnthropic:
     """LangChain-compatible shim backed by llm_call."""
 
-    def __init__(self, model: str, api_key: Optional[str] = None, **kwargs):
+    def __init__(self, model: str, api_key: Optional[str] = None,
+                 temperature: Optional[float] = None, seed: Optional[int] = None,
+                 **kwargs):
         self.model = model
         self.api_key = api_key
+        self.temperature = temperature
+        self.seed = seed
 
     def invoke(self, prompt: str, draw: int = 0,
                cache_if: Optional[Callable[[str], bool]] = None):
         """Invoke the model with a prompt; response carries a UsageRecord."""
-        text, usage = llm_call_with_usage(prompt, self.model, provider="anthropic", api_key=self.api_key,
-                                          draw=draw, cache_if=cache_if)
+        text, usage = llm_call_with_usage(
+            prompt, self.model, provider="anthropic", api_key=self.api_key,
+            temperature=self.temperature, seed=self.seed,
+            draw=draw, cache_if=cache_if,
+        )
         return _Resp(text, usage=usage)
 
 
 def _is_retryable(exc: Exception) -> bool:
-    """Return True if the exception is worth retrying."""
+    """Return True if the exception is worth retrying.
+
+    Exception type decides when it is recognised; prose is the fallback. A
+    permanent failure (bad key, unsupported param) must stay non-retryable even
+    if its message happens to contain a transient-sounding word, so the
+    non-retryable set is consulted first.
+    """
+    name = type(exc).__name__.lower()
+    if name in _NON_RETRYABLE_EXC_NAMES:
+        return False
+    if name in _RETRYABLE_EXC_NAMES:
+        return True
     msg = str(exc).lower()
-    return any(s in msg for s in _RETRYABLE_SUBSTRINGS)
+    if any(s in msg for s in ("authenticationerror", "unsupportedparamserror",
+                              "permissiondenied", "notfounderror",
+                              "badrequesterror")):
+        return False
+    return (any(s in msg for s in _RETRYABLE_SUBSTRINGS)
+            or _RETRYABLE_STATUS.search(msg) is not None)
 
 
 def _resolve_api_key(provider: str, api_key: Optional[str]) -> str:
@@ -102,6 +162,58 @@ def _resolve_api_key(provider: str, api_key: Optional[str]) -> str:
     return api_key
 
 
+def unsupported_sampling_params(
+    model: str, provider: str, temperature=None, seed=None
+) -> list:
+    """Names of requested sampling params this provider will reject.
+
+    Bedrock, for one, accepts ``temperature`` but rejects ``seed`` outright with
+    ``UnsupportedParamsError``. Callers use this to fail before a run rather
+    than after: the per-answer exception handler turns such a rejection into a
+    recorded ``generation_failed``, which yields a complete-looking report whose
+    every score is null.
+
+    Returns an empty list when the check cannot be performed, so an unknown
+    model never blocks a run on this account.
+    """
+    requested = [n for n, v in (("temperature", temperature), ("seed", seed))
+                 if v is not None]
+    if not requested:
+        return []
+    try:
+        from litellm import get_supported_openai_params
+
+        supported = get_supported_openai_params(
+            model=_build_litellm_model(model, provider)
+        ) or []
+    except Exception:
+        return []
+    if not supported:
+        return []
+    return [n for n in requested if n not in supported]
+
+
+def _sampling_kwargs(
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+    seed: Optional[int] = None,
+) -> dict:
+    """Request-shaping kwargs, omitting any that were not set.
+
+    Omission matters: passing ``temperature=None`` explicitly is not the same as
+    not passing it, and some providers reject a null. Callers that set nothing
+    get exactly the request they got before these params existed.
+    """
+    out: dict = {}
+    if max_tokens is not None:
+        out["max_tokens"] = max_tokens
+    if temperature is not None:
+        out["temperature"] = temperature
+    if seed is not None:
+        out["seed"] = seed
+    return out
+
+
 def _build_litellm_model(model: str, provider: str) -> str:
     """Build litellm model string from model + provider."""
     if provider == "openrouter":
@@ -115,6 +227,11 @@ def _build_litellm_model(model: str, provider: str) -> str:
     elif provider in ("google", "gemini", "google-vertex"):
         return f"vertex_ai/{model}"
     elif provider == "amazon-bedrock":
+        # Bedrock's openai.* model namespace only accepts invocations via the
+        # Converse API; the plain bedrock/<model> route 404s on it (Anthropic
+        # models on Bedrock work fine either way, so this is scoped narrowly).
+        if "openai." in model:
+            return f"bedrock/converse/{model}"
         return f"bedrock/{model}"
     else:
         return f"{provider}/{model}"
@@ -218,6 +335,8 @@ def llm_call(
     retry_delay: float = 2.0,
     system: Optional[str] = None,
     cache_prefix: Optional[str] = None,
+    temperature: Optional[float] = None,
+    seed: Optional[int] = None,
 ) -> str:
     """Call any LLM via litellm with automatic retry on transient errors.
 
@@ -232,6 +351,9 @@ def llm_call(
             ``system`` message — used to vary the answering agent's persona.
         cache_prefix: Stable text preceding ``prompt``; see
             :func:`llm_call_with_usage`.
+        temperature: Optional sampling temperature. Omitted when None, so the
+            provider default applies and request shape is unchanged.
+        seed: Optional sampling seed, for providers that honour one.
 
     Returns:
         Model response as a plain string.
@@ -240,6 +362,7 @@ def llm_call(
         prompt=prompt, model=model, provider=provider,
         api_key=api_key, max_retries=max_retries, retry_delay=retry_delay,
         system=system, cache_prefix=cache_prefix,
+        temperature=temperature, seed=seed,
     )
     return text
 
@@ -255,6 +378,8 @@ def llm_call_with_usage(
     stream: bool = False,
     max_tokens: Optional[int] = None,
     cache_prefix: Optional[str] = None,
+    temperature: Optional[float] = None,
+    seed: Optional[int] = None,
     draw: int = 0,
     cache_if: Optional[Callable[[str], bool]] = None,
 ) -> "tuple[str, UsageRecord]":
@@ -280,6 +405,11 @@ def llm_call_with_usage(
             explicit cache breakpoint when long enough to be worth one — see
             :mod:`agent_benchmarks.caching`. Passing the whole prompt as
             ``prompt`` still works and simply never caches.
+        temperature: Optional sampling temperature. Sampling is non-deterministic
+            by default, which shows up as run-to-run score variance; pin this to
+            reduce it. Omitted when None so the request shape does not change.
+        seed: Optional sampling seed, for providers that honour one. Best-effort
+            reproducibility — not every provider guarantees it.
         draw: Index of an independent sample of the same request. Draw 0 is
             the ordinary call; a caller that wants a *second opinion* on a
             byte-identical prompt (a judge retry after an unparseable reply, a
@@ -304,10 +434,17 @@ def llm_call_with_usage(
     # max_tokens belongs in the key: it changes the response (a truncated or
     # reasoning-starved completion is a different answer), so replaying a cache
     # entry recorded under a different ceiling would silently mix the two.
+    # temperature/seed belong in the key: a pinned run must not be served a
+    # response that was cached under free sampling. Added only when set, so
+    # entries cached before they existed still hit.
     cache_key = caching.response_cache_key(
         litellm_model=litellm_model,
         messages=messages,
-        extra=caching.draw_extra({"stream": stream, "max_tokens": max_tokens}, draw),
+        extra=caching.draw_extra(
+            {"stream": stream, "max_tokens": max_tokens,
+             **_sampling_kwargs(temperature=temperature, seed=seed)},
+            draw,
+        ),
     )
     hit = caching.load_response(cache_key)
     if hit is not None and caching.keeps(cache_if, hit[0]):
@@ -320,13 +457,15 @@ def llm_call_with_usage(
         try:
             if stream:
                 text, usage = _stream_call(completion, litellm_model, messages, api_key,
-                                           model, provider, max_tokens=max_tokens)
+                                           model, provider, max_tokens=max_tokens,
+                                           temperature=temperature, seed=seed)
                 if caching.keeps(cache_if, text):
                     caching.store_response(cache_key, text, usage)
                 return text, usage
 
             t0 = time.time()
-            extra = {"max_tokens": max_tokens} if max_tokens else {}
+            extra = _sampling_kwargs(max_tokens=max_tokens,
+                                     temperature=temperature, seed=seed)
             resp = completion(
                 model=litellm_model,
                 messages=messages,
@@ -357,7 +496,8 @@ def llm_call_with_usage(
 
 
 def _stream_call(completion, litellm_model, messages, api_key, model, provider,
-                 max_tokens: Optional[int] = None):
+                 max_tokens: Optional[int] = None, temperature: Optional[float] = None,
+                 seed: Optional[int] = None):
     """Streaming variant of a single completion that also measures TTFT.
 
     Requests usage in the terminal chunk (``stream_options``) and stamps
@@ -375,7 +515,7 @@ def _stream_call(completion, litellm_model, messages, api_key, model, provider,
         api_key=api_key or None,
         stream=True,
         stream_options={"include_usage": True},
-        **({"max_tokens": max_tokens} if max_tokens else {}),
+        **_sampling_kwargs(max_tokens=max_tokens or None, temperature=temperature, seed=seed),
     )
     for chunk in stream_resp:
         final_chunk = chunk
@@ -414,6 +554,8 @@ def chat_completion(
     max_retries: int = 3,
     retry_delay: float = 2.0,
     max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+    seed: Optional[int] = None,
 ):
     """Multi-turn completion with optional tool-calling.
 
@@ -435,6 +577,9 @@ def chat_completion(
         tool_choice: Optional tool-choice directive (e.g. ``"auto"``).
         max_tokens: Optional output-token ceiling; see
             :func:`llm_call_with_usage`.
+        temperature: Optional sampling temperature; see
+            :func:`llm_call_with_usage`.
+        seed: Optional sampling seed; see :func:`llm_call_with_usage`.
 
     Returns:
         The litellm completion response object.
@@ -447,12 +592,11 @@ def chat_completion(
         messages, model=model, provider=provider
     )
 
-    kwargs = {}
+    kwargs = _sampling_kwargs(max_tokens=max_tokens,
+                              temperature=temperature, seed=seed)
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = tool_choice or "auto"
-    if max_tokens:
-        kwargs["max_tokens"] = max_tokens
 
     last_exc: Optional[Exception] = None
     delay = retry_delay

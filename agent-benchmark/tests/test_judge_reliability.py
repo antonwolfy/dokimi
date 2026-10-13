@@ -281,6 +281,7 @@ def test_a_failed_checklist_call_is_unparsed_not_a_lost_run():
 
 def test_prompt_template_override_reaches_the_model():
     judge = Judge.__new__(Judge)
+    judge.temperature = judge.seed = None
     judge.prompt_template = "CUSTOM __QUESTION__ __ANSWER__ __CONTEXT__ __LIBRARY_NAME__"
     judge._accumulate_usage = lambda usage: None
     judge.llm = MagicMock()

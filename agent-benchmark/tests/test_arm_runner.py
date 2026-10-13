@@ -225,15 +225,21 @@ def test_arm_runner_records_request_shaping_config(monkeypatch):
         max_tokens=32_000,
         max_iterations=9,
         grounded_from_topics=True,
+        temperature=0.0,
+        seed=7,
     )
     records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
     output = runner.build_output("oneTBB", records)
 
     # Without these a truncated run and a complete one are indistinguishable.
+    # temperature/seed matter for the same reason: a pinned run and a
+    # free-sampling one are differently reproducible.
     assert output["run_config"] == {
         "max_tokens": 32_000,
         "max_iterations": 9,
         "grounded_from_topics": True,
+        "temperature": 0.0,
+        "seed": 7,
     }
 
 
@@ -248,6 +254,46 @@ def test_arm_runner_run_config_defaults(monkeypatch):
 
     assert output["run_config"]["max_tokens"] is None
     assert output["run_config"]["grounded_from_topics"] is False
+    # Unset by default, so the request keeps the shape it had before these
+    # knobs existed.
+    assert output["run_config"]["temperature"] is None
+    assert output["run_config"]["seed"] is None
+
+
+def test_arm_runner_forwards_sampling_params_to_the_llm_call(monkeypatch):
+    # Recording temperature/seed in run_config is worthless if they never reach
+    # the request, so assert the call itself, not just the artifact.
+    seen = {}
+
+    def fake_call(prompt, model, provider="openai", api_key=None, system=None, **kw):
+        seen.update(kw)
+        return "answer", {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+    monkeypatch.setattr(arm_runner_mod, "llm_call_with_usage", fake_call)
+
+    runner = ArmRunner([BaselineTreatment()], temperature=0.0, seed=123)
+    runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+
+    assert seen["temperature"] == 0.0
+    assert seen["seed"] == 123
+
+
+def test_arm_runner_omits_sampling_params_when_unset(monkeypatch):
+    seen = {}
+
+    def fake_call(prompt, model, provider="openai", api_key=None, system=None, **kw):
+        seen.update(kw)
+        return "answer", {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+
+    monkeypatch.setattr(arm_runner_mod, "llm_call_with_usage", fake_call)
+
+    runner = ArmRunner([BaselineTreatment()])
+    runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+
+    # Passed as None rather than absent is fine at this layer — _sampling_kwargs
+    # is what drops them before the provider sees the request.
+    assert seen.get("temperature") is None
+    assert seen.get("seed") is None
 
 
 def test_arm_runner_rejects_unknown_stats_correction():
@@ -369,6 +415,110 @@ def test_baseline_arm_sends_no_prefix(monkeypatch):
     _patch_llm(monkeypatch, captured)
     ArmRunner([BaselineTreatment()]).run("oneTBB", QUESTIONS[:1], concurrency=1)
     assert captured[0]["cache_prefix"] is None
+
+
+def test_arm_runner_judge_skips_an_arm_whose_aggregate_is_none(monkeypatch, demo_skill):
+    # A panel whose judges all fail returns {"aggregate": None}; the delta is skipped, not a crash.
+    _patch_llm(monkeypatch, [])
+    runner = ArmRunner([BaselineTreatment(), SkillTreatment(load_skill(demo_skill))])
+    records = runner.run("oneTBB", QUESTIONS, concurrency=1)
+
+    class _HalfFailing(_FakeJudge):
+        def score_answer(self, library_name, question, answer, context="", ground_truth=None):
+            return {"aggregate": 60 if context == "(No documentation retrieved)" else None}
+
+    evaluations = runner.judge(_HalfFailing(), "oneTBB", records, baseline_arm="baseline")
+    assert all(ev["deltas_vs_baseline"] == {} for ev in evaluations)
+    assert runner.build_output("oneTBB", records, evaluations, judge=_HalfFailing())["summary"]
+
+
+def test_cli_rejects_an_unknown_judge_panel_role_before_running(capsys):
+    assert _parse_arms_run(["--judge-panel", "technical_expert"]).judge_panel == "technical_expert"
+    with pytest.raises(SystemExit) as exc:
+        _parse_arms_run(["--judge-panel", "technical_expert,doc_reveiwer"])
+    assert exc.value.code == 2 and "doc_reveiwer" in capsys.readouterr().err
+
+
+def test_build_output_records_judge_temperature_and_prompt_digest(monkeypatch):
+    from agent_benchmarks.eval import JudgePanel
+    from agent_benchmarks.eval.judge import JUDGE_PROMPT_SHA256, Judge
+    from agent_benchmarks.eval.panel import JudgeConfig
+
+    _patch_llm(monkeypatch, [])
+    runner = ArmRunner([BaselineTreatment()])
+    records = runner.run("oneTBB", QUESTIONS[:1], concurrency=1)
+    judge = Judge(model="m1", provider="amazon-bedrock", temperature=0.0)
+    out = runner.build_output("oneTBB", records, [], judge=judge)
+    assert (out["judge_temperature"], out["judge_prompt_sha256"]) == (0.0, JUDGE_PROMPT_SHA256)
+    one = JudgePanel(judges=[JudgeConfig(role="technical_expert", model="m1", provider="amazon-bedrock")])
+    two = JudgePanel(judges=[JudgeConfig(role="doc_reviewer", model="m1", provider="amazon-bedrock")])
+    assert len({one.prompt_sha256, two.prompt_sha256, JUDGE_PROMPT_SHA256}) == 3
+
+
+def test_an_unbuildable_judge_fails_before_any_answer_is_generated(monkeypatch):
+    from agent_benchmarks.commands.arms import _build_arms_output
+
+    calls = []
+    monkeypatch.setattr(ArmRunner, "run", lambda self, *a, **kw: calls.append(1) or [])
+    args = _parse_arms_run(["--judge", "--judge-provider", "openai-codex", "--judge-model", "m"])
+    with pytest.raises(ValueError, match="openai-codex"):
+        _build_arms_output(args, ["baseline"], QUESTIONS[:1])
+    assert calls == []
+
+
+def test_matrix_run_checks_every_cell_before_running_the_first(monkeypatch, tmp_path):
+    import json
+    import agent_benchmarks.commands.arms as arms_mod
+    from agent_benchmarks.cli import build_parser
+
+    cells = tmp_path / "cells.json"
+    cells.write_text(json.dumps({"matrix": {"cells": [
+        {"id": "ok", "model": "m-ok", "provider": "openai", "harness": "arms-runner"},
+        {"id": "bad", "model": "m-bad", "provider": "amazon-bedrock", "harness": "arms-runner"},
+    ]}}), encoding="utf-8")
+    questions = tmp_path / "q.json"
+    questions.write_text(json.dumps([{"id": "q1", "question": "Q?"}]), encoding="utf-8")
+
+    monkeypatch.setattr("agent_benchmarks.llm.unsupported_sampling_params",
+                        lambda model, provider, **kw: ["seed"] if model == "m-bad" else [])
+    monkeypatch.setattr(arms_mod, "_probe_sampling", lambda *a: None)
+    ran = []
+    monkeypatch.setattr(arms_mod, "_build_arms_output", lambda *a, **kw: ran.append(1))
+    args = build_parser().parse_args(
+        ["arms", "matrix-run", "--product", "oneTBB", "--questions", str(questions),
+         "--arms", "baseline", "--matrix-cells", str(cells), "--seed", "1",
+         "--out-dir", str(tmp_path / "out")])
+    with pytest.raises(SystemExit):
+        args.func(args)
+    assert ran == []
+
+
+def test_probe_rejects_a_sampling_value_the_provider_refuses(monkeypatch):
+    import agent_benchmarks.commands.arms as arms_mod
+    import agent_benchmarks.llm as llm_mod
+
+    def refuse(prompt, model, provider, **kw):
+        raise Exception("UnsupportedParamsError: gpt-5 models don't support temperature=0.0")
+
+    monkeypatch.setattr(llm_mod, "llm_call_with_usage", refuse)
+    arms_mod._probe_sampling.cache_clear()
+    with pytest.raises(ValueError, match="temperature=0.0"):
+        arms_mod._probe_sampling("gpt-5", "openai", 0.0, None)
+
+
+def test_probe_makes_no_call_without_sampling_flags_and_one_per_configuration(monkeypatch):
+    import agent_benchmarks.commands.arms as arms_mod
+    import agent_benchmarks.llm as llm_mod
+
+    calls = []
+    monkeypatch.setattr(llm_mod, "llm_call_with_usage",
+                        lambda prompt, model, provider, **kw: calls.append(kw) or ("OK", None))
+    arms_mod._probe_sampling.cache_clear()
+    arms_mod._probe_sampling("m", "openai", None, None)
+    assert calls == []
+    arms_mod._probe_sampling("m", "openai", 0.0, None)
+    arms_mod._probe_sampling("m", "openai", 0.0, None)
+    assert len(calls) == 1 and calls[0]["temperature"] == 0.0
 
 
 # ── What the judge is shown about an arm's material ──────────────────────
@@ -507,7 +657,7 @@ def test_combined_arm_with_an_agentic_part_does_not_show_the_judge_unsent_materi
     sent = {}
 
     def fake_loop(question, tools, model, provider, system_prompt=None, api_key=None,
-                  max_iterations=6, max_tokens=None):
+                  max_iterations=6, max_tokens=None, **_sampling):
         sent.update(question=question, system_prompt=system_prompt or "")
         return {"answer": "see patterns/simd.md", "transcript": [], "tool_call_count": 0,
                 "tool_usage": {}, "iterations": 1, "stopped_reason": "answered",
@@ -639,7 +789,7 @@ def test_agentic_skill_arm_is_not_judged_against_an_empty_context(
 ):
     """``context_chunks`` is empty by construction for an agentic arm."""
     def fake_loop(question, tools, model, provider, system_prompt=None, api_key=None,
-                  max_iterations=6, max_tokens=None):
+                  max_iterations=6, max_tokens=None, **_sampling):
         return {"answer": "see patterns/simd.md", "transcript": [], "tool_call_count": 0,
                 "tool_usage": {}, "iterations": 1, "stopped_reason": "answered",
                 "token_usage": {"prompt_tokens": 1, "completion_tokens": 1,
@@ -754,3 +904,43 @@ def test_an_ambiguous_key_is_recorded_as_a_snippet_fallback(monkeypatch):
     evaluations = runner.judge(_ContextCapturingJudge(), "oneTBB", records)
     sources = [s["judge_context_source"] for ev in evaluations for s in ev["scores"].values()]
     assert sources == ["snippet_fallback"] * 2
+
+
+def _litellm_resp(text):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))],
+                           usage=None)
+
+
+def test_a_bare_bedrock_judge_name_is_checked_as_the_judge_will_call_it(monkeypatch):
+    import litellm
+    import agent_benchmarks.commands.arms as arms_mod
+    from agent_benchmarks.commands.arms import _build_arms_output
+    from agent_benchmarks.utils import get_llm
+
+    mapped = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    monkeypatch.setenv("ANTHROPIC_DEFAULT_SONNET_MODEL", mapped)
+    checked, sent = [], []
+
+    def supported(model=None, **kw):
+        checked.append(model)
+        return ["temperature", "max_tokens"]
+
+    def completion(model, messages, **kw):
+        sent.append((model, kw.get("temperature")))
+        if model != f"bedrock/{mapped}":
+            raise Exception("BadRequestError: The provided model identifier is invalid.")
+        return _litellm_resp("OK")
+
+    monkeypatch.setattr(litellm, "get_supported_openai_params", supported)
+    monkeypatch.setattr(litellm, "completion", completion)
+    monkeypatch.setattr(ArmRunner, "run", lambda self, *a, **kw: [])
+    arms_mod._probe_sampling.cache_clear()
+    args = _parse_arms_run(["--judge", "--judge-provider", "amazon-bedrock",
+                            "--judge-model", "claude-sonnet-4-5", "--judge-temperature", "0"])
+    _build_arms_output(args, ["baseline"], QUESTIONS[:1])
+    get_llm("amazon-bedrock", "claude-sonnet-4-5", temperature=0.0).invoke("p")
+
+    assert [m for m in checked if m.startswith("bedrock/")] == [f"bedrock/{mapped}"]
+    assert sent == [(f"bedrock/{mapped}", 0.0), (f"bedrock/{mapped}", 0.0)]

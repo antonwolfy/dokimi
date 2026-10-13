@@ -66,6 +66,7 @@ class EvaluationPipeline:
         provider: str = DEFAULT_ANSWER_PROVIDER,
         judge_model: str = DEFAULT_JUDGE_MODEL,
         judge_provider: str = DEFAULT_JUDGE_PROVIDER,
+        judge_temperature: Optional[float] = None,
         personas_count: int = 5,
         questions_per_topic: int = 2,
         top_k: int = DEFAULT_RETRIEVAL_TOP_K,
@@ -96,6 +97,8 @@ class EvaluationPipeline:
             provider: Provider for generation/answering
             judge_model: LLM model for evaluation
             judge_provider: Provider for evaluation
+            judge_temperature: Optional judge sampling temperature; unset leaves
+                the provider default
             personas_count: Target number of personas
             questions_per_topic: Questions per topic per persona
             top_k: Docs to retrieve before reranking
@@ -164,6 +167,7 @@ class EvaluationPipeline:
         self.provider = provider
         self.judge_model = judge_model
         self.judge_provider = judge_provider
+        self.judge_temperature = judge_temperature
 
         self.personas_count = personas_count
         self.questions_per_topic = questions_per_topic
@@ -542,6 +546,7 @@ class EvaluationPipeline:
         judge = Judge(
             model=self.judge_model,
             provider=self.judge_provider,
+            temperature=self.judge_temperature,
             run_metadata={
                 "question_model": self.model,
                 "question_provider": self.provider,

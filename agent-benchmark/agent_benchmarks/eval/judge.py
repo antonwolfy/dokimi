@@ -3,6 +3,7 @@
 
 """Judge answers using LLM-as-judge approach."""
 
+import hashlib
 import logging
 import json
 import os
@@ -178,7 +179,20 @@ __CONTEXT__
   }
 }"""
 
+#: Identity of the judge prompts, stamped on judged artifacts: a prompt edit is a different judge.
+JUDGE_PROMPT_SHA256 = "sha256:" + hashlib.sha256(
+    (JUDGE_PROMPT + "\0" + JUDGE_PROMPT_GROUNDED).encode("utf-8")
+).hexdigest()
+
 MAX_GROUND_TRUTH_CHARS = 4000
+
+#: Appended to the prompt of a re-draw at pinned sampling, where the plain prompt
+#: would return the same malformed reply. Numbered so every re-draw differs.
+_FORMAT_REMINDER = (
+    "\n\nReminder (re-draw {n} of 2): your previous reply could not be parsed. "
+    "Reply with the JSON object only, in exactly the output format above, with "
+    "every listed key and an integer for every score."
+)
 
 #: Providers ``Judge.__init__`` accepts; CLI ``--judge-provider`` choices read this.
 JUDGE_PROVIDERS = ("openai", "anthropic", "google", "google-vertex", "openrouter", "amazon-bedrock")
@@ -222,6 +236,8 @@ class Judge:
         provider: str = "anthropic",
         api_key: Optional[str] = None,
         run_metadata: Optional[Dict[str, Any]] = None,
+        temperature: Optional[float] = None,
+        seed: Optional[int] = None,
         prompt_template: Optional[str] = None,
     ):
         """
@@ -229,6 +245,10 @@ class Judge:
             model: LLM model for judging (should differ from answerer model)
             provider: "openai" or "anthropic"
             api_key: Optional API key
+            temperature: Optional sampling temperature for the judge. Grading is
+                a sampled call like any other, so leaving this unset leaves
+                score variance on the table even when the answer is fixed.
+            seed: Optional sampling seed, where the provider honours one.
             prompt_template: Replaces :data:`JUDGE_PROMPT` on the ungrounded
                 path. Exists so the judge can be measured under a rewording of
                 its own prompt; production scoring leaves it unset.
@@ -242,6 +262,9 @@ class Judge:
         self.model = model
         self.provider = provider
         self.api_key = api_key
+        self.temperature = temperature
+        self.seed = seed
+        self.prompt_sha256 = JUDGE_PROMPT_SHA256
         self.run_metadata = dict(run_metadata) if run_metadata else {}
         self.prompt_template = prompt_template
         # Accumulate judge-side token/cost telemetry across all judge calls
@@ -250,18 +273,22 @@ class Judge:
         self._usage_totals = {
             "calls": 0, "cost_known_calls": 0, "cost_usd": 0.0,
             "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+            "redrawn_judgements": 0,
         }
 
         if provider == "openai":
-            self.llm = ChatOpenAI(model=model, api_key=api_key)
+            self.llm = ChatOpenAI(model=model, api_key=api_key,
+                                  temperature=temperature, seed=seed)
         elif provider == "anthropic":
-            self.llm = ChatAnthropic(model=model, api_key=api_key)
+            self.llm = ChatAnthropic(model=model, api_key=api_key,
+                                     temperature=temperature, seed=seed)
         elif provider in ("google", "gemini", "google-vertex", "openrouter",
                           "amazon-bedrock", "vertex_ai"):
             from agent_benchmarks.utils import get_llm
             import os
             fallback_key = os.environ.get("OPENROUTER_API_KEY") if provider == "openrouter" else None
-            self.llm = get_llm(provider, model, api_key or fallback_key)
+            self.llm = get_llm(provider, model, api_key or fallback_key,
+                               temperature=temperature, seed=seed)
         else:
             raise ValueError(
                 f"Unsupported provider: '{provider}'. "
@@ -512,11 +539,12 @@ class Judge:
         # without a retry the question loses its score for good and the report
         # still renders a clean-looking delta over the survivors.
         #
-        # Retrying only helps because no sampling parameters are pinned on this
-        # path, so each attempt is an independent draw; pinning temperature=0 or a
-        # fixed seed would make these three identical calls. Each attempt is also
-        # its own response-cache draw: with the cache on, retrying under one key
-        # replayed the same unparseable reply three times.
+        # A malformed reply is re-drawn without backoff. With judge sampling pinned
+        # the same prompt returns the same reply, so a re-draw then appends a
+        # format reminder. Each attempt is its own response-cache draw: with the
+        # cache on, retrying under one key replayed the same unparseable reply
+        # three times. Transport faults are retried by the transport layer, not
+        # here, so a failed call raises at once.
         def parse(raw: str) -> "tuple[Dict[str, Any], float]":
             scores = extract_json_object(raw)
             missing = required - scores.keys()
@@ -536,9 +564,17 @@ class Judge:
                 return False
             return True
 
+        pinned = self.temperature is not None or self.seed is not None
         last_exc: Exception = ValueError("judge retry loop did not execute")
         for attempt in range(3):
-            response = self.llm.invoke(prompt, draw=draw * 3 + attempt, cache_if=parses)
+            attempt_prompt = prompt
+            if attempt:
+                if attempt == 1:
+                    with self._usage_lock:
+                        self._usage_totals["redrawn_judgements"] += 1
+                if pinned:
+                    attempt_prompt = prompt + _FORMAT_REMINDER.format(n=attempt)
+            response = self.llm.invoke(attempt_prompt, draw=draw * 3 + attempt, cache_if=parses)
             raw = response.content if hasattr(response, "content") else str(response)
             self._accumulate_usage(getattr(response, "usage", None))
             try:
@@ -546,9 +582,7 @@ class Judge:
                 break
             except Exception as exc:
                 last_exc = exc
-                logger.warning(
-                    "Judge response unparseable (attempt %d/3): %s", attempt + 1, exc
-                )
+                logger.warning("Judge response unparseable (attempt %d/3): %s", attempt + 1, exc)
         else:
             raise last_exc
 
@@ -632,6 +666,7 @@ class Judge:
             "evaluated_at": self._get_timestamp(),
             "judge_model": self.model,
             "judge_provider": self.provider,
+            "judge_temperature": self.temperature,
             "total_evaluations": len(evaluations),
             "evaluations": evaluations,
         }

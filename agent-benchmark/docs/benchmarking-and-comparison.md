@@ -280,6 +280,45 @@ execution-verified task track (`cli.py tasks run`) has a binary outcome per task
 and uses McNemar's exact test instead — see
 [coding-harnesses.md](coding-harnesses.md).
 
+### Pinning sampling
+
+Answer generation and grading are both sampled calls, so two identical runs
+differ. These flags pin them, and every value is recorded in the artifact so a
+pinned run cannot be mistaken for a free-sampling one:
+
+```bash
+python cli.py arms run ... --temperature 0 --judge --judge-temperature 0
+```
+
+- `--temperature`, `--seed`: sampling for answer generation, recorded in
+  `run_config`. Omitted from the request when unset.
+- `--judge-temperature`: sampling for the judge, recorded as
+  `judge_temperature`. Applies to a single judge and to every role of a panel.
+  `eval judge-validity --judge-temperature` certifies the judge under the same
+  setting, and records it in the validity report. `eval score`, `eval
+  panel-score` (every panel judge) and `evaluate` take the same flag and record
+  it as `judge_temperature` in their output. So do `eval pairwise` (and its
+  escalation judge), `eval checklist`, `eval judge-wording`, `eval cross-judge`
+  (every `--judges` entry) and `eval judge-validity --mode pairwise`; each
+  probes every judge model with the setting first and exits 2 if one rejects it.
+- `--judge-panel technical_expert,developer_advocate,doc_reviewer`: grade with
+  several judge roles and record their spread and agreement. An unknown role is
+  rejected when the command line is parsed.
+
+A flag the provider is known to reject (Bedrock rejects `seed`) fails the run
+before any answer is generated. The check reads litellm's capability table, so
+a model that table misdescribes still fails per answer.
+
+The judge re-draws a reply it cannot parse, up to three attempts. At a pinned
+judge temperature the same prompt tends to return the same malformed reply, so
+each re-draw then appends a short format reminder to the prompt; the first
+attempt is unchanged. `judge_metrics.redrawn_judgements` counts the judgements
+that needed a re-draw.
+
+`temperature=0` is not a determinism guarantee. It picks the highest-scoring
+token, but some endpoints compute slightly different scores from one call to
+the next, so reproducibility has to be measured per endpoint.
+
 ### Trusting the judge
 
 A significance table says the delta is unlikely under *this judge's* noise. It
@@ -450,8 +489,12 @@ Consistency is validated before the report is written:
   before provenance stamping carry no digest and are not affected.
 - Diverging `question_set_hash` values (when present) produce a warning on
   stderr.
-- Runs that share the same model and provider produce a warning (likely
-  duplicate rather than a real comparison).
+- Runs that share one configuration (model, provider, judge, judge prompt and
+  temperature, `run_config` except the seed value, harness, plugin set, cell and
+  arm list) are replicates: an error,
+  unless `--pool-replicates` averages them per question into one row. A
+  question is kept only if every replicate scored both arms; the report says
+  how many were dropped.
 
 The report names the arm it scored rather than calling everything "Context arm":
 "Models Compared" gains a **Treatment arm** column (per run, or `— (baseline
@@ -523,10 +566,11 @@ Off unless `AGENT_BENCHMARK_RESPONSE_CACHE` names a directory:
 AGENT_BENCHMARK_RESPONSE_CACHE=.cache/responses python cli.py arms run ...
 ```
 
-A byte-identical request (same model, message text, streaming flag, and
-`max_tokens`) replays the stored completion instead of calling the provider.
-The `utils.get_llm` path (Bedrock, Vertex, OpenRouter) keys on model, text and
-`max_tokens` only, so its entries never collide with `llm_call`'s; a given judge
+A byte-identical request (same model, message text, streaming flag, `max_tokens`,
+and `temperature`/`seed` when set) replays the stored completion instead of
+calling the provider. The `utils.get_llm` path (Bedrock, Vertex, OpenRouter)
+keys on model, text, `max_tokens` and `temperature`/`seed` when set, without the
+streaming flag, so its entries never collide with `llm_call`'s; a given judge
 always goes down one path, so this costs nothing. It
 pays off mainly for the `baseline` arm, which is identical across treatment runs,
 and for re-running a pipeline after changing only the reporting code. The judge

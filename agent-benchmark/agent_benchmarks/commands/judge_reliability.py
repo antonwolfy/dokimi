@@ -28,21 +28,48 @@ def _progress(label: str = ""):
     return cb
 
 
+def _check_judge_temperature(judges: list[tuple[str, str]], temperature) -> None:
+    """Exit 2 before any judgement when a (model, provider) judge rejects ``temperature``."""
+    if temperature is None:
+        return
+    from agent_benchmarks.commands.arms import _probe_sampling
+    from agent_benchmarks.llm import unsupported_sampling_params
+    from agent_benchmarks.utils import bedrock_litellm_model
+
+    for model, provider in dict.fromkeys(judges):
+        # A Bedrock judge goes through get_llm, which maps a bare name first.
+        resolved = bedrock_litellm_model(model) if provider == "amazon-bedrock" else model
+        try:
+            if unsupported_sampling_params(resolved, provider, temperature=temperature):
+                raise ValueError(f"provider '{provider}' does not support temperature for model '{model}'")
+            _probe_sampling(resolved, provider, temperature, None)
+        except ValueError as exc:
+            print(f"Error: --judge-temperature {temperature} is rejected by judge {provider}/{model}: {exc}",
+                  file=sys.stderr)
+            sys.exit(2)
+
+
 def pairwise_judge(args: argparse.Namespace):
     """A both-order pairwise judge from --judge-* and optional --escalate-* args; returns (judge, label)."""
     from agent_benchmarks.eval.judge import Judge
     from agent_benchmarks.eval.pairwise import PairwiseJudge
 
+    temperature = getattr(args, "judge_temperature", None)
+
     def asker(model: str, provider: str):
-        llm = Judge(model=model, provider=provider).llm
+        llm = Judge(model=model, provider=provider, temperature=temperature).llm
         return lambda prompt, draw=0, cache_if=None: llm.invoke(prompt, draw=draw, cache_if=cache_if).content
 
     label = f"{args.judge_provider}/{args.judge_model} pairwise"
+    judges = [(args.judge_model, args.judge_provider)]
     escalate = None
     if getattr(args, "escalate_model", None):
         provider = args.escalate_provider or args.judge_provider
-        escalate = asker(args.escalate_model, provider)
+        judges.append((args.escalate_model, provider))
         label += f" → {provider}/{args.escalate_model}"
+    _check_judge_temperature(judges, temperature)
+    if len(judges) > 1:
+        escalate = asker(*judges[1])
     judge = PairwiseJudge(ask=asker(args.judge_model, args.judge_provider), escalate=escalate,
                           escalate_ties=bool(getattr(args, "escalate_ties", False)))
     return judge, label
@@ -68,7 +95,8 @@ def cmd_eval_pairwise(args: argparse.Namespace) -> None:
     md = report.format_markdown()
     out = Path(args.output or Path(args.answers).with_name(Path(args.answers).stem + "_pairwise.json"))
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    out.write_text(json.dumps({**report.to_dict(), "judge_temperature": getattr(args, "judge_temperature", None)},
+                              indent=2), encoding="utf-8")
     out.with_suffix(".md").write_text(md, encoding="utf-8")
     if not report.verdicts:
         # Written first, so the reasons are not lost with the run.
@@ -88,7 +116,8 @@ def cmd_eval_checklist(args: argparse.Namespace) -> None:
     points = load_points(args.questions)
     baseline = args.baseline_arm or (data.get("baseline_arm") if isinstance(data, dict) else None) or "baseline"
     arms = [a.strip() for a in args.arms.split(",")] if args.arms else None
-    llm = Judge(model=args.judge_model, provider=args.judge_provider).llm
+    _check_judge_temperature([(args.judge_model, args.judge_provider)], args.judge_temperature)
+    llm = Judge(model=args.judge_model, provider=args.judge_provider, temperature=args.judge_temperature).llm
     label = f"{args.judge_provider}/{args.judge_model}"
     print(f"Required-point coverage: {label}, {len(records)} questions, baseline `{baseline}`")
 
@@ -104,7 +133,8 @@ def cmd_eval_checklist(args: argparse.Namespace) -> None:
     out = Path(args.output or Path(args.answers).with_name(Path(args.answers).stem + "_checklist.json"))
     out.parent.mkdir(parents=True, exist_ok=True)
     # The JSON first: the paid calls are in it, and a rendering error must not lose them.
-    out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    out.write_text(json.dumps({**report.to_dict(), "judge_temperature": args.judge_temperature}, indent=2),
+                   encoding="utf-8")
     md = report.format_markdown()
     out.with_suffix(".md").write_text(md, encoding="utf-8")
     print()
@@ -133,9 +163,11 @@ def cmd_eval_judge_wording(args: argparse.Namespace) -> None:
     print(f"Judge wording sensitivity: {label}, {len(pairs)} pairs x {n_cond} conditions "
           f"(original, {args.redraws} re-draw(s), {', '.join(wordings)})")
 
+    _check_judge_temperature([(args.judge_model, args.judge_provider)], args.judge_temperature)
+
     def scorer_for(template, draw):
         return judge_scorer(Judge(model=args.judge_model, provider=args.judge_provider,
-                                  prompt_template=template), draw=draw)
+                                  temperature=args.judge_temperature, prompt_template=template), draw=draw)
 
     def progress(cond: str, done: int, total: int) -> None:
         if done == total:
@@ -148,7 +180,8 @@ def cmd_eval_judge_wording(args: argparse.Namespace) -> None:
     if args.output:
         out = Path(args.output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+        out.write_text(json.dumps({**report.to_dict(), "judge_temperature": args.judge_temperature}, indent=2),
+                       encoding="utf-8")
     print()
     print(report.format_summary())
     if args.output:
@@ -197,14 +230,17 @@ def cmd_eval_cross_judge(args: argparse.Namespace) -> None:
                   "other.", file=sys.stderr)
             sys.exit(2)
         report.measures.append(m)
-    for spec in [j.strip() for j in (args.judges or "").split(",") if j.strip()]:
+    specs = [j.strip() for j in (args.judges or "").split(",") if j.strip()]
+    _check_judge_temperature([(m, p) for p, _, m in (s.partition("/") for s in specs) if m and p in JUDGE_PROVIDERS],
+                             args.judge_temperature)
+    for spec in specs:
         provider, _, model = spec.partition("/")
         if not model or provider not in JUDGE_PROVIDERS:
             print(f"Error: --judges entry '{spec}' must be provider/model, provider in {JUDGE_PROVIDERS}",
                   file=sys.stderr)
             sys.exit(2)
         print(f"Scoring with {spec} ...", flush=True)
-        judge = Judge(model=model, provider=provider)
+        judge = Judge(model=model, provider=provider, temperature=args.judge_temperature)
         for grounding in ([None, truth] if truth and args.both else [truth]):
             report.measures.append(score_measure(
                 records, scorer_of(judge), name=f"{provider}/{model}", library=library,
@@ -233,7 +269,8 @@ def cmd_eval_cross_judge(args: argparse.Namespace) -> None:
     md = report.format_markdown()
     out = Path(args.output or Path(args.answers).with_name(Path(args.answers).stem + "_crossjudge.json"))
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+    out.write_text(json.dumps({**report.to_dict(), "judge_temperature": args.judge_temperature}, indent=2),
+                   encoding="utf-8")
     out.with_suffix(".md").write_text(md, encoding="utf-8")
     print()
     print(md)
@@ -255,6 +292,8 @@ def register(eval_sub, positive_int) -> None:
     ck.add_argument("--arms", default=None, help="Comma-separated arms to check (default: all)")
     ck.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL)
     ck.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=JUDGE_PROVIDERS)
+    ck.add_argument("--judge-temperature", type=float, default=None, dest="judge_temperature",
+                    help="Judge sampling temperature, recorded as judge_temperature in the output")
     ck.add_argument("--concurrency", type=positive_int, default=DEFAULT_CONCURRENCY)
     ck.add_argument("--output", default=None,
                     help="Output JSON (default: <answers>_checklist.json); Markdown written next to it")
@@ -277,6 +316,8 @@ def register(eval_sub, positive_int) -> None:
     jw.add_argument("--strict", action="store_true", help="Exit 1 when any variant is FRAGILE")
     jw.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL)
     jw.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=JUDGE_PROVIDERS)
+    jw.add_argument("--judge-temperature", type=float, default=None, dest="judge_temperature",
+                    help="Judge sampling temperature, recorded as judge_temperature in the output")
     jw.add_argument("--concurrency", type=positive_int, default=DEFAULT_CONCURRENCY)
     jw.add_argument("--output", default=None, help="Output JSON report path")
     jw.set_defaults(func=cmd_eval_judge_wording)
@@ -307,6 +348,8 @@ def register(eval_sub, positive_int) -> None:
                     help="Leave out the scores the arms run itself recorded")
     cj.add_argument("--product", default=None, help="Library name (default: read from answers file)")
     cj.add_argument("--baseline-arm", default=None, dest="baseline_arm")
+    cj.add_argument("--judge-temperature", type=float, default=None, dest="judge_temperature",
+                    help="Judge sampling temperature, recorded as judge_temperature in the output")
     cj.add_argument("--concurrency", type=positive_int, default=DEFAULT_CONCURRENCY)
     cj.add_argument("--strict", action="store_true", help="Exit 1 when any arm is JUDGE-DEPENDENT")
     cj.add_argument("--output", default=None,
@@ -323,6 +366,8 @@ def register(eval_sub, positive_int) -> None:
     pw.add_argument("--arms", default=None, help="Comma-separated arms to compare (default: all)")
     pw.add_argument("--judge-model", default=DEFAULT_JUDGE_MODEL)
     pw.add_argument("--judge-provider", default=DEFAULT_JUDGE_PROVIDER, choices=JUDGE_PROVIDERS)
+    pw.add_argument("--judge-temperature", type=float, default=None, dest="judge_temperature",
+                    help="Judge sampling temperature, recorded as judge_temperature in the output")
     pw.add_argument("--escalate-model", default=None, dest="escalate_model",
                     help="Re-ask questions the judge left undecided (tie or order-inconsistent) with this model")
     pw.add_argument("--escalate-provider", default=None, dest="escalate_provider", choices=JUDGE_PROVIDERS)

@@ -82,7 +82,20 @@ def _read_key(value: str) -> str:
     return value
 
 
-def get_llm(provider: str, model: str, api_key: str = None):
+def bedrock_litellm_model(model: str) -> str:
+    """The litellm model string ``get_llm`` sends to Bedrock for ``model``."""
+    # A Bedrock id always has a dot ("anthropic.", "us.anthropic.", "amazon.").
+    # Only a bare name such as the default judge model gets mapped.
+    if not model.startswith("arn:") and "." not in model:
+        model = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", model)
+    # Bedrock's openai.* namespace 404s on the plain invoke route; it only
+    # answers via Converse (mirrors the fix in llm.py's _build_litellm_model).
+    prefix = "bedrock/converse/" if "openai." in model else "bedrock/"
+    return f"{prefix}{model}"
+
+
+def get_llm(provider: str, model: str, api_key: str = None,
+            temperature: float = None, seed: int = None):
     """Return a minimal chat wrapper with .invoke(prompt) -> object(content=...)."""
     from litellm import completion
 
@@ -92,24 +105,33 @@ def get_llm(provider: str, model: str, api_key: str = None):
             self.usage = usage   # UsageRecord | None — lets the judge track cost
 
     class _LLM:
-        def __init__(self, litellm_model: str, key: str = None, default_max_tokens: int = None):
+        def __init__(self, litellm_model: str, key: str = None, default_max_tokens: int = None,
+                     temperature: float = None, seed: int = None):
             self.litellm_model = litellm_model
             self.key = key
             self.default_max_tokens = default_max_tokens
+            self.temperature = temperature
+            self.seed = seed
 
         def invoke(self, prompt: str, draw: int = 0, cache_if=None):
             import time as _time
             from agent_benchmarks import caching
-            from agent_benchmarks.llm import _extract_usage, _is_retryable
-            kwargs = {}
-            if self.default_max_tokens:
-                kwargs["max_tokens"] = self.default_max_tokens
+            from agent_benchmarks.llm import _extract_usage, _is_retryable, _sampling_kwargs
+            kwargs = _sampling_kwargs(
+                max_tokens=self.default_max_tokens or None,
+                temperature=self.temperature, seed=self.seed,
+            )
             messages = [{"role": "user", "content": prompt}]
             # The judge reaches Bedrock, Vertex and OpenRouter through here, not
             # through llm_call, so this path needs the response cache too.
+            # temperature/seed enter the key only when set.
             key = caching.response_cache_key(
                 litellm_model=self.litellm_model, messages=messages,
-                extra=caching.draw_extra({"max_tokens": self.default_max_tokens}, draw),
+                extra=caching.draw_extra(
+                    {"max_tokens": self.default_max_tokens,
+                     **_sampling_kwargs(temperature=self.temperature, seed=self.seed)},
+                    draw,
+                ),
             )
             hit = caching.load_response(key)
             if hit is not None and caching.keeps(cache_if, hit[0]):
@@ -143,32 +165,34 @@ def get_llm(provider: str, model: str, api_key: str = None):
     if provider == "openrouter":
         key = api_key or _read_key(os.environ.get("OPENROUTER_API_KEY", ""))
         litellm_model = model if model.startswith("openrouter/") else f"openrouter/{model}"
-        return _LLM(litellm_model=litellm_model, key=key, default_max_tokens=2000)
+        return _LLM(litellm_model=litellm_model, key=key, default_max_tokens=2000,
+                    temperature=temperature, seed=seed)
 
     if provider in ("google", "gemini", "google-vertex"):
         # Route Gemini via Vertex AI adapter
         litellm_model = model if model.startswith("vertex_ai/") else f"vertex_ai/{model}"
         key = api_key or _read_key(os.environ.get("GEMINI_API_KEY", ""))
-        return _LLM(litellm_model=litellm_model, key=key)
+        return _LLM(litellm_model=litellm_model, key=key,
+                    temperature=temperature, seed=seed)
 
     if provider == "amazon-bedrock":
         bearer = _read_key(os.environ.get("AWS_BEARER_TOKEN_BEDROCK", ""))
-        # A Bedrock id always has a dot ("anthropic.", "us.anthropic.", "amazon.").
-        # Only a bare name such as the default judge model gets mapped.
-        if not model.startswith("arn:") and "." not in model:
-            model = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", model)
-        return _LLM(litellm_model=f"bedrock/{model}", key=bearer)
+        return _LLM(litellm_model=bedrock_litellm_model(model), key=bearer,
+                    temperature=temperature, seed=seed)
 
     if provider == "openai":
         key = api_key or _read_key(os.environ.get("OPENAI_API_KEY", ""))
         litellm_model = model
-        return _LLM(litellm_model=litellm_model, key=key)
+        return _LLM(litellm_model=litellm_model, key=key,
+                    temperature=temperature, seed=seed)
 
     if provider == "anthropic":
         key = api_key or _read_key(os.environ.get("ANTHROPIC_API_KEY", ""))
         litellm_model = model if model.startswith("anthropic/") else f"anthropic/{model}"
-        return _LLM(litellm_model=litellm_model, key=key)
+        return _LLM(litellm_model=litellm_model, key=key,
+                    temperature=temperature, seed=seed)
 
     key = api_key
     litellm_model = model if "/" in model else f"{provider}/{model}"
-    return _LLM(litellm_model=litellm_model, key=key)
+    return _LLM(litellm_model=litellm_model, key=key,
+                temperature=temperature, seed=seed)

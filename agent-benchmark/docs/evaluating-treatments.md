@@ -545,7 +545,8 @@ document. It aborts, rather than warns, when the runs cannot be pooled:
   frontmatter `id`, so an edited profile leaves stale cells indistinguishable by name.
   Artifacts written before provenance stamping carry no digest and are left alone.
 
-A differing `question_set_hash` and two runs on the same model are warnings, not errors.
+A differing `question_set_hash` is a warning. Two runs of the same configuration are an
+error unless `--pool-replicates` averages them into one row.
 
 **`scripts/check_treatment_batch.py`** gates a whole batch directory before you read any
 number out of it:

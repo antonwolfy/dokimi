@@ -50,6 +50,7 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         provider=args.provider,
         judge_model=args.judge_model,
         judge_provider=args.judge_provider,
+        judge_temperature=args.judge_temperature,
         personas_count=args.personas_count,
         questions_per_topic=args.questions_per_topic,
         # Only pass top_k when explicitly set; otherwise let pipeline use config default
@@ -106,6 +107,8 @@ def register(sub, positive_int) -> None:
     eval_p.add_argument("--provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
     eval_p.add_argument("--judge-model", default="gpt-4o-mini", help="LLM model for evaluation")
     eval_p.add_argument("--judge-provider", default="openai", choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
+    eval_p.add_argument("--judge-temperature", type=float, default=None, dest="judge_temperature",
+                        help="Judge sampling temperature, recorded as judge_temperature in the eval output")
     eval_p.add_argument("--personas-count", type=positive_int, default=5, help="Target number of personas")
     eval_p.add_argument("--questions-per-topic", type=positive_int, default=2, help="Questions per topic per persona")
     eval_p.add_argument("--top-k", type=positive_int, default=None, help="Docs to retrieve before reranking (default from config/products.yaml retrieval.top_k)")

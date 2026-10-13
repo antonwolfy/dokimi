@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import sys
 from pathlib import Path
@@ -29,6 +30,10 @@ FORWARDED_RUN_CONFIG_FIELDS = (
     "max_iterations",
     "max_tokens",
     "grounded_from_topics",
+    "temperature",
+    "seed",
+    "judge_temperature",
+    "judge_panel",
     "concurrency",
     "stats_correction",
 )
@@ -48,6 +53,16 @@ def forwarded_run_config(args: argparse.Namespace, **overrides) -> dict:
     }
     forwarded.update(overrides)
     return forwarded
+
+
+def judge_panel_roles(value: str) -> str:
+    """argparse type for --judge-panel: an unknown role fails before any answer is paid for."""
+    from agent_benchmarks.eval.panel import JUDGE_ROLES
+
+    unknown = [r.strip() for r in value.split(",") if r.strip() and r.strip() not in JUDGE_ROLES]
+    if unknown:
+        raise argparse.ArgumentTypeError(f"unknown role(s) {', '.join(unknown)}; available: {', '.join(JUDGE_ROLES)}")
+    return value
 
 
 def cmd_arms_run(args: argparse.Namespace) -> None:
@@ -89,6 +104,10 @@ def cmd_arms_matrix_run(args: argparse.Namespace) -> None:
         cells = load_matrix_cells(args.matrix_cells)
         _validate_supported_matrix_harnesses(cells)
         _validate_unique_cell_filenames(cells)
+        for cell in cells:
+            cell_args = argparse.Namespace(**vars(args))
+            _apply_matrix_cell(cell_args, cell)
+            _check_sampling_support(cell_args)
     except (ValueError, FileNotFoundError) as exc:
         print(f"Error loading matrix run inputs: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -232,6 +251,23 @@ def register(sub, positive_int) -> None:
                             help="Let the judge use a question's expected_topics as ground truth when they "
                                  "are substantive answer statements, enabling the factual_grounding "
                                  "dimension for curated golden sets. Keyword-style topics are ignored")
+    arms_run_p.add_argument("--judge-temperature", type=float, default=None,
+                        dest="judge_temperature",
+                        help="Sampling temperature for the JUDGE. Separate from "
+                             "--temperature, which shapes answer generation; grading "
+                             "is its own sampled call and its own noise source.")
+    arms_run_p.add_argument("--temperature", type=float, default=None,
+                            help="Sampling temperature for answer generation. Omitted by "
+                                 "default (provider default applies). Pin it to reduce "
+                                 "run-to-run score variance.")
+    arms_run_p.add_argument("--seed", type=int, default=None,
+                            help="Sampling seed for answer generation, where the provider "
+                                 "honours one. Best-effort reproducibility.")
+    arms_run_p.add_argument("--judge-panel", default="", dest="judge_panel", type=judge_panel_roles,
+                            help="Comma-separated judge roles (e.g. "
+                                 "'technical_expert,developer_advocate,doc_reviewer'). When "
+                                 "set, --judge scores each answer with a panel and records "
+                                 "grader spread and agreement instead of one opinion.")
     arms_run_p.add_argument("--concurrency", type=positive_int, default=5)
     arms_run_p.add_argument("--out-json", default=None, dest="out_json",
                             help="Output JSON path (default: results/arms/{product}.json)")
@@ -354,6 +390,23 @@ def _add_common_run_args(parser, positive_int, *, matrix_required: bool = False)
                         help="Let the judge use a question's expected_topics as ground truth when they "
                              "are substantive answer statements, enabling the factual_grounding "
                              "dimension for curated golden sets. Keyword-style topics are ignored")
+    parser.add_argument("--judge-temperature", type=float, default=None,
+                        dest="judge_temperature",
+                        help="Sampling temperature for the JUDGE. Separate from "
+                             "--temperature, which shapes answer generation; grading "
+                             "is its own sampled call and its own noise source.")
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="Sampling temperature for answer generation. Omitted by "
+                             "default (provider default applies). Pin it to reduce "
+                             "run-to-run score variance.")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Sampling seed for answer generation, where the provider "
+                             "honours one. Best-effort reproducibility.")
+    parser.add_argument("--judge-panel", default="", dest="judge_panel", type=judge_panel_roles,
+                        help="Comma-separated judge roles (e.g. "
+                             "'technical_expert,developer_advocate,doc_reviewer'). When "
+                             "set, --judge scores each answer with a panel and records "
+                             "grader spread and agreement instead of one opinion.")
     parser.add_argument("--concurrency", type=positive_int, default=5)
 
 
@@ -434,8 +487,46 @@ def _apply_matrix_cell(args: argparse.Namespace, matrix_cell) -> None:
     args.plugins = ",".join(matrix_cell.plugin_specs)
 
 
+def _check_sampling_support(args: argparse.Namespace) -> None:
+    """Reject sampling flags the answer provider would refuse on every answer."""
+    from agent_benchmarks.llm import unsupported_sampling_params
+
+    bad = unsupported_sampling_params(
+        args.model, args.provider,
+        temperature=getattr(args, "temperature", None),
+        seed=getattr(args, "seed", None),
+    )
+    if bad:
+        raise ValueError(
+            f"Provider '{args.provider}' does not support {', '.join(bad)} for "
+            f"model '{args.model}'. Drop the flag(s); every answer would "
+            "otherwise fail and the report would show null scores."
+        )
+    _probe_sampling(args.model, args.provider,
+                    getattr(args, "temperature", None), getattr(args, "seed", None))
+
+
+@functools.lru_cache(maxsize=None)
+def _probe_sampling(model: str, provider: str, temperature, seed) -> None:
+    """One short real call with the requested sampling, so a value the provider
+    rejects (gpt-5 accepts only temperature=1) fails before the run, not per answer."""
+    if temperature is None and seed is None:
+        return
+    from agent_benchmarks.llm import llm_call_with_usage
+
+    try:
+        llm_call_with_usage("Reply with OK.", model=model, provider=provider,
+                            max_tokens=16, temperature=temperature, seed=seed)
+    except Exception as exc:
+        raise ValueError(
+            f"Probe call to '{provider}/{model}' with temperature={temperature}, "
+            f"seed={seed} failed, so every call in the run would too: {exc}"
+        ) from exc
+
+
 def _build_arms_output(args: argparse.Namespace, specs: list[str], questions: list[dict]) -> dict:
-    from agent_benchmarks.eval import Judge
+    from agent_benchmarks.eval import Judge, JudgePanel
+    from agent_benchmarks.eval.panel import JUDGE_ROLES, JudgeConfig
     from agent_benchmarks.eval.arm_runner import ArmRunner
     from agent_benchmarks.plugins import (
         create_plugins,
@@ -462,6 +553,53 @@ def _build_arms_output(args: argparse.Namespace, specs: list[str], questions: li
     if plugin_set["plugins"]:
         print(f"Plugins: {plugin_set['plugin_set']} ({plugin_set['plugin_set_id']})")
 
+    _check_sampling_support(args)
+    if args.judge:
+        from agent_benchmarks.llm import unsupported_sampling_params
+        from agent_benchmarks.utils import bedrock_litellm_model
+
+        judge_model = args.judge_model
+        if args.judge_provider == "amazon-bedrock" and not getattr(args, "judge_panel", None):
+            # A single Bedrock judge goes through get_llm, which maps a bare name first.
+            judge_model = bedrock_litellm_model(args.judge_model)
+        bad_judge = unsupported_sampling_params(
+            judge_model, args.judge_provider,
+            temperature=getattr(args, "judge_temperature", None),
+        )
+        if bad_judge:
+            raise ValueError(
+                f"Judge provider '{args.judge_provider}' does not support "
+                f"{', '.join(bad_judge)} for model '{args.judge_model}'. Drop the "
+                "flag; every score would otherwise be null."
+            )
+        _probe_sampling(judge_model, args.judge_provider,
+                        getattr(args, "judge_temperature", None), None)
+
+    # Built before any answer is paid for: an unsupported judge provider raises here.
+    judge: Judge | JudgePanel | None = None
+    if args.judge:
+        panel_roles = [r.strip() for r in (getattr(args, "judge_panel", "") or "").split(",") if r.strip()]
+        if panel_roles:
+            unknown = [r for r in panel_roles if r not in JUDGE_ROLES]
+            if unknown:
+                raise ValueError(
+                    f"Unknown --judge-panel role(s): {', '.join(unknown)}. "
+                    f"Available: {', '.join(JUDGE_ROLES)}"
+                )
+            # A panel reports grader spread and agreement per answer, which a
+            # single judge structurally cannot — judge choice alone moves scores.
+            judge = JudgePanel(
+                judges=[
+                    JudgeConfig(role=r, model=args.judge_model,
+                                provider=args.judge_provider,
+                                temperature=getattr(args, "judge_temperature", None))
+                    for r in panel_roles
+                ],
+            )
+        else:
+            judge = Judge(model=args.judge_model, provider=args.judge_provider,
+                          temperature=getattr(args, "judge_temperature", None))
+
     runner = ArmRunner(
         treatments,
         model=args.model,
@@ -473,6 +611,8 @@ def _build_arms_output(args: argparse.Namespace, specs: list[str], questions: li
         max_tokens=getattr(args, "max_tokens", None),
         grounded_from_topics=getattr(args, "grounded_from_topics", False),
         stats_correction=getattr(args, "stats_correction", "holm"),
+        temperature=getattr(args, "temperature", None),
+        seed=getattr(args, "seed", None),
     )
     records = runner.run(
         library_name=args.product,
@@ -482,10 +622,12 @@ def _build_arms_output(args: argparse.Namespace, specs: list[str], questions: li
     )
 
     evaluations = None
-    judge = None
-    if args.judge:
-        judge = Judge(model=args.judge_model, provider=args.judge_provider)
-        print("Judging arms...")
+    if judge is not None:
+        if isinstance(judge, JudgePanel):
+            roles = [j.role for j in judge.judges]
+            print(f"Judging arms with a {len(roles)}-judge panel: {', '.join(roles)}")
+        else:
+            print("Judging arms...")
         evaluations = runner.judge(
             judge, args.product, records,
             baseline_arm=args.baseline_arm, concurrency=args.concurrency,

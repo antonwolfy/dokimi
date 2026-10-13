@@ -5,5 +5,6 @@
 
 from .answerer import Answerer
 from .judge import Judge
+from .panel import JudgePanel
 
-__all__ = ["Answerer", "Judge"]
+__all__ = ["Answerer", "Judge", "JudgePanel"]

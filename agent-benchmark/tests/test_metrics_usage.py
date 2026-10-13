@@ -174,6 +174,24 @@ def test_to_record_preserves_explicit_zero_n_calls():
     assert to_record({"total_tokens": 5}).n_calls == 1
 
 
+# ── bedrock model-string routing ─────────────────────────────────────────────
+def test_build_litellm_model_bedrock_openai_namespace_uses_converse_route():
+    # openai.* on Bedrock 404s on the plain invoke route; needs /converse/.
+    assert (
+        llm_mod._build_litellm_model("us.openai.gpt-5.6-terra", "amazon-bedrock")
+        == "bedrock/converse/us.openai.gpt-5.6-terra"
+    )
+
+
+def test_build_litellm_model_bedrock_anthropic_namespace_unaffected():
+    assert (
+        llm_mod._build_litellm_model(
+            "us.anthropic.claude-sonnet-5", "amazon-bedrock"
+        )
+        == "bedrock/us.anthropic.claude-sonnet-5"
+    )
+
+
 # ── streaming TTFT ───────────────────────────────────────────────────────────
 class _Delta:
     def __init__(self, content):
@@ -304,3 +322,95 @@ def test_response_cache_distinguishes_different_prompts(monkeypatch, tmp_path):
     llm_mod.llm_call_with_usage("ask?", model="gpt-4o-mini", provider="openai", api_key="k")
 
     assert len(calls) == 2
+
+
+# ── sampling-param plumbing ─────────────────────────────────────────────────
+def test_sampling_kwargs_omits_unset_params():
+    # Passing temperature=None explicitly is not the same as not passing it;
+    # some providers reject a null. Unset must mean absent.
+    assert llm_mod._sampling_kwargs() == {}
+    assert llm_mod._sampling_kwargs(temperature=None, seed=None, max_tokens=None) == {}
+
+
+def test_sampling_kwargs_includes_set_params_including_zero():
+    # temperature=0 is the useful case and must survive a falsy check.
+    assert llm_mod._sampling_kwargs(temperature=0.0) == {"temperature": 0.0}
+    assert llm_mod._sampling_kwargs(max_tokens=100, temperature=0.5, seed=7) == {
+        "max_tokens": 100, "temperature": 0.5, "seed": 7,
+    }
+
+
+# ── retry classification ────────────────────────────────────────────────────
+def test_bedrock_service_unavailable_is_retryable():
+    # Real message seen from Bedrock; it literally says to retry, but matched
+    # none of the substrings, so 49 answers were dropped without one attempt.
+    msg = ('litellm.ServiceUnavailableError: BedrockException - {"message":'
+           '"The system encountered an unexpected error during processing. '
+           'Try your request again."}')
+    assert llm_mod._is_retryable(Exception(msg))
+
+
+def test_bedrock_throttling_is_retryable():
+    msg = ('litellm.ServiceUnavailableError: BedrockException - '
+           '{"message":"Model has been throttled. Try your request again."}')
+    assert llm_mod._is_retryable(Exception(msg))
+
+
+def test_internal_server_error_is_retryable():
+    assert llm_mod._is_retryable(Exception("litellm.InternalServerError: 500 oops"))
+
+
+def test_genuine_client_errors_stay_non_retryable():
+    # Retrying these just burns quota: the request itself is wrong.
+    assert not llm_mod._is_retryable(Exception("AuthenticationError: invalid api key"))
+    assert not llm_mod._is_retryable(
+        Exception("litellm.UnsupportedParamsError: bedrock does not support "
+                  "parameters: ['seed']"))
+    assert not llm_mod._is_retryable(Exception("NotFoundError: model does not exist"))
+
+
+@pytest.mark.parametrize("msg", [
+    "ValueError: context length 1500 exceeded",
+    "max_tokens 503 is above the model limit",
+    "unexpected error in wrapper",
+])
+def test_status_digits_inside_a_permanent_error_are_not_retryable(msg):
+    assert not llm_mod._is_retryable(Exception(msg))
+
+
+@pytest.mark.parametrize("msg", [
+    "Error code: 529",
+    "HTTP 503",
+    "upstream returned status 502",
+])
+def test_status_codes_next_to_a_status_word_are_retryable(msg):
+    assert llm_mod._is_retryable(Exception(msg))
+
+
+def test_streaming_call_forwards_sampling_params(monkeypatch):
+    calls: list = []
+    _stub_completion(monkeypatch, calls)
+    import litellm
+
+    def fake_stream(**kwargs):
+        calls.append(kwargs)
+        return iter([_Chunk("ok", usage=_Usage(prompt=1, completion=1, total=2))])
+
+    monkeypatch.setattr(litellm, "completion", fake_stream)
+    text, _ = llm_mod.llm_call_with_usage("ask", model="gpt-4o-mini", provider="openai",
+                                          api_key="k", stream=True, temperature=0.0, seed=7)
+    assert text == "ok" and (calls[0]["temperature"], calls[0]["seed"]) == (0.0, 7)
+
+
+def test_response_cache_still_hits_entries_written_before_sampling_params(monkeypatch, tmp_path):
+    from agent_benchmarks import caching
+
+    monkeypatch.setenv(caching.RESPONSE_CACHE_ENV, str(tmp_path))
+    calls: list = []
+    _stub_completion(monkeypatch, calls)
+    old_key = caching.response_cache_key(litellm_model="gpt-4o-mini",
+                                         messages=[{"role": "user", "content": "ask"}],
+                                         extra={"stream": False, "max_tokens": None})
+    caching.store_response(old_key, "cached", llm_mod.UsageRecord())
+    text, _ = llm_mod.llm_call_with_usage("ask", model="gpt-4o-mini", provider="openai", api_key="k")
+    assert (text, calls) == ("cached", [])

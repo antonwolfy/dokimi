@@ -5,6 +5,7 @@
 OpenRouter) bypassed the cache and had no retry, and a judge retry after an
 unparseable reply replayed the same cached reply instead of drawing a new one."""
 
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -122,6 +123,8 @@ def test_judge_retry_escapes_a_cached_unparseable_reply(cache_dir, monkeypatch):
 def _judge(llm):
     judge = Judge.__new__(Judge)
     judge._accumulate_usage = lambda usage: None
+    judge.temperature = judge.seed = None
+    judge._usage_lock, judge._usage_totals = threading.Lock(), {"redrawn_judgements": 0}
     judge.llm = llm
     return judge
 
@@ -167,9 +170,7 @@ def test_an_unparseable_entry_already_in_the_cache_is_not_replayed(cache_dir, mo
 
 
 def test_judge_draws_are_distinct_per_attempt():
-    judge = Judge.__new__(Judge)
-    judge._accumulate_usage = lambda usage: None
-    judge.llm = MagicMock()
+    judge = _judge(MagicMock())
     judge.llm.invoke.side_effect = [MagicMock(content="not json"), MagicMock(content=GOOD)]
     judge.score_answer(library_name="L", question="q", answer="a", draw=2)
     assert [c.kwargs["draw"] for c in judge.llm.invoke.call_args_list] == [6, 7]

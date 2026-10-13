@@ -51,13 +51,19 @@ def cmd_report_model_compare(args: argparse.Namespace) -> None:
             print(f"Loading {run_id} (golden): {path}")
             golden_runs.append((run_id, load_run(path)))
 
-    # Consistency checks — hard errors abort, warnings go to stderr
+    # Consistency checks — hard errors abort, warnings go to stderr *and* into
+    # the report body so a shared .md still carries them
     pinned_arm = getattr(args, "treatment_arm", None)
+    pool_replicates = getattr(args, "pool_replicates", False)
     all_warnings: list[str] = []
     if regular_runs:
-        all_warnings += check_run_consistency(regular_runs, "regular", pinned_arm)
+        all_warnings += check_run_consistency(
+            regular_runs, "regular", pinned_arm, pool_replicates=pool_replicates
+        )
     if golden_runs:
-        all_warnings += check_run_consistency(golden_runs, "golden", pinned_arm)
+        all_warnings += check_run_consistency(
+            golden_runs, "golden", pinned_arm, pool_replicates=pool_replicates
+        )
     for w in all_warnings:
         print(w, file=sys.stderr)
 
@@ -68,6 +74,8 @@ def cmd_report_model_compare(args: argparse.Namespace) -> None:
         args.out,
         treatment_arm=pinned_arm,
         correction=getattr(args, "stats_correction", "holm"),
+        pool_replicates=pool_replicates,
+        warnings=all_warnings,
     )
 
 
@@ -193,6 +201,17 @@ def register(sub, positive_int) -> None:
         help=(
             "Multiple-comparison correction applied across the compared runs: "
             "holm (family-wise error, default) or bh (false discovery rate)."
+        ),
+    )
+    mc_p.add_argument(
+        "--pool-replicates",
+        action="store_true",
+        dest="pool_replicates",
+        help=(
+            "Average runs that share a configuration (same answer model/provider, "
+            "judge, sampling, harness, plugin set and arms) into one row per "
+            "configuration, instead of treating them "
+            "as rival models. Required when any configuration appears more than once."
         ),
     )
     mc_p.set_defaults(func=cmd_report_model_compare)
