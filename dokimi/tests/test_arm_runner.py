@@ -460,7 +460,10 @@ def test_an_unbuildable_judge_fails_before_any_answer_is_generated(monkeypatch):
 
     calls = []
     monkeypatch.setattr(ArmRunner, "run", lambda self, *a, **kw: calls.append(1) or [])
-    args = _parse_arms_run(["--judge", "--judge-provider", "openai-codex", "--judge-model", "m"])
+    args = _parse_arms_run(["--judge", "--judge-model", "m"])
+    # The CLI no longer offers a provider Judge rejects, so set one the way a
+    # caller building its own Namespace could.
+    args.judge_provider = "openai-codex"
     with pytest.raises(ValueError, match="openai-codex"):
         _build_arms_output(args, ["baseline"], QUESTIONS[:1])
     assert calls == []

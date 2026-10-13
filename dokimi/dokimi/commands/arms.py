@@ -11,6 +11,8 @@ import json
 import sys
 from pathlib import Path
 
+from dokimi.eval.judge import JUDGE_PROVIDERS
+
 # Run-configuration fields the arms commands read off parsed args, shared with
 # any other command that drives an arms run by constructing its own Namespace.
 # Kept in one place so a new flag reaches every caller: enumerating these at each
@@ -238,7 +240,7 @@ def register(sub, positive_int) -> None:
                             help="Also score each arm with the LLM-as-judge")
     arms_run_p.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
     arms_run_p.add_argument("--judge-provider", default="openai", dest="judge_provider",
-                            choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
+                            choices=JUDGE_PROVIDERS)
     arms_run_p.add_argument("--top-k", type=positive_int, default=5, dest="top_k",
                             help="Docs to retrieve before reranking, for doc/MCP arms (default: 5)")
     arms_run_p.add_argument("--rerank-threshold", type=float, default=0.3, dest="rerank_threshold")
@@ -377,7 +379,7 @@ def _add_common_run_args(parser, positive_int, *, matrix_required: bool = False)
                         help="Also score each arm with the LLM-as-judge")
     parser.add_argument("--judge-model", default="gpt-4o-mini", dest="judge_model")
     parser.add_argument("--judge-provider", default="openai", dest="judge_provider",
-                        choices=["openai", "anthropic", "amazon-bedrock", "google-vertex", "openrouter", "openai-codex"])
+                        choices=JUDGE_PROVIDERS)
     parser.add_argument("--top-k", type=positive_int, default=5, dest="top_k",
                         help="Docs to retrieve before reranking, for doc/MCP arms (default: 5)")
     parser.add_argument("--rerank-threshold", type=float, default=0.3, dest="rerank_threshold")
