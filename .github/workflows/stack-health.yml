@@ -1,0 +1,45 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+name: stack-health
+
+# Daily report of the open PRs as stacks: dangling bases, PRs that no longer
+# merge onto their base, stack roots behind main, and shared files (schemas,
+# pyproject, workflows) edited by several PRs at once. Read-only; the report
+# is the job summary. See dokimi/scripts/stack_health.py.
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  report:
+    name: Open PR stack health
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Report
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        # The script fetches every branch; the token goes to git through the
+        # environment for this step only, the same header actions/checkout uses,
+        # instead of being written into .git/config.
+        # pipefail: without it tee's exit status hides a failed script and the job goes green.
+        run: |
+          set -o pipefail
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="http.${GITHUB_SERVER_URL}/.extraheader"
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          export GIT_CONFIG_VALUE_0
+          python dokimi/scripts/stack_health.py --repo "$REPO" | tee -a "$GITHUB_STEP_SUMMARY"

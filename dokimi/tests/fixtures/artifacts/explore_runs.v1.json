@@ -1,0 +1,137 @@
+{
+  "arms": [
+    "oracle",
+    "empty"
+  ],
+  "baseline_arm": "empty",
+  "generated_at": "2026-10-04T17:47:15.816155Z",
+  "model": null,
+  "results": [
+    {
+      "arm": "oracle",
+      "citations": [
+        {
+          "end": 20,
+          "path": "a.py",
+          "start": 10
+        }
+      ],
+      "elapsed_sec": 0.0,
+      "final_answer": "<final_answer>\na.py:10-20\n</final_answer>",
+      "metrics": {
+        "citation_count": 1,
+        "failed": false,
+        "malformed_count": 0,
+        "overlapping_citations": 0,
+        "returncode": 0
+      },
+      "model": null,
+      "operations": [
+        {
+          "elapsed_sec": 0.0,
+          "metadata": {
+            "citation_count": 1,
+            "citation_paths": [
+              "a.py"
+            ],
+            "final_answer_valid": true
+          },
+          "name": "oracle",
+          "status": "ok",
+          "type": "subagent"
+        }
+      ],
+      "score": {
+        "citation_compactness": 1.0,
+        "citation_validity_rate": 1.0,
+        "file_f1": 1.0,
+        "file_precision": 1.0,
+        "file_recall": 1.0,
+        "line_f1": 1.0,
+        "line_precision": 1.0,
+        "line_recall": 1.0
+      },
+      "task": "loc"
+    },
+    {
+      "arm": "empty",
+      "citations": [],
+      "elapsed_sec": 0.0,
+      "final_answer": "<final_answer>\n</final_answer>",
+      "metrics": {
+        "citation_count": 0,
+        "failed": false,
+        "malformed_count": 0,
+        "overlapping_citations": 0,
+        "returncode": 0
+      },
+      "model": null,
+      "operations": [
+        {
+          "elapsed_sec": 0.0,
+          "metadata": {
+            "citation_count": 0,
+            "citation_paths": [],
+            "final_answer_valid": true
+          },
+          "name": "empty",
+          "status": "ok",
+          "type": "subagent"
+        }
+      ],
+      "score": {
+        "citation_compactness": null,
+        "citation_validity_rate": 1.0,
+        "file_f1": 0.0,
+        "file_precision": 0.0,
+        "file_recall": 0.0,
+        "line_f1": 0.0,
+        "line_precision": 0.0,
+        "line_recall": 0.0
+      },
+      "task": "loc"
+    }
+  ],
+  "schema_version": "explore_runs.v1",
+  "summary": {
+    "comparisons": {
+      "oracle": {
+        "baseline_arm": "empty",
+        "file_f1_delta": 1.0,
+        "line_f1_delta": 1.0
+      }
+    },
+    "per_arm": {
+      "empty": {
+        "avg_citation_compactness": null,
+        "avg_citation_validity_rate": 1.0,
+        "avg_file_f1": 0.0,
+        "avg_line_f1": 0.0,
+        "n": 1
+      },
+      "oracle": {
+        "avg_citation_compactness": 1.0,
+        "avg_citation_validity_rate": 1.0,
+        "avg_file_f1": 1.0,
+        "avg_line_f1": 1.0,
+        "n": 1
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "loc",
+      "product": "p",
+      "query": "find it",
+      "references": [
+        {
+          "lines": [
+            10,
+            20
+          ],
+          "path": "a.py"
+        }
+      ]
+    }
+  ]
+}

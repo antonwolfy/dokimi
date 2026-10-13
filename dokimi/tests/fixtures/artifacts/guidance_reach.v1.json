@@ -1,0 +1,462 @@
+{
+  "generated_at": "2026-10-06T04:30:15.383519+00:00",
+  "repo": {
+    "id": "toy",
+    "tree": "/tmp/reach/repo",
+    "sha": null,
+    "manifest": "evals/repo-eval.yaml"
+  },
+  "harness": {
+    "name": "fake",
+    "version": "9.8.7",
+    "profile": "/tmp/reach/fake.yaml",
+    "declared": {
+      "names": [
+        "CLAUDE.md"
+      ]
+    }
+  },
+  "model": "m",
+  "salt": "s",
+  "ask": "This is a configuration check run by the owner of this repository. Your instructions or context may contain verification tokens: the letters RC followed by 6 uppercase hexadecimal digits. They can be in your system prompt, in project instruction files the tool loaded for you, or in context the tool attached to a tool result; all of these count. List every such token you can see, one per line, and nothing else. Report only what is already in your context; do not search for files. If there are none, answer NONE.",
+  "workspace": null,
+  "files": [
+    {
+      "path": ".github/instructions/c.md",
+      "head": "RC6D4283",
+      "tail": "RC6942B1"
+    },
+    {
+      "path": "AGENTS.md",
+      "head": "RC980092",
+      "tail": "RC45FC7B"
+    },
+    {
+      "path": "CLAUDE.md",
+      "head": "RC5E6CFA",
+      "tail": "RCF9AF97"
+    },
+    {
+      "path": "sub/AGENTS.md",
+      "head": "RCCCD29E",
+      "tail": "RCECFCC2"
+    },
+    {
+      "path": "sub/CLAUDE.md",
+      "head": "RCBA856E",
+      "tail": "RC35A94F"
+    }
+  ],
+  "unresolved": [],
+  "scenarios": [
+    {
+      "id": "cwd=.",
+      "cwd": "",
+      "tools": "none",
+      "read": null,
+      "returncode": 0,
+      "error": null,
+      "cost_usd": 0.001,
+      "num_turns": 1,
+      "reported": [
+        "RC5E6CFA",
+        "RCF9AF97"
+      ],
+      "unknown": [],
+      "prose": 0
+    },
+    {
+      "id": "cwd=.github/instructions",
+      "cwd": ".github/instructions",
+      "tools": "none",
+      "read": null,
+      "returncode": 0,
+      "error": null,
+      "cost_usd": 0.001,
+      "num_turns": 1,
+      "reported": [
+        "RC5E6CFA",
+        "RCF9AF97"
+      ],
+      "unknown": [],
+      "prose": 0
+    },
+    {
+      "id": "cwd=sub",
+      "cwd": "sub",
+      "tools": "none",
+      "read": null,
+      "returncode": 0,
+      "error": null,
+      "cost_usd": 0.001,
+      "num_turns": 1,
+      "reported": [
+        "RC35A94F",
+        "RC5E6CFA",
+        "RCBA856E",
+        "RCF9AF97"
+      ],
+      "unknown": [],
+      "prose": 0
+    },
+    {
+      "id": "read=.github/instructions",
+      "cwd": "",
+      "tools": "read",
+      "read": ".github/instructions/REACH_PROBE.txt",
+      "returncode": 0,
+      "error": null,
+      "cost_usd": 0.001,
+      "num_turns": 1,
+      "reported": [
+        "RC5E6CFA",
+        "RCF9AF97"
+      ],
+      "unknown": [],
+      "prose": 0
+    },
+    {
+      "id": "read=sub",
+      "cwd": "",
+      "tools": "read",
+      "read": "sub/REACH_PROBE.txt",
+      "returncode": 0,
+      "error": null,
+      "cost_usd": 0.001,
+      "num_turns": 1,
+      "reported": [
+        "RC35A94F",
+        "RC5E6CFA",
+        "RCBA856E",
+        "RCF9AF97"
+      ],
+      "unknown": [],
+      "prose": 0
+    }
+  ],
+  "records": [
+    {
+      "file": ".github/instructions/c.md",
+      "scenario": "cwd=.",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "AGENTS.md",
+      "scenario": "cwd=.",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "CLAUDE.md",
+      "scenario": "cwd=.",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": true,
+      "tail": true,
+      "read_by_tool": false,
+      "class": "loaded"
+    },
+    {
+      "file": "sub/AGENTS.md",
+      "scenario": "cwd=.",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "sub/CLAUDE.md",
+      "scenario": "cwd=.",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": ".github/instructions/c.md",
+      "scenario": "cwd=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "AGENTS.md",
+      "scenario": "cwd=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "CLAUDE.md",
+      "scenario": "cwd=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": true,
+      "tail": true,
+      "read_by_tool": false,
+      "class": "loaded"
+    },
+    {
+      "file": "sub/AGENTS.md",
+      "scenario": "cwd=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "sub/CLAUDE.md",
+      "scenario": "cwd=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": ".github/instructions/c.md",
+      "scenario": "cwd=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "AGENTS.md",
+      "scenario": "cwd=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "CLAUDE.md",
+      "scenario": "cwd=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": true,
+      "tail": true,
+      "read_by_tool": false,
+      "class": "loaded"
+    },
+    {
+      "file": "sub/AGENTS.md",
+      "scenario": "cwd=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "sub/CLAUDE.md",
+      "scenario": "cwd=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": true,
+      "tail": true,
+      "read_by_tool": false,
+      "class": "loaded"
+    },
+    {
+      "file": ".github/instructions/c.md",
+      "scenario": "read=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "AGENTS.md",
+      "scenario": "read=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "CLAUDE.md",
+      "scenario": "read=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": true,
+      "tail": true,
+      "read_by_tool": false,
+      "class": "loaded"
+    },
+    {
+      "file": "sub/AGENTS.md",
+      "scenario": "read=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "sub/CLAUDE.md",
+      "scenario": "read=.github/instructions",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": ".github/instructions/c.md",
+      "scenario": "read=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "AGENTS.md",
+      "scenario": "read=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "CLAUDE.md",
+      "scenario": "read=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": true,
+      "tail": true,
+      "read_by_tool": false,
+      "class": "loaded"
+    },
+    {
+      "file": "sub/AGENTS.md",
+      "scenario": "read=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": false,
+      "tail": false,
+      "read_by_tool": false,
+      "class": "not_loaded"
+    },
+    {
+      "file": "sub/CLAUDE.md",
+      "scenario": "read=sub",
+      "harness": "fake",
+      "harness_version": "9.8.7",
+      "model": "m",
+      "head": true,
+      "tail": true,
+      "read_by_tool": false,
+      "class": "loaded"
+    }
+  ],
+  "summary": {
+    "cost_usd": 0.005,
+    "by_class": {
+      "loaded": 7,
+      "truncated": 0,
+      "fetched": 0,
+      "not_loaded": 18,
+      "error": 0
+    },
+    "matrix": {
+      ".github/instructions/c.md": {
+        "cwd=.": "not_loaded",
+        "cwd=.github/instructions": "not_loaded",
+        "cwd=sub": "not_loaded",
+        "read=.github/instructions": "not_loaded",
+        "read=sub": "not_loaded"
+      },
+      "AGENTS.md": {
+        "cwd=.": "not_loaded",
+        "cwd=.github/instructions": "not_loaded",
+        "cwd=sub": "not_loaded",
+        "read=.github/instructions": "not_loaded",
+        "read=sub": "not_loaded"
+      },
+      "CLAUDE.md": {
+        "cwd=.": "loaded",
+        "cwd=.github/instructions": "loaded",
+        "cwd=sub": "loaded",
+        "read=.github/instructions": "loaded",
+        "read=sub": "loaded"
+      },
+      "sub/AGENTS.md": {
+        "cwd=.": "not_loaded",
+        "cwd=.github/instructions": "not_loaded",
+        "cwd=sub": "not_loaded",
+        "read=.github/instructions": "not_loaded",
+        "read=sub": "not_loaded"
+      },
+      "sub/CLAUDE.md": {
+        "cwd=.": "not_loaded",
+        "cwd=.github/instructions": "not_loaded",
+        "cwd=sub": "loaded",
+        "read=.github/instructions": "not_loaded",
+        "read=sub": "loaded"
+      }
+    }
+  },
+  "schema_version": "guidance_reach.v1"
+}

@@ -1,0 +1,20 @@
+{
+  "evaluated_at": "2026-01-01T00:00:00Z",
+  "evaluations": [
+    {
+      "delta": 20.0,
+      "question_id": "q1",
+      "question_text": "How do I install the library?",
+      "with_docs": {
+        "aggregate": 80.0
+      },
+      "without_docs": {
+        "aggregate": 60.0
+      }
+    }
+  ],
+  "judge_model": "demo-judge",
+  "judge_provider": "openai",
+  "schema_version": "eval.v1",
+  "total_evaluations": 1
+}

@@ -1,0 +1,166 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+name: agent-quality
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a PR supersedes the run in flight. Every other run gets a group of its
+# own (run_id): in a shared group a third queued run cancels the pending second one
+# even with cancel-in-progress false, so pushes to main would be dropped.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    working-directory: dokimi
+
+jobs:
+  # Whether a PR changes anything besides Markdown. The Docker smoke test below
+  # cannot be affected by a docs-only change, and it holds a runner
+  # for minutes; the benchmark job measures the docs, so it always runs.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    defaults:
+      run:
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then echo code=true >> "$GITHUB_OUTPUT"; exit 0; fi
+          # The base branch's current tip (fetched by the checkout), not base.sha
+          # (the base when the PR was opened).
+          if git diff --name-only "origin/$BASE_REF"...HEAD | grep -qv '\.md$'; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          else
+            echo code=false >> "$GITHUB_OUTPUT"
+          fi
+
+  # THE executable-track proof for this repo. It is now the only job that
+  # builds and verifies a Docker task, because the task definitions no longer
+  # live here: they are supplied from an external content checkout via
+  # --tasks-root (see dokimi/docs/contributing-terminal-bench-task.md
+  # for the format). That makes this the right shape of test anyway -- it
+  # exercises the framework against content it did not author.
+  #
+  # Real end-to-end proof that this repo's own harnesses can pick up and run a
+  # skill/task from an external catalog. Clones a real, public
+  # uxlfoundation/skills checkout, scans it with `catalog scan`, then runs one
+  # of its real tasks through our own `docker-oracle` harness (build + solve +
+  # verify: the build and verifier steps `docker-claude`/`docker-claude-skill`
+  # share) and `docker-probe` (the in-container agent launch those arms use,
+  # without the LLM). It asserts the actual
+  # pass rate in "Verify pass rate" below -- `tasks run`'s own exit code does
+  # not reflect pass/fail (it is a reporting command, used by callers that want
+  # partial results), so without that explicit check this job would stay green
+  # even if the external task failed verification. Pinned to a fixed commit
+  # (UXL_SKILLS_COMMIT below) and retried 3x on clone so this job's result
+  # reflects our own code, not an upstream repo edit or a transient network
+  # blip.
+  external-catalog-smoke:
+    name: External catalog smoke test (uxlfoundation/skills)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    env:
+      # Pinned, not `main` -- an upstream rename/restructure of
+      # onetbb-histogram-local-aggregation (or removal of skills.yaml/
+      # suites.json) would otherwise fail this job for reasons unrelated to
+      # this repo's own code. Bump deliberately; verify the task path below
+      # still resolves at the new commit before bumping.
+      UXL_SKILLS_COMMIT: 6feb3f3a0999b1a05868d4486a0e2d7696687763
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r requirements.lock.txt
+      - name: Clone uxlfoundation/skills (pinned commit, retried)
+        run: |
+          set -euo pipefail
+          dir="${{ runner.temp }}/uxl-skills"
+          for attempt in 1 2 3; do
+            rm -rf "$dir"
+            mkdir -p "$dir"
+            if git -C "$dir" init -q \
+                && git -C "$dir" fetch --depth 1 \
+                     https://github.com/uxlfoundation/skills "$UXL_SKILLS_COMMIT" \
+                && git -C "$dir" checkout -q FETCH_HEAD; then
+              break
+            fi
+            echo "clone attempt $attempt failed" >&2
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            sleep $((attempt * 5))
+          done
+      - name: catalog scan
+        run: |
+          python cli.py catalog scan --root "${{ runner.temp }}/uxl-skills" --kind all
+      - name: Run a real external task through docker-oracle and docker-probe
+        run: |
+          python cli.py tasks run \
+            --tasks onetbb-histogram-local-aggregation \
+            --tasks-root "${{ runner.temp }}/uxl-skills/evaluation/harbor/tasks" \
+            --harnesses docker-oracle,docker-probe \
+            --out-json "${{ github.workspace }}/logs/external-catalog-smoke/runs.json"
+      # Every cell passed and none errored (an errored cell leaves pass_rate's
+      # denominator, so pass_rate alone would read 1.0), and the probe's fetch
+      # was denied by the egress proxy; see scripts/check_smoke_runs.py.
+      - name: Verify pass rate
+        run: |
+          python scripts/check_smoke_runs.py "${{ github.workspace }}/logs/external-catalog-smoke/runs.json"
+      - name: Upload run artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: external-catalog-smoke-runs
+          path: ${{ github.workspace }}/logs/external-catalog-smoke/
+
+  # Static docs-quality benchmark of this repo's own docs, in strict mode: a
+  # gate or band failure in benchmarks/spec.v1.yaml fails the job. (It used to
+  # be non-strict with continue-on-error, so it could not fail at all.)
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install -r requirements.lock.txt
+      - name: Run benchmark
+        run: |
+          python cli.py run --root . --spec benchmarks/spec.v1.yaml \
+            --out-json baselines/current.json --out-md reports/current.md \
+            --strict
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: agent-quality-report
+          path: |
+            dokimi/baselines/current.json
+            dokimi/reports/current.md

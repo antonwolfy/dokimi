@@ -1,0 +1,30 @@
+{
+  "awareness": {
+    "arm_specs": [],
+    "runs": []
+  },
+  "baseline": "baseline",
+  "cells": [],
+  "generated_at": "2026-01-01T00:00:00Z",
+  "plugin_deltas": [],
+  "schema_version": "subject_scorecard.v1",
+  "subject": {
+    "id": "s",
+    "kind": "doc-source",
+    "ref": "local:docs"
+  },
+  "suite": {
+    "products": [
+      "oneTBB"
+    ],
+    "questions": [
+      "q.json"
+    ]
+  },
+  "warnings": [],
+  "work": {
+    "arm_specs": [],
+    "status": "not_run",
+    "tasks": []
+  }
+}

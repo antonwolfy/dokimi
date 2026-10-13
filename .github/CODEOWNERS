@@ -1,0 +1,19 @@
+# Code ownership / review routing by subsystem.
+# See CONTRIBUTING.md for the subsystem map. Replace placeholders with real
+# GitHub handles or teams as ownership is assigned.
+
+# Default
+*                                   @napetrov
+
+# Static benchmark subsystem
+/dokimi/dokimi/runner/      @napetrov
+/dokimi/dokimi/metrics/     @napetrov
+/dokimi/dokimi/ingest/      @napetrov
+/dokimi/dokimi/gate/        @napetrov
+/dokimi/benchmarks/                   @napetrov
+
+# LLM evaluation subsystem
+/dokimi/dokimi/eval/        @napetrov
+/dokimi/dokimi/questions/   @napetrov
+/dokimi/dokimi/personas/    @napetrov
+/dokimi/dokimi/treatments/  @napetrov

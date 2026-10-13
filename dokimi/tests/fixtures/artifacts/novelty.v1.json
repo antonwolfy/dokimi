@@ -1,0 +1,502 @@
+{
+  "arms": {
+    "lenient": {
+      "full": 1.0,
+      "no_artifact": 0.0
+    },
+    "strict": {
+      "full": 1.0,
+      "no_artifact": 0.0
+    }
+  },
+  "artifact": {
+    "kind": "skill",
+    "ref": "skill:/tmp/run/accel-tuning/SKILL.md",
+    "ref_digest": null,
+    "tokens": 42
+  },
+  "atoms": {
+    "faithfulness": {
+      "distorted": 0,
+      "supported": 2,
+      "unchecked": 0,
+      "unsupported": 0
+    },
+    "n": 2,
+    "n_probed": 2,
+    "sampling": "cap-per-artifact:120"
+  },
+  "attribution": {
+    "carrier_confirmation": {
+      "checked_with_heading_path": true,
+      "frac_located": 0.5,
+      "n_atoms": 2,
+      "n_located": 1,
+      "n_pairs_checked": 2,
+      "n_unlocated": 1,
+      "note": "an unlocated atom is not necessarily wrong: 0.19 of atoms in the study were unrecoverable from their cited file and the faithfulness check called 46 of 49 of them supported \u2014 they read as syntheses of the whole document. Render them as unlocated; do not colour a span for them and do not delete them.",
+      "unlocated_atoms": [
+        "abd6900398f"
+      ]
+    },
+    "legend": {
+      "amber": "protected: a negation, version gate, ordering constraint or threshold",
+      "dim": "no extracted atom \u2014 an upper bound on dead weight, not proof of it",
+      "green": "carries knowledge the model did not have without this artifact",
+      "grey": "carries only knowledge the model already produced unprompted",
+      "red": "carries a conflicting atom, or one the artifact made the model get wrong"
+    },
+    "spans_by_label": {
+      "added": 2,
+      "degraded": 0,
+      "empty": 3,
+      "harmful": 0,
+      "inert": 0,
+      "protected": 0,
+      "redundant": 0
+    },
+    "token_share_by_label": {
+      "added": 0.4286,
+      "degraded": 0.0,
+      "empty": 0.5714,
+      "harmful": 0.0,
+      "inert": 0.0,
+      "protected": 0.0,
+      "redundant": 0.0
+    },
+    "tokens_by_label": {
+      "added": 18,
+      "degraded": 0,
+      "empty": 24,
+      "harmful": 0,
+      "inert": 0,
+      "protected": 0,
+      "redundant": 0
+    }
+  },
+  "by_knowledge_kind": {
+    "lenient": {
+      "by_kind": {
+        "contract": {
+          "n_paired": 2,
+          "underpowered": true
+        },
+        "proposition": {
+          "n_paired": 2,
+          "underpowered": true
+        }
+      },
+      "by_tag": {
+        "negative_constraint": {
+          "n_paired": 2,
+          "underpowered": true
+        },
+        "procedural": {
+          "n_paired": 2,
+          "underpowered": true
+        },
+        "version_bound": {
+          "n_paired": 2,
+          "underpowered": true
+        }
+      },
+      "min_probes": 5,
+      "note": "tag slices overlap (an atom may carry several tags); do not sum them",
+      "scoring": "lenient",
+      "with_arm": "full"
+    },
+    "strict": {
+      "by_kind": {
+        "contract": {
+          "n_paired": 2,
+          "underpowered": true
+        },
+        "proposition": {
+          "n_paired": 2,
+          "underpowered": true
+        }
+      },
+      "by_tag": {
+        "negative_constraint": {
+          "n_paired": 2,
+          "underpowered": true
+        },
+        "procedural": {
+          "n_paired": 2,
+          "underpowered": true
+        },
+        "version_bound": {
+          "n_paired": 2,
+          "underpowered": true
+        }
+      },
+      "min_probes": 5,
+      "note": "tag slices overlap (an atom may carry several tags); do not sum them",
+      "scoring": "strict",
+      "with_arm": "full"
+    }
+  },
+  "categories": {
+    "harmful_conflicting": 0,
+    "known_inert": 0,
+    "known_useful": 0,
+    "novel_inert": 0,
+    "novel_useful": 2,
+    "scaffolding": 0
+  },
+  "caveats": [
+    "Rates are paired per probe; trust signs and rankings, not second decimals. Two independent judges agreed 0.664 on the 6-way verdict scale and 0.852 on the correct-ish binary collapse, so every rate is reported under both scorings.",
+    "`frac_carrying_nothing` is an upper bound on dead weight, and is only a property of the artifact when `spans.capped_atom_set` is false. Three extractors agreed on which spans carry knowledge (Jaccard 0.87-0.99), so it is not mostly unformalizable knowledge; a capped atom set, however, inflated it tenfold in the study.",
+    "Novelty is a property of the (artifact, model) pair. Do not compare across models.",
+    "Per-atom-kind and per-tag rates are labels, not measurements. With extraction held fixed, two independent relabellings reproduced the tag rates to within 0.08 (six of nine tags at kappa 0.52-0.73), so tag slices are quotable; `rare-critical` (0.39-0.45) and `temporal` are not, and the 5-way atom `type` vocabulary agrees at only 0.32-0.38. Gate on the protection tags (`routing`, `negative-constraint`, `version-bound`) or on nothing; report shape slices without gating on them.",
+    "Per-artifact `added` is a profile, not a ranking: the cross-artifact ranking destabilizes below a 0.75 probe budget, so keep any `added` gate soft."
+  ],
+  "conflicts": [],
+  "controls": {
+    "abstentions": {
+      "full": 0,
+      "no_artifact": 0
+    },
+    "confidence_correlation": 1.0,
+    "order_independent": null,
+    "reversal_resisted": 1.0
+  },
+  "cost": {
+    "by_role": [
+      {
+        "input_tokens": 0,
+        "llm_calls": 12,
+        "model": "extractor-m",
+        "output_tokens": 0,
+        "provider": "openai",
+        "role": "extractor",
+        "usd": null
+      },
+      {
+        "input_tokens": 0,
+        "llm_calls": 12,
+        "model": "answerer-m",
+        "output_tokens": 0,
+        "provider": "openai",
+        "role": "answerer",
+        "usd": null
+      },
+      {
+        "input_tokens": 0,
+        "llm_calls": 12,
+        "model": "judge-m",
+        "output_tokens": 0,
+        "provider": "openai",
+        "role": "judge",
+        "usd": null
+      }
+    ],
+    "input_tokens": 0,
+    "llm_calls": 36,
+    "output_tokens": 0,
+    "usd": null
+  },
+  "generated_at": "2026-10-04T17:47:16.841483Z",
+  "judge_model": "judge-m",
+  "k0": {
+    "lenient": 0.0,
+    "strict": 0.0
+  },
+  "model": "answerer-m",
+  "needs": {
+    "by_path_class": {
+      "branch": 0,
+      "core": 1,
+      "out_of_scope": 1,
+      "rare_critical": 1,
+      "supporting": 0
+    },
+    "by_type": {
+      "action": 1,
+      "constraint": 1,
+      "decision": 0,
+      "evidence": 1,
+      "intent": 0
+    },
+    "edges": 1,
+    "nodes": 3
+  },
+  "paired": {
+    "lenient": {
+      "added": 1.0,
+      "ci95_added": null,
+      "degraded": 0.0,
+      "n_paired": 4,
+      "n_unpaired_dropped": 0,
+      "redundant": 0.0,
+      "still_missing": 0.0
+    },
+    "strict": {
+      "added": 1.0,
+      "ci95_added": null,
+      "degraded": 0.0,
+      "n_paired": 4,
+      "n_unpaired_dropped": 0,
+      "redundant": 0.0,
+      "still_missing": 0.0
+    }
+  },
+  "provider": "openai",
+  "relevance": {
+    "frac_out_of_scope": 0.0,
+    "mean_relevance": 0.25,
+    "n_atoms_matched": 1,
+    "n_atoms_unmatched": 1,
+    "out_of_scope_atoms": 0
+  },
+  "retention": {
+    "adjudicator": "extractor-m",
+    "band": [
+      0.25,
+      0.85
+    ],
+    "decisions": 16,
+    "escalation_rate": 0.25,
+    "llm_escalations": 4
+  },
+  "run_config": {
+    "arms": [
+      "no_artifact",
+      "full"
+    ],
+    "budgets": [
+      0.75,
+      0.5
+    ],
+    "max_atoms": 120,
+    "paraphrases": 1,
+    "prompts_sha256": "sha256:b3f7833705bb6d66396ef1c4f5e7b7c5434aecab882ee8604edf347aaad432ce",
+    "reversals": true,
+    "seed": 0,
+    "stages": {
+      "classify": true,
+      "confirm_carriers": true,
+      "shorten": true,
+      "verify": true
+    }
+  },
+  "schema_version": "novelty.v1",
+  "shortening": [
+    {
+      "budget_frac": 0.75,
+      "dropped_protected_spans": [],
+      "kept_spans": 4,
+      "knowledge": 0.5,
+      "protection": 1.0,
+      "routing": 1.0,
+      "safe": true,
+      "strategy": "greedy_value",
+      "token_frac": 0.619,
+      "tokens": 26,
+      "tokens_full": 42,
+      "value": 1.0,
+      "value_coverage": 1.0,
+      "value_is_coverage_proxy": false
+    },
+    {
+      "budget_frac": 0.5,
+      "dropped_protected_spans": [],
+      "kept_spans": 3,
+      "knowledge": 0.5,
+      "protection": 1.0,
+      "routing": 1.0,
+      "safe": true,
+      "strategy": "greedy_value",
+      "token_frac": 0.381,
+      "tokens": 16,
+      "tokens_full": 42,
+      "value": 1.0,
+      "value_coverage": 1.0,
+      "value_is_coverage_proxy": false
+    },
+    {
+      "budget_frac": 0.75,
+      "dropped_protected_spans": [],
+      "kept_spans": 4,
+      "knowledge": 0.5,
+      "protection": 1.0,
+      "routing": 1.0,
+      "safe": true,
+      "strategy": "greedy_value_safe",
+      "token_frac": 0.619,
+      "tokens": 26,
+      "tokens_full": 42,
+      "value": 1.0,
+      "value_coverage": 1.0,
+      "value_is_coverage_proxy": false
+    },
+    {
+      "budget_frac": 0.5,
+      "dropped_protected_spans": [],
+      "kept_spans": 4,
+      "knowledge": 0.5,
+      "protection": 1.0,
+      "routing": 1.0,
+      "safe": true,
+      "strategy": "greedy_value_safe",
+      "token_frac": 0.619,
+      "tokens": 26,
+      "tokens_full": 42,
+      "value": 1.0,
+      "value_coverage": 1.0,
+      "value_is_coverage_proxy": false
+    },
+    {
+      "budget_frac": 0.75,
+      "dropped_protected_spans": [],
+      "kept_spans": 5,
+      "knowledge": 0.5,
+      "protection": 1.0,
+      "routing": 1.0,
+      "safe": true,
+      "strategy": "dedupe_only",
+      "token_frac": 1.0,
+      "tokens": 42,
+      "tokens_full": 42,
+      "value": 1.0,
+      "value_coverage": 1.0,
+      "value_is_coverage_proxy": false
+    },
+    {
+      "budget_frac": 0.75,
+      "dropped_protected_spans": [],
+      "kept_spans": 4,
+      "knowledge": 0.5,
+      "protection": 1.0,
+      "routing": 1.0,
+      "safe": true,
+      "strategy": "random",
+      "token_frac": 0.619,
+      "tokens": 26,
+      "tokens_full": 42,
+      "value": 1.0,
+      "value_coverage": 1.0,
+      "value_is_coverage_proxy": false
+    },
+    {
+      "budget_frac": 0.5,
+      "dropped_protected_spans": [
+        "s0003"
+      ],
+      "kept_spans": 3,
+      "knowledge": 0.0,
+      "protection": 0.0,
+      "routing": 1.0,
+      "safe": false,
+      "strategy": "random",
+      "token_frac": 0.4286,
+      "tokens": 18,
+      "tokens_full": 42,
+      "value": 0.0,
+      "value_coverage": 1.0,
+      "value_is_coverage_proxy": false
+    }
+  ],
+  "spans": {
+    "by_kind": {
+      "heading": 2,
+      "sentence": 3
+    },
+    "capped_atom_set": false,
+    "frac_carrying_nothing": 0.5714,
+    "n": 5,
+    "n_atoms_indexed": 2,
+    "protected": 1,
+    "sole_carrier": 2,
+    "tokens": 42,
+    "tokens_carrying_nothing": 24
+  },
+  "views": {
+    "dead_weight": [
+      {
+        "heading_path": [
+          "Accelerator tuning",
+          "Background"
+        ],
+        "kind": "sentence",
+        "span_id": "s0005",
+        "text": "The project began as a research prototype with many contributors.",
+        "tokens": 16
+      },
+      {
+        "heading_path": [
+          "Accelerator tuning"
+        ],
+        "kind": "heading",
+        "span_id": "s0001",
+        "text": "# Accelerator tuning",
+        "tokens": 5
+      },
+      {
+        "heading_path": [
+          "Accelerator tuning",
+          "Background"
+        ],
+        "kind": "heading",
+        "span_id": "s0004",
+        "text": "## Background",
+        "tokens": 3
+      }
+    ],
+    "sole_carriers": [
+      {
+        "atoms": [
+          "abd6900398f"
+        ],
+        "protection": [],
+        "span_id": "s0002",
+        "text": "Enable the accelerator with `--accel`.",
+        "tokens": 10
+      },
+      {
+        "atoms": [
+          "a7dd40428ea"
+        ],
+        "protection": [
+          "negation",
+          "version_gate"
+        ],
+        "span_id": "s0003",
+        "text": "Do not enable it on driver 1.0.",
+        "tokens": 8
+      }
+    ],
+    "topics": [
+      {
+        "added_spans": 2,
+        "dead_tokens": 5,
+        "heading_path": [
+          "Accelerator tuning"
+        ],
+        "labels": {
+          "added": 2,
+          "empty": 1
+        },
+        "spans": 3,
+        "tokens": 23
+      },
+      {
+        "added_spans": 0,
+        "dead_tokens": 19,
+        "heading_path": [
+          "Accelerator tuning",
+          "Background"
+        ],
+        "labels": {
+          "empty": 2
+        },
+        "spans": 2,
+        "tokens": 19
+      }
+    ]
+  },
+  "warnings": [
+    "1 of 2 atoms were not recoverable from any span cited for them; they are reported as unlocated rather than attributed, and are not necessarily wrong (in the study the faithfulness check called 46 of 49 such atoms supported)",
+    "1 shortening candidates drop protected spans; they are reported so the knowledge-vs-protection gap is visible, not offered as accepted output"
+  ]
+}

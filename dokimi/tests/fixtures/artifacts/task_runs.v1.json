@@ -1,0 +1,523 @@
+{
+  "baseline_harness": "noskill",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "harnesses": [
+    "noskill",
+    "skill"
+  ],
+  "model": "haiku",
+  "repeats": 2,
+  "results": [
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 1,
+      "reward": 0.0,
+      "task": "t0"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 1,
+      "reward": 1.0,
+      "task": "t0"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 2,
+      "reward": 0.0,
+      "task": "t0"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 2,
+      "reward": 1.0,
+      "task": "t0"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 1,
+      "reward": 0.0,
+      "task": "t1"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 1,
+      "reward": 1.0,
+      "task": "t1"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 2,
+      "reward": 0.0,
+      "task": "t1"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 2,
+      "reward": 1.0,
+      "task": "t1"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 1,
+      "reward": 0.0,
+      "task": "t2"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 1,
+      "reward": 1.0,
+      "task": "t2"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 2,
+      "reward": 0.0,
+      "task": "t2"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 2,
+      "reward": 1.0,
+      "task": "t2"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 1,
+      "reward": 0.0,
+      "task": "t3"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 1,
+      "reward": 1.0,
+      "task": "t3"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 2,
+      "reward": 0.0,
+      "task": "t3"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 2,
+      "reward": 1.0,
+      "task": "t3"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 1,
+      "reward": 0.0,
+      "task": "t4"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 1,
+      "reward": 1.0,
+      "task": "t4"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 2,
+      "reward": 0.0,
+      "task": "t4"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 2,
+      "reward": 1.0,
+      "task": "t4"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 1,
+      "reward": 0.0,
+      "task": "t5"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 1,
+      "reward": 1.0,
+      "task": "t5"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "noskill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": false,
+      "repeat": 2,
+      "reward": 0.0,
+      "task": "t5"
+    },
+    {
+      "elapsed_sec": 1.0,
+      "harness": "skill",
+      "metrics": {
+        "operation_count": 0,
+        "operations_by_type": {}
+      },
+      "operations": [],
+      "passed": true,
+      "repeat": 2,
+      "reward": 1.0,
+      "task": "t5"
+    }
+  ],
+  "schema_version": "task_runs.v1",
+  "summary": {
+    "comparisons": {
+      "skill": {
+        "baseline_harness": "noskill",
+        "cost_delta_usd": null,
+        "mcnemar": {
+          "ci_confidence": 0.95,
+          "ci_hi": 1.0,
+          "ci_lo": 1.0,
+          "correction": "holm",
+          "correction_family": "harnesses",
+          "family_size": 1,
+          "n": 12,
+          "n_both_failed": 0,
+          "n_both_passed": 0,
+          "n_discordant": 12,
+          "n_excluded": 0,
+          "n_gained": 12,
+          "n_lost": 0,
+          "n_units": 6,
+          "p_adjusted": 0.0005,
+          "p_exact": 0.0005,
+          "paired_pass_rate_delta": 1.0,
+          "pseudo_replicated": true,
+          "significant": true,
+          "significant_adjusted": true,
+          "test": "mcnemar_exact"
+        },
+        "operation_count_delta": 0,
+        "pass_rate_delta": 1.0,
+        "passed_delta": 12
+      }
+    },
+    "per_harness": {
+      "noskill": {
+        "avg_reward": 0.0,
+        "cost": {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "completion_tokens": 0,
+          "cost_known_n": 0,
+          "prompt_tokens": 0,
+          "total_cost_usd": null,
+          "total_tokens": 0
+        },
+        "elapsed_sec": 12.0,
+        "n": 12,
+        "operation_count": 0,
+        "operations_by_type": {},
+        "pass_rate": 0.0,
+        "passed": 0,
+        "per_task": {
+          "t0": {
+            "n": 2,
+            "pass_rate": 0.0,
+            "passed": 0
+          },
+          "t1": {
+            "n": 2,
+            "pass_rate": 0.0,
+            "passed": 0
+          },
+          "t2": {
+            "n": 2,
+            "pass_rate": 0.0,
+            "passed": 0
+          },
+          "t3": {
+            "n": 2,
+            "pass_rate": 0.0,
+            "passed": 0
+          },
+          "t4": {
+            "n": 2,
+            "pass_rate": 0.0,
+            "passed": 0
+          },
+          "t5": {
+            "n": 2,
+            "pass_rate": 0.0,
+            "passed": 0
+          }
+        }
+      },
+      "skill": {
+        "avg_reward": 1.0,
+        "cost": {
+          "cache_read_tokens": 0,
+          "cache_write_tokens": 0,
+          "completion_tokens": 0,
+          "cost_known_n": 0,
+          "prompt_tokens": 0,
+          "total_cost_usd": null,
+          "total_tokens": 0
+        },
+        "elapsed_sec": 12.0,
+        "n": 12,
+        "operation_count": 0,
+        "operations_by_type": {},
+        "pass_rate": 1.0,
+        "passed": 12,
+        "per_task": {
+          "t0": {
+            "n": 2,
+            "pass_rate": 1.0,
+            "passed": 2
+          },
+          "t1": {
+            "n": 2,
+            "pass_rate": 1.0,
+            "passed": 2
+          },
+          "t2": {
+            "n": 2,
+            "pass_rate": 1.0,
+            "passed": 2
+          },
+          "t3": {
+            "n": 2,
+            "pass_rate": 1.0,
+            "passed": 2
+          },
+          "t4": {
+            "n": 2,
+            "pass_rate": 1.0,
+            "passed": 2
+          },
+          "t5": {
+            "n": 2,
+            "pass_rate": 1.0,
+            "passed": 2
+          }
+        }
+      }
+    }
+  },
+  "tasks": [
+    {
+      "agent": {},
+      "environment": {},
+      "metadata": {
+        "difficulty": "easy"
+      },
+      "name": "t0",
+      "path": "tasks/t0",
+      "verifier": {}
+    },
+    {
+      "agent": {},
+      "environment": {},
+      "metadata": {
+        "difficulty": "easy"
+      },
+      "name": "t1",
+      "path": "tasks/t1",
+      "verifier": {}
+    },
+    {
+      "agent": {},
+      "environment": {},
+      "metadata": {
+        "difficulty": "easy"
+      },
+      "name": "t2",
+      "path": "tasks/t2",
+      "verifier": {}
+    },
+    {
+      "agent": {},
+      "environment": {},
+      "metadata": {
+        "difficulty": "easy"
+      },
+      "name": "t3",
+      "path": "tasks/t3",
+      "verifier": {}
+    },
+    {
+      "agent": {},
+      "environment": {},
+      "metadata": {
+        "difficulty": "easy"
+      },
+      "name": "t4",
+      "path": "tasks/t4",
+      "verifier": {}
+    },
+    {
+      "agent": {},
+      "environment": {},
+      "metadata": {
+        "difficulty": "easy"
+      },
+      "name": "t5",
+      "path": "tasks/t5",
+      "verifier": {}
+    }
+  ]
+}

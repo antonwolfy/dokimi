@@ -1,0 +1,53 @@
+# Python/runtime caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+coverage.xml
+coverage.json
+# Written by the CI steps (and `make ci-local`)
+/dokimi/diff-cover.json
+/dokimi/diff-cover.md
+/dokimi/compat.txt
+
+# Local environments and credentials
+.venv/
+.env
+
+# Generated benchmark outputs and temporary reports.
+# Curated, version-controlled inputs live under dokimi/data/;
+# everything below is scratch produced by CLI runs and must not be committed.
+# The project lives in a subdirectory, so these patterns are anchored to
+# dokimi/. Keep the anchors: an unanchored `questions/` or `answers/`
+# would also match a same-named directory in an evaluation-content checkout
+# placed inside this tree.
+/dokimi/results/
+/dokimi/reports/
+/dokimi/dashboard.json
+/dokimi/jobs.json
+/dokimi/cr.md
+/dokimi/agent-quality-report/
+/dokimi/context7_comparison_results.json
+*.log
+*.tar.gz
+
+# Default CLI output locations (answers.py, evaluate.py, questions.py,
+# personas.py and run.py write here when --output is not given).
+/dokimi/answers/
+/dokimi/eval/
+/dokimi/questions/
+/dokimi/personas/
+/dokimi/baselines/
+
+# Downloaded/generated external content
+.cache/
+vendor_docs/
+node_modules/
+
+# Python packaging build metadata
+*.egg-info/
+build/
+dist/
+
+# Working notes / scratch planning (not for commit)
+/change_plan.md

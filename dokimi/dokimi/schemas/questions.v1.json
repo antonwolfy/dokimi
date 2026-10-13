@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/intel/dokimi/schemas/questions.v1.json",
+  "title": "Questions artifact v1",
+  "type": "object",
+  "required": [
+    "questions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "questions.v1"
+    },
+    "library": {
+      "type": "string"
+    },
+    "library_id": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": [
+              "string",
+              "integer"
+            ]
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "persona": {
+            "type": [
+              "string",
+              "object",
+              "null"
+            ]
+          },
+          "category": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "difficulty": {
+            "type": [
+              "string",
+              "integer",
+              "number",
+              "null"
+            ]
+          },
+          "level": {
+            "description": "Workflow depth, independent of difficulty. See docs/difficulty-rubric.md.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "triage",
+              "diagnosis",
+              "end_to_end",
+              null
+            ]
+          },
+          "expected_topics": {
+            "type": "array"
+          },
+          "expected_skill": {
+            "description": "Skill-selection label for the skill-catalog: arm: the skill that should load, a list of acceptable skills, or null when no catalog skill should load. Absent = unlabelled.",
+            "type": [
+              "string",
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

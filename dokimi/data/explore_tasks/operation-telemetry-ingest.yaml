@@ -1,0 +1,8 @@
+id: operation-telemetry-ingest
+product: dokimi
+query: >
+  How are DOKIMI_OP markers and operations.jsonl files ingested into
+  OperationRecord telemetry for a harness run?
+references:
+  - path: dokimi/harnesses/operations.py
+  - path: dokimi/harnesses/models.py

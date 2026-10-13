@@ -1,0 +1,7 @@
+id: treatment-arm-specs
+product: dokimi
+query: >
+  Where are treatment-arm specs (baseline, docs:, mcp:, profile:, skill:,
+  skill-agent:) parsed into concrete treatments?
+references:
+  - path: dokimi/treatments/factory.py

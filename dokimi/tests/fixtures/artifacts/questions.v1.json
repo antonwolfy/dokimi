@@ -1,0 +1,16 @@
+{
+  "library": "demo",
+  "questions": [
+    {
+      "category": "installation",
+      "difficulty": "easy",
+      "expected_topics": [
+        "install"
+      ],
+      "id": "q1",
+      "level": "triage",
+      "text": "How do I install the library?"
+    }
+  ],
+  "schema_version": "questions.v1"
+}

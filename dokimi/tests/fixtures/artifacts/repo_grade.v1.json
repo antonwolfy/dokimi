@@ -1,0 +1,12 @@
+{
+  "details": {},
+  "errors": [],
+  "grader": "calc",
+  "metrics": {
+    "n_edits": 1,
+    "tests_pass": true
+  },
+  "pass": true,
+  "schema": "repo_grade.v1",
+  "task": "fix_add"
+}
