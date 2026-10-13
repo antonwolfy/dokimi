@@ -61,7 +61,12 @@ class CommandHarness:
             problem = harbor_task_problem(task, needs_solution=self.agent == "oracle")
             if problem:
                 raise ValueError(f"{task.name}: Harbor-backed harness cannot run it: {problem}")
-        output_dir = Path(output_dir) if output_dir else None
+        given_dir = Path(output_dir) if output_dir else None
+        # Absolute before it reaches the command or env: the agent runs with
+        # cwd=task_root.parent, so a relative dir (the `tasks run` default) would
+        # land its reward and operations in the task checkout, and the reward
+        # read below would miss them and fall back to the exit code.
+        output_dir = given_dir.absolute() if given_dir else None
         if output_dir:
             output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -90,7 +95,7 @@ class CommandHarness:
                 elapsed_sec=elapsed,
                 reward=None,
                 passed=False,
-                output_dir=str(output_dir) if output_dir else None,
+                output_dir=str(given_dir) if given_dir else None,
                 operations=operations,
                 metrics={"dry_run": True},
             )
@@ -152,7 +157,7 @@ class CommandHarness:
             passed=passed,
             stdout_tail=_tail(stdout),
             stderr_tail=_tail(stderr),
-            output_dir=str(output_dir) if output_dir else None,
+            output_dir=str(given_dir) if given_dir else None,
             operations=operations,
             metrics=metrics,
         )
