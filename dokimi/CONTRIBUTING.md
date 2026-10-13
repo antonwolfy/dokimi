@@ -48,6 +48,9 @@ CI additionally holds a PR to:
   `pytest --cov=dokimi --cov-branch --cov-report=xml`.
 - **mypy on the whole package.** Modules listed under `[[tool.mypy.overrides]]` in
   `pyproject.toml` are exempt until fixed; do not add to that list.
+- **Docs build** — `pip install -r requirements-docs.txt`, then
+  `mkdocs build --strict`: a link or `#anchor` that does not resolve fails it.
+  `mkdocs serve` previews the site.
 - **Workflow lint** — `zizmor --offline --min-severity medium .github/workflows` when you
   edit a workflow.
 

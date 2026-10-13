@@ -103,6 +103,10 @@ For the framework's quickstart, CLI surface, and architecture, see
 
 ## Where to start reading
 
+The documentation is published at <https://intel.github.io/dokimi/>, with a
+CLI and API reference generated from the code; the same pages read here on
+GitHub under [`dokimi/docs/`](dokimi/docs/README.md).
+
 | You want to understand… | Read |
 |---|---|
 | Why measure context at all, and what an arm is | [`dokimi/docs/README.md`](dokimi/docs/README.md) |
