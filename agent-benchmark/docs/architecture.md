@@ -238,13 +238,33 @@ next release.
   `base` must resolve, and the guidance globs are evaluated at each base.
 - `agent_benchmarks/repos/events.py` — converts a harness trace to the
   `events.jsonl` run trace.
+- `agent_benchmarks/repos/l0/` — `repo scan` (L0): checks the links, paths,
+  identifiers, commands and build labels the guidance names against the same
+  tree (`repo_readiness.v1`), with no LLM call.
+- `agent_benchmarks/repos/workspace.py` — loads `task.json` files, exports the
+  eval dir and the image build context (tasks removed), and prepares a cell's
+  workspace: snapshot at `base`, setup patches, the guidance arm, and no
+  history or unreachable objects left behind.
+- `agent_benchmarks/repos/container.py` — how every container starts (fixed
+  paths, bind mounts only, the caller's uid, env by name, no new privileges)
+  and the docker CLI runner; tests swap in a fake runner.
+- `agent_benchmarks/repos/grading.py` — runs the `grade` and `oracle` entry
+  points in their own container, reads `grade.json` (`repo_grade.v1`) without
+  following links, and turns it into the framework's verdict and gate.
+- `agent_benchmarks/repos/runner.py` + `agent_benchmarks/repos/report.py` —
+  `repo run` (one agent per task × arm × model × rep cell, then `grade`, one
+  `result.json` per cell) and `repo report` (gated success with a Wilson
+  interval, grader failures, missing cells, cost).
+- `agent_benchmarks/repos/selfcheck.py` — `repo tasks check`: on each task
+  `grade` must fail the untouched workspace and pass it after `oracle`, and an
+  isolation probe must not see the tasks or the source from the agent's
+  container.
 
-Entry points on main today: `python cli.py repo {validate,fetch,reach}`
-(`python cli.py repo --help` is the current list). The task-run and grading
-half of the contract — the `grade` entry point and `grade.json` — is specified in
-[repo-evaluation-contract.md](repo-evaluation-contract.md) and still being built
-out; that document is the interface a repository codes against, and it is marked
-PROPOSED until the pipeline lands.
+Entry points: `python cli.py repo {validate,scan,fetch,reach,tasks check,run,report}`
+(`python cli.py repo --help` is the current list). The interface a repository
+codes against is [repo-evaluation-contract.md](repo-evaluation-contract.md),
+still marked PROPOSED: the per-host egress proxy (§2) is not implemented, so
+`repo run` needs `--agent-network` for an agent that must reach its model.
 
 ## Shared building blocks
 

@@ -198,7 +198,8 @@ def register(sub, positive_int) -> None:
     """Add the `repo` subcommand group."""
     repo_p = sub.add_parser(
         "repo",
-        help="Repositories as evaluation subjects: validate repo-eval.yaml, L0 scan, fetch sources, reach probe",
+        help="Repositories as evaluation subjects: validate repo-eval.yaml, L0 scan, fetch sources, reach probe, "
+        "task self-check, agent runs and their report",
     )
     repo_sub = repo_p.add_subparsers(dest="repo_cmd", required=True)
     source_help = (
@@ -284,3 +285,7 @@ def register(sub, positive_int) -> None:
                          help="Print the files and the exact argv of every scenario; run nothing")
     reach_p.add_argument("--cache-dir", default=None, dest="cache_dir", help=cache_help)
     reach_p.set_defaults(func=cmd_repo_reach)
+
+    from . import repo_run
+
+    repo_run.register(repo_sub, positive_int, source_help, cache_help)

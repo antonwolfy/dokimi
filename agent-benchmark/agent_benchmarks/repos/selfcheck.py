@@ -1,0 +1,149 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""``repo tasks check``: the self-check every task passes before any paid run (contract §4.3). No LLM.
+
+Per task, on workspaces prepared exactly as for an agent (arm ``guidance:raw``,
+empty ``answer.txt`` and ``events.jsonl``):
+
+- **null**: ``grade`` on the untouched workspace must not pass the gate (and a
+  score-only task must not reach ``score.max``);
+- **oracle**: ``oracle`` then ``grade`` must pass the gate, or for a score-only
+  task reach ``score.max`` on ``score.metric``;
+- **isolation**: a container laid out like the agent's sees neither
+  ``{eval_dir}`` nor ``{source_dir}``, holds no directory named like the task,
+  and has no harness guidance file in an ancestor of the workspace.
+
+A grader failure on either workspace is a grader bug: the task is ``broken``
+and stays out of paid runs. A task whose network needs the egress proxy is
+``unsupported`` until the proxy exists. ``--warm`` runs null and oracle with
+network so the caches fill before offline runs (§2).
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+
+from .container import CONTENT_DIR, RUN_DIR, SOURCE_DIR, ContainerError, ContainerSpec, docker_network
+from .grading import EvalContext, outcome, run_entry
+from .runner import agent_layout, container_name
+from .workspace import PrepError, Task, prepare_workspace
+
+ANCESTOR_NAMES = ("CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "AGENT.md", ".claude", "GEMINI.md")
+_ISOLATION_SH = r"""
+bad=0
+for p in "$EVAL_CONTENT" "$EVAL_SOURCE"; do
+  if [ -e "$p" ]; then echo "visible to the agent: $p"; bad=1; fi
+done
+for d in / /eval "$EVAL_RUN"; do
+  for n in "$@"; do
+    if [ -e "$d/$n" ]; then echo "guidance above the workspace: $d/$n"; bad=1; fi
+  done
+done
+printf '%s\n' $EVAL_TASKS > /tmp/agent-benchmark-tasks
+hits=$(find / -xdev \( -path /proc -o -path /sys -o -path /dev \) -prune -o -print 2>/dev/null \
+  | awk -F/ '{print $NF}' | grep -Fx -f /tmp/agent-benchmark-tasks | sort -u | head -5)
+if [ -n "$hits" ]; then echo "named like a task, in the image: $hits"; bad=1; fi
+exit $bad
+"""
+
+def check_task(ctx: EvalContext, task: Task, work_dir: Path, warm: bool = False,
+               guidance_names: tuple[str, ...] = ANCESTOR_NAMES) -> dict[str, Any]:
+    """Null, oracle and isolation checks for one task; ``verdict`` is ok, broken or unsupported."""
+    network = ctx.manifest.image.network if ctx.manifest.image else "none"
+    res: dict[str, Any] = {"task": task.id, "family": task.family, "warm": warm, "problems": []}
+    try:
+        net = "bridge" if warm else docker_network(network, task.egress)
+    except ContainerError as exc:
+        res.update(verdict="unsupported", problems=[str(exc)])
+        return res
+    for kind in ("null", "oracle"):
+        rd = work_dir / f"{task.id}__{kind}"
+        try:
+            _prepare(ctx, task, rd)
+            if kind == "oracle":
+                run = run_entry(ctx, "oracle", task, rd, net, container_name(rd.name, "oracle"))
+                res["oracle_run"] = {"rc": run.returncode, "timed_out": run.timed_out, "wall_s": run.wall_s}
+                if not run.ok:
+                    res["problems"].append(f"oracle {'timed out' if run.timed_out else f'exited {run.returncode}'}"
+                                           f"; see {rd / 'oracle.log'}")
+                    continue
+            res[kind] = outcome(task, rd, run_entry(ctx, "grade", task, rd, net, container_name(rd.name, "grade")))
+        except (PrepError, ContainerError) as exc:
+            res["problems"].append(f"{kind}: {exc}")
+            continue
+        res["problems"] += _verdict_problems(task, kind, res[kind], rd)
+    if not res["problems"]:
+        res["isolation"] = isolation_probe(ctx, [task], work_dir / f"{task.id}__null", guidance_names)
+        res["problems"] += [f"isolation: {p}" for p in res["isolation"]]
+    res["verdict"] = "broken" if res["problems"] else "ok"
+    return res
+
+
+def _prepare(ctx: EvalContext, task: Task, rd: Path) -> None:
+    if rd.exists():
+        shutil.rmtree(rd)
+    rd.mkdir(parents=True)
+    meta = prepare_workspace(ctx.git_dir, ctx.manifest, task, "guidance:raw", rd)
+    meta.update(harness="none", harness_version=None, model="none", rep=0)
+    for name, data in (("meta.json", meta), ("task.json", task.raw)):
+        (rd / name).write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+    (rd / "answer.txt").write_text("", encoding="utf-8")
+    (rd / "events.jsonl").write_text("", encoding="utf-8")
+
+
+def _verdict_problems(task: Task, kind: str, grade: dict[str, Any], rd: Path) -> list[str]:
+    if grade["status"] == "grader_failure":
+        return [f"{kind}: grader failure ({'; '.join(grade['reasons'])}); see {rd / 'grade.log'}"]
+    top = task.score["max"] if task.score else None
+    reached = top is not None and grade["score"] is not None and grade["score"] >= top
+    if kind == "null":
+        out = ["null: the untouched workspace passes the gate"] if grade["success"] else []
+        return out + ([f"null: the untouched workspace reaches score.max {top}"] if reached else [])
+    if grade["score_only"] and task.score:  # outcome() fails pass: null when the task has no `score`
+        return [] if reached else [f"oracle: {task.score['metric']} = {grade['score']}, below score.max {top}"]
+    out = [] if grade["success"] else ["oracle: the reference solution does not pass the gate"]
+    if task.score and not reached:
+        out.append(f"oracle: {task.score['metric']} = {grade['score']}, below score.max {top}")
+    return out
+
+
+def isolation_probe(ctx: EvalContext, tasks: list[Task], rd: Path,
+                    names: tuple[str, ...] = ANCESTOR_NAMES) -> list[str]:
+    """Problems seen by a container with the agent's mounts (no harness) in ``rd``; empty when isolated.
+
+    The image itself is searched (``find -xdev``: the bind mounts are other file systems) for an
+    entry named like any of ``tasks``, which is how a Dockerfile that copied the tasks shows up.
+    """
+    (rd / "workspace").mkdir(parents=True, exist_ok=True)
+    mounts, env = agent_layout(ctx, rd, tasks[0])
+    env = {**env, "EVAL_CONTENT": CONTENT_DIR, "EVAL_SOURCE": SOURCE_DIR, "EVAL_RUN": RUN_DIR,
+           "EVAL_TASKS": " ".join(t.id for t in tasks)}
+    spec = ContainerSpec(image=ctx.image, argv=["sh", "-c", _ISOLATION_SH, "sh", *names],
+                         mounts=mounts, env=env, network="none", name=container_name(rd.name, "isolation"))
+    out, err = rd / "isolation.log", rd / "isolation.err"
+    result = ctx.runner.run(spec, stdout=out, stderr=err, timeout_s=600)
+    if result.ok:
+        return []
+    found = [line for line in out.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+    return found or [f"probe exited {result.returncode}: {err.read_text(encoding='utf-8', errors='replace').strip()[-300:]}"]
+
+
+def run_check(ctx: EvalContext, tasks: list[Task], work_dir: Path, warm: bool = False, jobs: int = 1,
+              guidance_names: tuple[str, ...] = ANCESTOR_NAMES, log=print) -> list[dict[str, Any]]:
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    def one(task: Task) -> dict[str, Any]:
+        res = check_task(ctx, task, work_dir, warm, guidance_names)
+        log(f"{task.id}: {res['verdict'].upper()}" + "".join(f"\n  - {p}" for p in res["problems"]))
+        return res
+
+    with ThreadPoolExecutor(max(1, jobs)) as pool:
+        results = list(pool.map(one, tasks))
+    (work_dir / "check.json").write_text(json.dumps({"warm": warm, "tasks": results}, indent=1) + "\n",
+                                         encoding="utf-8")
+    return results

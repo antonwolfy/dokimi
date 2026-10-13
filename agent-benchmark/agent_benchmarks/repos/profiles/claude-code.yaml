@@ -47,8 +47,20 @@ env_set:
   # A background process that leaves the harness's process group survives a timeout kill.
   CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
   DISABLE_AUTOUPDATER: "1"
-# Hosts the agent container may reach (contract §2). `repo reach` does not enforce
-# this list: it runs the harness on the host, with the host's network.
+# `claude -p` ends when the model ends its turn, so a build left running in the
+# background is killed and the run fails for a reason unrelated to the task.
+prompt_suffix: >-
+  Work in the foreground: background commands are disabled here, and your final
+  answer ends the session.
+# Written into the per-run CLAUDE_CONFIG_DIR: nothing from the user's ~/.claude,
+# plus a hook that refuses backgrounded shell commands (needs python3 in the
+# image; without it the hook errors and Claude Code lets the command run).
+config_files:
+  settings.json: >-
+    {"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command",
+    "command": "python3 {support_dir}/no_background.py"}]}]}}
+# Hosts the agent container may reach (contract §2); nothing else gets out. `repo reach`
+# does not enforce this list: it runs the harness on the host, with the host's network.
 egress:
   - "bedrock-runtime.*.amazonaws.com"
   - api.anthropic.com

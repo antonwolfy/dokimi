@@ -30,6 +30,7 @@ from agent_benchmarks.artifacts import SCHEMA_DIR
 
 PROFILE_DIR = Path(__file__).resolve().parent / "profiles"
 PLACEHOLDERS = frozenset({"bin", "prompt", "model", "max_turns", "budget"})
+CONFIG_PLACEHOLDERS = frozenset({"config_dir", "support_dir"})
 TOOLS_ELEMENT = "{tools}"
 _PLACEHOLDER_RE = re.compile(r"\{([a-z_]+)\}")
 _VERSION_RE = re.compile(r"\d+\.\d+\.\d+")
@@ -63,6 +64,8 @@ class HarnessProfile:
     endpoint_env: str | None = None
     guidance: dict[str, Any] = field(default_factory=dict)
     bridge: dict[str, str] | None = None
+    prompt_suffix: str = ""
+    config_files: dict[str, str] = field(default_factory=dict)
     path: str = "<profile>"
 
     @property
@@ -98,6 +101,17 @@ class HarnessProfile:
             else:
                 out.append(_substitute(element, values))
         return out
+
+    def prompt(self, task_prompt: str) -> str:
+        """The task prompt as the agent gets it: with ``prompt_suffix`` after a blank line."""
+        return f"{task_prompt}\n\n{self.prompt_suffix}" if self.prompt_suffix else task_prompt
+
+    def write_config(self, config_dir: Path, values: dict[str, str]) -> list[str]:
+        """Write ``config_files`` into ``config_dir``; ``values`` fills {config_dir} and {support_dir}."""
+        config_dir.mkdir(parents=True, exist_ok=True)
+        for name, content in self.config_files.items():
+            (config_dir / name).write_text(_substitute(content, values), encoding="utf-8")
+        return sorted(self.config_files)
 
     def version_argv(self, bin_path: str | None = None) -> list[str]:
         values = {"bin": bin_path or self.bin}
@@ -217,6 +231,10 @@ def parse_profile(raw: Any, path: str = "<profile>") -> HarnessProfile:
             unknown = set(_PLACEHOLDER_RE.findall(element)) - (PLACEHOLDERS if key == "invoke" else {"bin"})
             if unknown:
                 raise ProfileError(f"{path}: {key} uses unknown placeholder(s) {sorted(unknown)}")
+    for name, content in (raw.get("config_files") or {}).items():
+        unknown = set(_PLACEHOLDER_RE.findall(content)) - CONFIG_PLACEHOLDERS
+        if unknown:
+            raise ProfileError(f"{path}: config_files/{name} uses unknown placeholder(s) {sorted(unknown)}")
     if not any("{prompt}" in element for element in raw["invoke"]):
         raise ProfileError(f"{path}: invoke never passes {{prompt}}")
     if raw["invoke"].count(TOOLS_ELEMENT) != 1:
@@ -235,6 +253,8 @@ def parse_profile(raw: Any, path: str = "<profile>") -> HarnessProfile:
         endpoint_env=raw.get("endpoint_env"),
         guidance=dict(raw.get("guidance") or {}),
         bridge=raw.get("bridge"),
+        prompt_suffix=raw.get("prompt_suffix") or "",
+        config_files=dict(raw.get("config_files") or {}),
         path=path,
     )
 

@@ -42,6 +42,13 @@
         "notes": {"type": "string"}
       }
     },
+    "prompt_suffix": {"type": "string", "description": "Appended to every task prompt after a blank line, for what the harness needs the agent to know about running headless (for example that background commands are refused)."},
+    "config_files": {
+      "type": "object",
+      "description": "Files written into the per-run config directory before the agent starts, name -> content. Placeholders: {config_dir} and {support_dir} (the framework's read-only helper scripts, such as the no-background hook), both as the agent's container sees them.",
+      "propertyNames": {"pattern": "^[A-Za-z0-9._-]+$"},
+      "additionalProperties": {"type": "string"}
+    },
     "bridge": {
       "type": ["object", "null"],
       "additionalProperties": false,

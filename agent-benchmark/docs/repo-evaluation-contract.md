@@ -31,10 +31,21 @@
 > `--manifest-file <local.yaml>` on `validate`, `scan` and `reach` reads the manifest
 > from outside the tree, for a repository that has not added it yet.
 >
-> Everything else below (workspace preparation, entry points, `grade.json`) is
-> not implemented yet. It is published so
-> repository owners can align their evaluation content before the framework
-> side lands.
+> Slice S5 adds the repository-mode runner: workspace preparation (§3), the
+> containers of §1.1, the `repo_grade.v1` schema (§4.2), the self-check (§4.3)
+> and agent runs with their report:
+>
+> ```bash
+> python cli.py repo tasks check <source> --manifest <path> [--task <id>] [--warm]
+> python cli.py repo run <source> --manifest <path> --arm guidance:raw --model <id> --reps N --batch NAME
+>     --agent-network host
+> python cli.py repo report <out>/<batch>
+> ```
+>
+> Not implemented yet: the egress proxy (§2), so a task with `egress` is refused
+> and an agent reaches its model only through an explicit `--agent-network`;
+> running the `static` entry point; the regrade sample of §4.2; and the split
+> by base date against a model's cutoff. See [Running](#9-running) below.
 
 A repository that wants to be evaluated keeps its evaluation content in its own
 tree: a manifest, tasks, graders and a build image. agent-benchmark reads that
@@ -76,7 +87,18 @@ outside every workspace and passes its absolute path to entry points as
   `answer.txt` are written to `{run_dir}` after the agent's container exits.
 - `grade` and `oracle` run in a separate container from the same image, after
   the agent's container has exited. That container mounts `{eval_dir}` and
-  `{source_dir}` read-only and `{run_dir}` read-write.
+  `{source_dir}` read-only and `{run_dir}` read-write. It gets a `HOME` of its
+  own (`{run_dir}/grade-home`, made empty before each run; the agent never had
+  it), `PYTHONNOUSERSITE=1`, and git configuration overrides that disable
+  `core.fsmonitor` and hooks (`core.hooksPath=/dev/null`); the workspace's
+  `.git/config` and `.git/hooks` are moved aside to `{run_dir}/agent-git/`
+  before it starts, so a filter, diff driver, alias or include the agent
+  configured does not run in the grader. What a grader still trusts from the
+  agent, and must treat as untrusted input: every file in the workspace
+  (including `.gitattributes`, `conftest.py`, build files and the rest of
+  `.git`), and any directory `image.env` places under `{run_dir}`, which both
+  containers share. A grader that imports or runs workspace code runs the
+  agent's code.
 - **Fixed paths.** Inside every container `{run_dir}` is `/eval/run`,
   `{eval_dir}` is `/eval/content` and `{source_dir}` is `/eval/source`. The
   agent container mounts the workspace at `/eval/run/workspace`, the same path
@@ -86,8 +108,8 @@ outside every workspace and passes its absolute path to entry points as
   name an absolute artifact path; a fixed mount fixes that without changing
   any repository.
 - **Image build.** The build context is the eval tree's repository root,
-  exported with `git archive` at the eval revision (no `.git`, no untracked
-  files) and with the `tasks` directory removed. One image serves every task
+  checked out at the eval revision (no `.git`, no untracked files, every
+  tracked file as git stores it) and with the `tasks` directory removed. One image serves every task
   of that eval revision; per-base images would mean one build per base (18 on
   oneDAL) for the same toolchain. The Dockerfile may `COPY` tooling from
   anywhere in that context, for example a build wrapper under `<eval-dir>`,
@@ -113,7 +135,8 @@ image:
   caches:                                 # volumes shared across runs, mounted read-write
     - {name: bazel-repo-cache, path: /cache/bazel-repo}
     - {name: bazel-disk-cache, path: /cache/bazel-disk}
-  env: {EVAL_BAZEL_OUTPUT_BASE: "{run_dir}/ob"}   # per-run build state
+  env: {EVAL_BAZEL_OUTPUT_BASE: "{run_dir}/ob"}   # per-run build state; a value under {run_dir}/ is a plain
+                                          # name (`ob`, `ob/sub`), never a framework entry such as `agent-git`
   network: none                           # or: public
 
 entry_points:                             # run inside the image, cwd = {run_dir}/workspace
@@ -158,7 +181,8 @@ Rules:
   not enough when bases pin different tool versions (7 Bazel versions on
   oneDAL).
 - **Container runtime.** The framework starts every container with an init
-  process as PID 1 (`docker run --init`), whatever the image's `ENTRYPOINT`;
+  process as PID 1 (`docker run --init`) and with an empty `--entrypoint`, so
+  the command is the whole argv whatever the image's `ENTRYPOINT`;
   without one, a daemonizing build server such as Bazel's hangs on shutdown and
   its cache writes are lost. `HOME` is a per-run writable directory under
   `{run_dir}`, never the container layer. Large tool state that should be
@@ -187,7 +211,7 @@ belongs to the repository's grader and is passed through unread.
 | `review_patch` | no | framework | applied with `git am` as the HEAD commit under review |
 | `gate` | no | framework | what counts as success; default `["pass"]`. Each entry is a boolean metric name, which must be `true`, or `{"metric": <name>, "min": <number>}` for a numeric metric |
 | `score` | for score-only tasks | framework | `{"metric": <name>, "max": <number>}`: the metric that is the result when `pass` is `null`, and the value the oracle must reach (§4.3) |
-| `timeout_s`, `max_turns`, `budget_usd` | no | framework | per-task caps, overriding run defaults |
+| `timeout_s`, `max_turns`, `budget_usd` | no | framework | per-task caps, overriding run defaults; each a finite number > 0 |
 | `egress` | no | framework | extra hosts (DNS names, optional `:port`; `*` stands for one whole label and the last two labels are literal, so `*.pythonhosted.org` passes and `*` or `*.org` does not) this task's agent and entry points reach through the proxy (§2), for example `["pypi.org", "files.pythonhosted.org"]` |
 | anything else | — | repository | for example `hidden_files`, `targets`, `regression_targets`, `manifest` |
 
@@ -196,13 +220,20 @@ belongs to the repository's grader and is passed through unread.
 
 ### Workspace preparation, done by the framework
 
-1. `git archive <base>` into `<run_dir>/workspace`
+1. `<base>`'s tree into `<run_dir>/workspace`, as git stores it: no
+   `core.autocrlf` or other git configuration of the host, and no
+   `export-ignore` / `export-subst` (unlike `git archive`)
 2. delete `eval_dir`
 3. `git init` and commit (no history, so fixes cannot leak)
 4. apply `setup_patches`
 5. apply the arm
 6. amend the commit
 7. apply `review_patch` with `git am` under a neutral author
+8. expire the reflog and prune unreachable objects: the
+   commits steps 6 and 7 replaced hold the unpatched code, the removed
+   guidance and the upstream author, and `git diff HEAD@{1}` would show them.
+   Prep's git never runs `gc --auto`, which would pack them where `prune`
+   cannot reach
 
 Every `guidance:*` arm is made by the framework from `guidance.globs` and the
 harness profile; a repository supplies no arm content:
@@ -285,12 +316,16 @@ reads the upstream base (`base_sha`) and the workspace start commit
 - `details` is optional and free-form (lists, objects, strings: changed
   files, per-class recall, commands the grader ran). It is stored with the run
   and shown in reports, never aggregated.
-- `pass: null` with empty `errors` means score-only. `pass: null` with
-  non-empty `errors` means the grader failed.
+- `pass: null` with empty `errors` means score-only, and is accepted only for
+  a task whose `task.json` has `score`; for any other task it is a grader
+  failure. `pass: null` with non-empty `errors` means the grader failed.
 - A grader failure counts as a **failure** of the run on every gated metric.
   The same applies when `grade` exits non-zero, times out, or writes no valid
   `grade.json`. An agent that breaks the tree so badly the grader crashes has
   failed the task; excluding the run would favour arms that break workspaces.
+  This holds for a host-side failure after the agent ran too (a read-only
+  `.git`, an unreadable trace): the cell gets a grader-failure `result.json` and
+  the batch budget is charged the run's cost, or its cap when none was reported.
   Reports show the grader-failure count per arm next to the pass rate.
 - A grader failure on the null or oracle workspace is a grader bug. `tasks
   check` reports it and the task is excluded from paid runs until it is fixed.
@@ -401,6 +436,13 @@ bridge: {for: AGENTS.md, write: CLAUDE.md, content: "@AGENTS.md"}
   substituted again. `invoke` holds the element `"{tools}"` exactly once.
 - The child gets only the `env_allow` names, then `env_set`, then
   `config_dir_env`. User settings, memory and unrelated credentials stay out.
+  In a container the host's `PATH` and `HOME` are dropped: the image's `PATH`
+  and the per-run `HOME` apply.
+- Optional `prompt_suffix` is appended to every task prompt, and optional
+  `config_files` (name → content) are written into the per-run config
+  directory, with `{config_dir}` and `{support_dir}` (the framework's helper
+  scripts) as the agent's container sees them. The built-in `claude-code`
+  profile uses them for a hook that refuses backgrounded shell commands.
 
 Profiles for other harnesses (Codex, Gemini CLI, Copilot CLI, Cursor agent,
 Aider, OpenCode, in-house agents) follow the same shape. Their `guidance`
@@ -567,3 +609,52 @@ file-set parity check.
 
 Measured on oneDAL and scikit-learn-intelex, claim by claim against their own
 checkers: see the pull request that added the scan (#68).
+
+## 9. Running
+
+`repo tasks check` and `repo run` need docker. Both export `eval_dir` from the
+eval tree to `<out>/_eval/content`, and build the image from the eval tree
+without its tasks directory (tag `agent-benchmark/<id>:<sha>`) unless
+`--image` names one. Cache directories default to
+`~/.cache/agent-benchmark/caches/<id>/<name>`; `--cache NAME=PATH` points one
+elsewhere. `{source_dir}` is the source's own git directory, or
+`--source-dir`.
+
+```bash
+# self-check: no LLM; exits 1 if any task is broken or unsupported
+python cli.py repo tasks check ~/oneDAL@<sha> --manifest dev/agent_evals/repo-eval.yaml \
+    --task fix_finiteness_mut --build-network host --cache bazel-repo-cache=/cache/bazel-repo -j 3
+
+# agents: one cell per (task, arm, model, rep) under repo-runs/<batch>/
+python cli.py repo run ~/oneDAL@<sha> --manifest dev/agent_evals/repo-eval.yaml \
+    --task fix_finiteness_mut --arm guidance:none,guidance:raw \
+    --model us.anthropic.claude-haiku-4-5-20251001-v1:0 --reps 3 --batch pilot \
+    --bin /opt/claude-2.1.286/claude --agent-network host --budget 1 --max-batch-usd 20
+python cli.py repo report repo-runs/pilot
+```
+
+- Each cell holds the §4 inputs plus `agent.stdout` (the raw trace) and
+  `result.json`, the framework's verdict. A cell with `result.json` is skipped
+  on a rerun unless `--force`; a cell without one is reported as missing, not
+  failed, and the next run of the batch fills it. A batch stays on the eval
+  tree it started with: its revision, or for a working tree the digests of
+  its `eval_dir` and of the image build context.
+- The agent's container mounts the workspace, the per-run `home`, `config` and
+  scratch directories (each `image.env` value under `{run_dir}/`), the caches,
+  the harness executable (`--bin`, read-only at `/eval/harness`) and the
+  framework's helper scripts (read-only at `/eval/support`). Before a batch,
+  the harness must report its version inside the image, and a probe container
+  with the same mounts must see neither `/eval/content` nor `/eval/source`, no
+  entry named like a task, and no guidance file above the workspace.
+- `--timeout`, `--max-turns` and `--budget` apply unless `task.json` sets
+  `timeout_s`, `max_turns` or `budget_usd`. On a timeout the container is
+  killed and the cell is still graded. `--max-batch-usd` starts no new cell
+  once that much has been spent.
+- Every container runs with `--security-opt no-new-privileges`, `--cap-drop
+  ALL` and a `--pids-limit`, as the caller's uid and gid.
+- `--agent-network` is required while the egress proxy is missing: it gives the
+  agent's container that docker network, so the agent's commands can reach any
+  host, which is what §2 forbids. `meta.json` records it and the report warns.
+- The report gives, per (task, arm, model), passes over finished cells with a
+  Wilson 95% interval (score-only tasks: the mean of `score.metric`), grader
+  failures (counted as failures too), missing cells, and mean cost and turns.

@@ -20,6 +20,7 @@ bytes, and ``output_truncated`` says whether that happened.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import PurePosixPath, PureWindowsPath
@@ -32,6 +33,7 @@ OUTPUT_KEEP = 4096
 _COMMAND_TOOLS = {"Bash", "PowerShell"}
 _READ_TOOLS = {"Read"}
 _EDIT_TOOLS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
+_HOOK_DENIAL = re.compile(r"\s*PreToolUse:\w+ hook error")
 
 
 @dataclass
@@ -46,6 +48,8 @@ class Transcript:
     output_tokens: int | None = None
     is_error: bool = False
     harness_version: str | None = None
+    result_subtype: str | None = None
+    plugins: list[str] = field(default_factory=list)  # loaders the harness reported at start-up
     errors: list[str] = field(default_factory=list)
 
     def reads(self) -> set[str]:
@@ -95,6 +99,9 @@ def _apply(out: Transcript, rec: dict[str, Any], t: float | None,
     kind = rec.get("type")
     if kind == "system" and rec.get("subtype") == "init":
         out.harness_version = rec.get("claude_code_version")
+        # Claude Code loads AGENTS.md through a built-in plugin (cc-plugin-agents-md) on some versions
+        out.plugins = sorted(str(p.get("name")) for p in rec.get("plugins") or []
+                             if isinstance(p, dict) and p.get("name"))
     elif kind == "assistant":
         for block in _content(rec):
             if block.get("type") == "tool_use":
@@ -106,11 +113,19 @@ def _apply(out: Transcript, rec: dict[str, Any], t: float | None,
         for block in _content(rec):
             if block.get("type") == "tool_result":
                 result_of = by_id.get(block.get("tool_use_id", ""))
-                if result_of is not None and result_of["kind"] == "command":
+                if result_of is None:
+                    continue
+                output = _result_text(block.get("content"))
+                # A PreToolUse hook that refuses the call (exit 2) comes back as an error result
+                # naming the hook; the command never ran, so it has no rc.
+                denied = bool(block.get("is_error")) and bool(_HOOK_DENIAL.match(output or ""))
+                if denied:
+                    result_of["denied"] = True
+                if result_of["kind"] == "command":
                     # Claude Code reports success or failure only, with stdout
                     # and stderr merged into one text.
-                    result_of["rc"] = 1 if block.get("is_error") else 0
-                    output = _result_text(block.get("content"))
+                    if not denied:
+                        result_of["rc"] = 1 if block.get("is_error") else 0
                     if output is not None:
                         result_of["output"], result_of["output_truncated"] = clip_output(output)
     elif kind == "result":
@@ -118,6 +133,7 @@ def _apply(out: Transcript, rec: dict[str, Any], t: float | None,
         out.cost_usd = rec.get("total_cost_usd")
         out.num_turns = rec.get("num_turns")
         out.is_error = bool(rec.get("is_error"))
+        out.result_subtype = rec.get("subtype")
         usage = rec.get("usage") or {}
         out.input_tokens = usage.get("input_tokens")
         out.output_tokens = usage.get("output_tokens")

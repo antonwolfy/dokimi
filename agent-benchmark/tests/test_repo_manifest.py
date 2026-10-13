@@ -167,6 +167,8 @@ def test_missing_and_non_yaml_manifest(tmp_path):
         ({"score": {"metric": "recall", "max": True}}, "score must be"),
         ({"timeout_s": 0}, "timeout_s"),
         ({"budget_usd": True}, "budget_usd"),
+        ({"budget_usd": float("nan")}, "budget_usd"),  # JSON NaN passes `<= 0`
+        ({"timeout_s": float("inf")}, "timeout_s"),
         ({"egress": "pypi.org"}, "egress must be a list"),
         ({"egress": ["https://pypi.org/simple"]}, "egress must be a list"),
         ({"egress": ["*"]}, "egress must be a list"),
@@ -452,3 +454,45 @@ def test_manifest_key_and_repo_members_are_refused(tmp_path):
     with pytest.raises(ValueError, match="members\\[0\\].kind is invalid"):
         load_subject(path)
 
+
+
+@pytest.mark.parametrize("value", [
+    "{run_dir}//tmp",             # the first path part is "/": run_dir / "/" is the host root
+    "{run_dir}/agent-git/x",      # the directory _set_git_config_aside moves the real config into
+    "{run_dir}/Agent-Git",        # the same entry on a host that folds case
+    "{run_dir}/grade-home",
+    "{run_dir}/result.json",
+    "{run_dir}/../x",
+    "{run_dir}/ob/../../x",
+    "{run_dir}/ob//x",
+    "{run_dir}/.hidden",
+    "{run_dir}/ob.",
+    "{run_dir}/a\b",
+    "{run_dir}/a\x00b",
+    "{run_dir}/ob\n",
+    "{run_dir}/",
+])
+def test_scratch_dir_that_is_not_a_plain_name_is_refused(value):
+    raw = json.loads(json.dumps(MANIFEST))
+    raw["image"]["env"]["OUT_BASE"] = value
+    with pytest.raises(ManifestError) as exc:
+        parse_manifest(raw)
+    message = str(exc.value)
+    assert "image/env/OUT_BASE" in message and ("plain name" in message or "runner creates" in message)
+
+
+@pytest.mark.parametrize("value", ["{run_dir}/ob", "{run_dir}/ob/", "{run_dir}/out-1/sub.d", "{run_dir}/home/.cache",
+                                   "{run_dir}", "/srv/x", "plain"])
+def test_scratch_dir_that_is_a_plain_name_or_outside_run_dir_is_accepted(value):
+    raw = json.loads(json.dumps(MANIFEST))
+    raw["image"]["env"]["OUT_BASE"] = value
+    assert parse_manifest(raw).image.env["OUT_BASE"] == value
+
+
+def test_reserved_run_entries_cover_what_the_runner_writes():
+    from agent_benchmarks.repos.grading import AGENT_GIT, GRADE_HOME, HOST_FILES
+    from agent_benchmarks.repos.manifest import RESERVED_RUN_ENTRIES
+
+    written = {AGENT_GIT, GRADE_HOME, *HOST_FILES, "grade.json", "agent.stdout", "agent.stderr",
+               "oracle.log", "oracle.err", "isolation.log", "isolation.err"}
+    assert written <= RESERVED_RUN_ENTRIES

@@ -21,6 +21,7 @@ repository's grader and are not read.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -47,6 +48,44 @@ _BASE_RE = re.compile(r"^([0-9a-f]{7,40})(\^?)$")
 TASK_REQUIRED = ("id", "family", "base", "prompt", "grader")
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / f"{SCHEMA_VERSION}.json"
+
+
+# Run-dir entries the framework creates itself and the agent's container does not mount. An `image.env`
+# scratch directory with one of these names would hand the agent the framework's own entry. The
+# mounted ones (workspace, home, config) are not scratch and stay allowed: nothing new is mounted.
+RESERVED_RUN_ENTRIES = frozenset({
+    "grade-home", "agent-git",
+    "meta.json", "task.json", "answer.txt", "events.jsonl", "result.json", "grade.json",
+    "agent.stdout", "agent.stderr", "grade.log", "grade.err", "oracle.log", "oracle.err",
+    "isolation.log", "isolation.err",
+})
+_SCRATCH_PART = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_RUN_DIR_PREFIX = "{run_dir}/"
+
+
+def _plain_part(part: str, first: bool) -> bool:
+    if first:  # the entry itself: no leading dot (the runner's temporary files), no trailing dot (folded on Windows)
+        return bool(_SCRATCH_PART.fullmatch(part)) and not part.endswith(".")
+    return bool(re.fullmatch(r"[A-Za-z0-9._-]+", part)) and part not in (".", "..")
+
+
+def scratch_name(value: str) -> str | None:
+    """The run-dir entry an ``image.env`` value places state in, ``None`` for a value outside ``{run_dir}``.
+
+    ``{run_dir}/ob`` and ``{run_dir}/ob/sub`` give ``ob``. Every component must be a plain name, and
+    the first must not be a framework entry (compared without case: the host may fold it). Anything
+    else (``{run_dir}//tmp``, ``..``, a NUL, a backslash) raises ``ValueError``.
+    """
+    if not value.startswith(_RUN_DIR_PREFIX):
+        return None
+    parts = value.removeprefix(_RUN_DIR_PREFIX).removesuffix("/").split("/")
+    bad = next((p for i, p in enumerate(parts) if not _plain_part(p, first=i == 0)), None)
+    if bad is not None:
+        raise ValueError(f"{value!r}: {bad!r} is not a plain name (letters, digits, '.', '_' and '-', "
+                         "starting with a letter or digit)")
+    if parts[0].casefold() in RESERVED_RUN_ENTRIES:
+        raise ValueError(f"{value!r}: {parts[0]!r} is a directory or file the runner creates in the run dir")
+    return parts[0]
 
 
 class ManifestError(ValueError):
@@ -196,6 +235,11 @@ def parse_manifest(raw: Any, path: str = "<manifest>") -> RepoManifest:
             errors.append(f"{key}: {{source_dir}} holds the full history and is only for grade and oracle")
     if any("{source_dir}" in v for _, v in templates) and not (raw.get("source") or {}).get("url"):
         errors.append("source/url: required when an entry point uses {source_dir}, which clones it")
+    for key, value in (image.get("env") or {}).items():
+        try:
+            scratch_name(value)
+        except ValueError as exc:
+            errors.append(f"image/env/{key}: {exc}")
     cache_names = [c["name"] for c in image.get("caches") or []]
     duplicates = sorted({n for n in cache_names if cache_names.count(n) > 1})
     if duplicates:
@@ -385,8 +429,8 @@ def _check_task(tree: RepoTree, task_dir: str, report: RepoCheckReport) -> None:
         egress = []
     for key in ("timeout_s", "max_turns", "budget_usd"):
         value = raw.get(key)
-        if value is not None and (not _is_number(value) or value <= 0):
-            problems.append(f"{key} must be a positive number")
+        if value is not None and not _positive(value):
+            problems.append(f"{key} must be a positive, finite number")
 
     report.errors.extend(f"{where}: {p}" for p in problems)
     if not problems:
@@ -415,6 +459,11 @@ def _parse_gate(gate: Any) -> tuple[tuple[str, ...], str | None]:
 
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _positive(value: Any) -> bool:
+    """A finite number > 0: JSON ``NaN`` passes ``<= 0`` checks and would disable a cap."""
+    return _is_number(value) and math.isfinite(value) and value > 0
 
 
 def _path_fields(raw: dict[str, Any]) -> list[tuple[str, str]]:
