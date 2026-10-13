@@ -249,6 +249,11 @@ CLI surface. The files in this directory go deeper:
   what a repository provides to be evaluated as a whole: `repo-eval.yaml`,
   `task.json`, the `grade` entry point and `grade.json`, harness profiles, and
   the guidance reach probe. Tasks and graders stay in the scanned repository.
+- [repo-evaluation-mergeability.md](repo-evaluation-mergeability.md) —
+  *(proposed)* grading whether a maintainer would merge a test-passing change:
+  `rubric.json` (blockers, non-blockers, scope), deterministic scope and
+  test-integrity checks, the rubric judge, and the calibration gate a task
+  must pass before it is admitted.
 - [repo-evaluation-agent-modes.md](repo-evaluation-agent-modes.md) —
   *(proposed)* how a repository task states its agent mode, effort, perf
   protocol and team rules, split from the mergeability proposal (#67).

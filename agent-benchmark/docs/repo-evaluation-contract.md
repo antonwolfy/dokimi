@@ -296,6 +296,15 @@ reads the upstream base (`base_sha`) and the workspace start commit
   check` reports it and the task is excluded from paid runs until it is fixed.
 - Grading must be deterministic. The framework regrades a sample and flags any
   mismatch.
+- A task that also has a maintainer rubric reports `mergeable` and
+  `merge_score`. They come from deterministic scope and test-integrity
+  checks plus an LLM rubric judge that the framework runs; see
+  [repo-evaluation-mergeability.md](repo-evaluation-mergeability.md)
+  *(proposed)*. The judge is not deterministic. Instead of a determinism
+  check, it reports agreement between two judges and must pass a calibration
+  gate (`repo rubric check`, a separate paid subcommand; `tasks check` stays
+  free of LLM calls). The regrade sample bypasses the verdict cache. Whether
+  one judge repeats its own verdict on the same input is not measured yet.
 
 ### 4.3 Self-check (`tasks check`, no LLM)
 
@@ -349,6 +358,7 @@ the same content runnable by the framework.
 | oracle logic spread across `run.py check` | expose it as the `oracle` entry point |
 | `bin/bazel` wrapper, shared caches, `MKLROOT` removal | expressed in the Dockerfile and `image.caches` / `image.env` |
 | clean-ancestor guard, no-background hook, per-run config dir | done by the framework for every harness |
+| fix and feature tasks have no review-level grading | add `rubric.json` per task ([mergeability](repo-evaluation-mergeability.md) §2), starting from the tasks mined from reviewed PRs; maintainers approve each rubric |
 | `static_check.py` | exposed as the `static` entry point. Its generic parts (links, paths, identifiers, fences) are framework L0 checks (§8); oneDAL rules such as the `//...` policy stay in oneDAL, and `repo scan --static` merges them |
 
 ## 6. Harness profiles
