@@ -7,6 +7,7 @@ import hashlib
 import json
 import random
 import threading
+import time
 
 import pytest
 
@@ -128,13 +129,21 @@ def test_an_open_variant_with_no_decision_anywhere_is_still_inconclusive():
 
 
 def _flaky(rate):
-    """Fails the n-th call on a given answer with probability ``rate``, whatever the thread order."""
+    """Fails the n-th call on a (question, answer) with probability ``rate``, whatever the thread order.
+
+    Keyed on the question too: one answer text can appear in several pairs
+    (``mismatched_answer`` reuses another base's intact answer, ``truncate_20``
+    of short answers collides), and a count shared across pairs would make
+    which pair draws the failing call depend on thread order. The jitter
+    shuffles that order so the concurrency test can see it.
+    """
     counts, lock = {}, threading.Lock()
 
     def scorer(lib, q, ans):
+        time.sleep(random.random() * 0.001)
         with lock:
-            n = counts[ans] = counts.get(ans, 0) + 1
-        if int(hashlib.md5(f"{ans}|{n}".encode(), usedforsecurity=False).hexdigest(), 16) % 1000 < rate * 1000:
+            n = counts[(q, ans)] = counts.get((q, ans), 0) + 1
+        if int(hashlib.md5(f"{q}|{ans}|{n}".encode(), usedforsecurity=False).hexdigest(), 16) % 1000 < rate * 1000:
             raise RuntimeError("throttle")
         return float(len(ans) % 97)
 
@@ -182,4 +191,4 @@ def test_an_intact_score_that_keeps_failing_errors_its_variants_after_a_bounded_
 
 def test_which_pairs_error_does_not_depend_on_concurrency_or_thread_order():
     serial = _errors(1)
-    assert serial and all(_errors(5) == serial for _ in range(4))
+    assert serial and all(_errors(8) == serial for _ in range(4))
