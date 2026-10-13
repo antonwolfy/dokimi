@@ -39,6 +39,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -87,8 +88,9 @@ PROXY_IMAGE = os.environ.get(
     "python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f")
 # What the agent's own clients must not send to the egress proxy.
 AGENT_NO_PROXY = "localhost,127.0.0.1,::1"
-# Container-side paths the agent must not see while it solves.
-CONTAINER_FORBIDDEN = ["/solution", "/tests", "/logs/verifier"]
+# Container-side paths the agent must not see while it solves: both layouts' grader
+# dirs (the oracle and verifier are mounted at /solution, /oracle, /tests and /verifier).
+CONTAINER_FORBIDDEN = ["/solution", "/oracle", "/tests", "/verifier", "/logs/verifier"]
 
 # Host-path or host-shape variables that mean nothing inside the container.
 _HOST_ONLY = frozenset({"PATH", "SHELL", "USER", "LOGNAME", "TMPDIR", "SSL_CERT_DIR", *_FILE_VARS})
@@ -118,6 +120,10 @@ class ContainerSandbox:
     log: list[dict] = field(default_factory=list)
     files: dict[str, Path] = field(default_factory=dict)  # _FILE_VARS name -> host file
     label: str = ""
+    # The tree the agent owns and starts in: the task's working tree, /app or below
+    # (the solver checks it). Not all of /app: a task can keep a read-only baseline
+    # there (SkillsBench lean4-proof's /app/baseline), which a chown would hand over.
+    workdir: str = "/app"
     _stopped: bool = False
     _scratch: Optional[Path] = None
 
@@ -179,9 +185,10 @@ class ContainerSandbox:
                 "--tmpfs", f"{AGENT_HOME}:rw,exec,size=1g,mode=0700,uid={uid},gid={gid}"]
 
     def prepare(self, container: str, docker: Docker, log) -> None:
-        """As root, before the agent starts: copy the CLI and files in, hand ``/app`` to the agent."""
+        """As root, before the agent starts: copy the CLI and files in, hand the work tree to the agent."""
         docker(["exec", "-u", "root", container, "sh", "-c",
-                f"mkdir -p {Path(AGENT_BIN).parent} {FILES_DIR} && chown -R {AGENT_UID} /app"], log)
+                f"mkdir -p {Path(AGENT_BIN).parent} {FILES_DIR}"
+                f" && chown -R {AGENT_UID} {shlex.quote(self.workdir)}"], log)
         for name, path in self.files.items():
             docker(["cp", str(path), f"{container}:{FILES_DIR}/{name}"], log)
         if self.files:
@@ -239,14 +246,14 @@ class ContainerSandbox:
                 if key not in multiline:
                     fh.write(f"{key}={env[key]}\n")
         names = [a for k in sorted(multiline) for a in ("-e", k)]
-        argv_out = ["docker", "exec", "-u", AGENT_UID, "-w", "/app", "--env-file", name, *names,
+        argv_out = ["docker", "exec", "-u", AGENT_UID, "-w", self.workdir, "--env-file", name, *names,
                     container, *argv]
         return argv_out, {**os.environ, **multiline}
 
     def run_probe(self, container: str, task_path: Path, source: dict[str, str],
                   extra: Optional[dict[str, str]], docker: Docker, log,
                   skill_dirs: Iterable[Path] = ()) -> dict[str, str]:
-        """The isolation probe as the agent uid, with the agent's env, in ``/app``.
+        """The isolation probe as the agent uid, with the agent's env, in its work tree.
 
         A variable the task image sets itself (``ENV DEBIAN_FRONTEND=...``) is not a
         leak even when the host has one of the same name, so those are not checked.
@@ -290,7 +297,7 @@ class ContainerSandbox:
     def isolation(self) -> dict[str, str]:
         return {
             "agent_location": "container",
-            "work_tree": "/app in the task container",
+            "work_tree": f"{self.workdir} in the task container",
             "operator_config": ("not in the container; the settings.json env block is merged"
                                 " through the env allowlist"),
             "env": "allowlist",

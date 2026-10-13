@@ -445,21 +445,41 @@ def test_environment_and_sandbox_together_is_rejected(tmp_path):
         load_task(_task_md(tmp_path, text=text))
 
 
-@pytest.mark.parametrize("harness_id", ["docker-oracle", "docker-claude"])
-def test_docker_harness_errors_on_a_task_md_task(tmp_path, monkeypatch, harness_id):
-    """Until docker-* mount /oracle and /verifier (#76), a task.md cell is an
-    error (missing data), not a verified 0 from a verifier that found no tests."""
+def test_docker_claude_host_errors_on_a_task_md_task(tmp_path, monkeypatch):
+    """The host-side agent cannot run a task.md task (its instruction names
+    container paths): the cell is an error (missing data), with no docker call."""
     import agent_benchmarks.harnesses.docker_solver as mod
     from agent_benchmarks.harnesses import TaskSuiteRunner
 
     calls: list[list[str]] = []
     monkeypatch.setattr(mod, "_docker", lambda args, log, **k: calls.append(list(args)))
     task = load_task(_task_md(tmp_path / "tasks"))
-    out = TaskSuiteRunner([task], [harness_id], output_root=tmp_path / "runs").run()
+    out = TaskSuiteRunner([task], ["docker-claude-host"], output_root=tmp_path / "runs").run()
     (row,) = out["results"]
     assert row["reward"] is None and row["passed"] is False
-    assert "do not run tasks with oracle/ or verifier/" in row["metrics"]["error"]
+    assert "cannot be solved by a host-side agent" in row["metrics"]["error"]
     assert calls == []
+
+
+def test_docker_oracle_runs_a_task_md_task_from_its_own_dirs(tmp_path, monkeypatch):
+    """docker-oracle runs a task.md task: oracle/ and verifier/ are copied in,
+    not solution/ and tests/ (this replaces #69's temporary refusal)."""
+    import agent_benchmarks.harnesses.docker_solver as mod
+    from agent_benchmarks.harnesses import TaskSuiteRunner
+
+    calls: list[list[str]] = []
+
+    class _P:
+        returncode, stdout = 0, ""
+
+    monkeypatch.setattr(mod, "_docker", lambda args, log, **k: calls.append(list(args)) or _P())
+    task = load_task(_task_md(tmp_path / "tasks",
+                              text=_TASK_MD.replace("    SECRET: ${HOST_SECRET}\n", "")))
+    out = TaskSuiteRunner([task], ["docker-oracle"], output_root=tmp_path / "runs").run()
+    (row,) = out["results"]
+    assert "error" not in row["metrics"]
+    sources = {c[1] for c in calls if c[0] == "cp" and c[2].startswith("abrun-")}
+    assert sources == {f"{task.path / 'oracle'}/.", f"{task.path / 'verifier'}/."}
 
 
 @pytest.mark.parametrize("harness_id", ["terminal-bench:oracle", "codex", "claude-code"])
@@ -533,12 +553,9 @@ def test_migrated_dir_with_task_toml_and_task_md_runs_everywhere(tmp_path, monke
     assert any("harbor" in " ".join(map(str, c)) for c in started)
 
 
-@pytest.mark.parametrize("harness_id", ["docker-oracle", "docker-claude"])
-def test_task_toml_with_only_oracle_and_verifier_dirs_errors_in_docker(
-    tmp_path, monkeypatch, harness_id
-):
-    """They would be copied to /solution and /tests, where the scripts do not
-    look: a verified 0 that a no-op solve.sh cannot be told apart from."""
+def test_task_toml_with_only_oracle_and_verifier_dirs_runs_in_docker(tmp_path, monkeypatch):
+    """docker-* copy the directories the task has to both layouts' paths, so the
+    scripts find their siblings wherever they look."""
     from agent_benchmarks.harnesses import TaskSuiteRunner
 
     path = _harbor(tmp_path / "tasks")
@@ -547,10 +564,13 @@ def test_task_toml_with_only_oracle_and_verifier_dirs_errors_in_docker(
     calls = _recording_docker(monkeypatch)
     task = load_task(path)
     assert task.format == FORMAT_HARBOR
-    out = TaskSuiteRunner([task], [harness_id], output_root=tmp_path / "runs").run()
+    out = TaskSuiteRunner([task], ["docker-oracle"], output_root=tmp_path / "runs").run()
     (row,) = out["results"]
-    assert row["reward"] is None and "oracle/ or verifier/" in row["metrics"]["error"]
-    assert calls == []
+    assert "error" not in row["metrics"]
+    copied = {(Path(c[1].removesuffix("/.")).name, c[2].split(":", 1)[1])
+              for c in calls if c[0] == "cp" and c[1].endswith("/.")}
+    assert copied == {("oracle", "/solution"), ("oracle", "/oracle"),
+                      ("verifier", "/tests"), ("verifier", "/verifier")}
 
 
 def test_docker_probe_copies_neither_directory_so_it_is_not_refused(tmp_path):

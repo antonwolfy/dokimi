@@ -246,10 +246,10 @@ def test_solve_oracle_copies_the_whole_solution_directory(tmp_path, monkeypatch)
     )
 
     cp_call = next(c for c in calls if c[0] == "cp")
-    assert cp_call[1] == str(task.path / "solution")
+    assert cp_call[1] == f"{task.path / 'solution'}/."
     assert cp_call[2] == "container-3:/solution"
 
-    exec_call = next(c for c in calls if c[0] == "exec")
+    exec_call = [c for c in calls if c[0] == "exec"][-1]
     assert exec_call[-1] == "chmod +x /solution/solve.sh && /solution/solve.sh"
 
 

@@ -8,14 +8,16 @@ pass rate against a baseline harness.
 ## Task Layouts
 
 Two layouts are read, and a root may mix them. `task.md` is read by
-`tasks list`, `coverage` and `catalog scan`. Of the built-in harnesses, the
-`benchflow*:<agent>` ones run a `task.md` task (BenchFlow reads it natively);
-a `command:` harness runs whatever it is given. What each harness refuses follows the files it
-reads: the `docker-*` harnesses record an errored cell, instead of a verdict,
-for a task whose scripts are in `oracle/` or `verifier/` (they copy to
-`/solution` and `/tests`), and the Harbor-backed ones (`codex`, `claude-code`,
-`terminal-bench:<agent>`) for a task without a `task.toml`. A directory left by
-`bench tasks migrate` that kept `task.toml`, `solution/` and `tests/` runs.
+`tasks list`, `coverage` and `catalog scan`; it is run by `docker-oracle` and
+by the `benchflow*:<agent>` harnesses (BenchFlow reads it natively), and a
+`command:` harness runs whatever it is given. `docker-claude` and `docker-probe`
+run it when it works in `/app`: their agent runs in the task container, but in
+`/app` only, so a task whose image works elsewhere (`WORKDIR /root`, most
+SkillsBench images) is an errored cell. The `-host` variants record an errored
+cell for every `task.md` task instead of a verdict, and so do the Harbor-backed
+harnesses (`codex`, `claude-code`, `terminal-bench:<agent>`) for a task without
+a `task.toml`. A directory left by `bench tasks migrate` that kept `task.toml`,
+`solution/` and `tests/` runs.
 
 | Layout | Files | Oracle | Verifier |
 |---|---|---|---|
@@ -34,6 +36,30 @@ frontmatter). Discovery skips a lone `task.md` without frontmatter with a
 warning; `load_task` on it raises. A lone `task.md` with frontmatter is a
 task, whatever its keys. YAML and TOML dates and times become ISO strings, and
 YAML sets sorted lists.
+
+The `docker-*` harnesses mount the oracle at `/solution` and `/oracle` and the
+verifier at `/tests` and `/verifier`, because a script written for one layout
+refers to its siblings by that layout's path. The directory's contents are
+copied into each path, so an image that already creates `/tests` (as
+`scheduling-email-assistant` does) still gets `/tests/test.sh` rather than a
+nested `/tests/verifier/`. A task's bundled `environment/skills` is replaced
+by an empty directory in the image build context, so a `COPY .` (or `COPY
+skills ...`) builds but cannot leak skills into the no-skill arm. Literal
+`[verifier.env]` / `[oracle.env]` values are forwarded; `${VAR}` host
+references and non-scalar values are not, and are listed in the row's
+`metrics.unresolved_env`. Any cell with such a value outstanding
+(`[verifier.env]` for every `docker-*` arm that runs the verifier,
+`[oracle.env]` too for `docker-oracle`; a probe runs neither and checks
+neither) is recorded as `metrics.error` (missing data), whatever it would have
+scored: dropping only the failures would make the task look solved. That is
+decided from the task file alone, before the image is built and before a paid
+solve, so `--dry-run` reports it too. Proxy credentials (`user:pw@`, with or
+without a scheme) are redacted in `run.log`, timeout lines and the commands'
+own output included, and so in the row's `stdout_tail`. After an in-container
+agent the verifier gets the proxy without its credentials (see [What the agent
+can reach](#what-the-agent-can-reach)). The task container lives for the solve
+and verify timeouts plus slack (at least 1800 s), so a verifier with a long
+`timeout_sec` is not cut off.
 
 As in BenchFlow, a `task.md` body with a `## prompt` heading gives the agent
 only that section; `## role:<name>`, `## scene:<name>` and `## user-persona`
@@ -89,7 +115,21 @@ latency, turns):
   `docker-probe-host`, `docker-probe-host:<skill-path>` — the same, with the
   agent on the host. These are weaker: use them only where the in-container
   launch cannot run, and do not compare a host arm against a container
-  baseline (`tasks run` warns).
+  baseline (`tasks run` warns). A `-host` agent edits a copy of `/app`, of
+  which only the task's working tree is copied back (a read-only
+  `/app/baseline` beside `/app/workspace` stays the image's), and refuses a
+  `task.md` task (its instruction names absolute
+  container paths) with an error before the agent starts; the in-container
+  `docker-claude` runs it.
+- **Both agents edit `/app` only.** A task that declares an
+  `environment.workdir` outside `/app`, or whose image sets a `WORKDIR`
+  outside `/app` (most SkillsBench images, and a SkillsBench task exported with
+  `bench tasks export --target harbor`, work in `/root`), is refused with an
+  error before the agent starts, in every `docker-claude*` and `docker-probe*`
+  arm; so is an image without that directory. A `WORKDIR` inside `/app`
+  (`/app/workspace`) runs, and an image with no absolute `WORKDIR` runs in
+  `/app`. The image check needs the built image, so `--dry-run` does not show
+  it. No `docker-*` arm runs a `/root` task yet.
 
 ### What the agent can reach
 
@@ -114,8 +154,10 @@ The result is in `metrics.isolation_probe` and `isolation_probe.json`:
 
 `docker-claude` runs the agent inside the task container, as uid 10001:
 
-- **Grader files.** `solution/` and `tests/` are copied in only by the
-  verifier, after the agent has exited.
+- **Grader files.** `solution/` and `tests/` (`oracle/` and `verifier/` for a
+  `task.md` task) are copied in only by the verifier, after the agent has
+  exited; the probe checks all four container paths, so an image that bakes
+  them in is `open`.
 - **Mounts.** Nothing is bind-mounted. Host files reach the container only
   by `docker cp`: the `claude` binary, the files named by the file-valued
   variables below (CA bundles, `AWS_SHARED_CREDENTIALS_FILE` with every
@@ -123,8 +165,10 @@ The result is in `metrics.isolation_probe` and `isolation_probe.json`:
   the skill arm's plugin at `/opt/abskill` (built with symlinks followed, as
   for the host arm).
 - **Image needs.** A glibc image (the host's `claude` binary is copied in; a
-  musl image fails the `--version` check), and an `/app` that uid 10001 can
-  own (it is `chown`ed before the agent starts).
+  musl image fails the `--version` check), and a working tree in `/app` that
+  uid 10001 can own. Only that tree is `chown`ed before the agent starts, and
+  the agent starts in it: with `WORKDIR /app/workspace`, the rest of `/app`
+  stays root's. A task that works elsewhere is refused.
 - **Memory.** The agent's CLI and its tmpfs HOME run inside the task's
   cgroup, so they count against `environment.memory_mb` (about 100 MB for a
   short session); the host launch ran outside it.
@@ -135,7 +179,10 @@ The result is in `metrics.isolation_probe` and `isolation_probe.json`:
   its internal-network address only. The sidecar image is
   `python:3.12-slim` pinned by digest; set `AGENT_BENCH_PROXY_IMAGE` to a
   mirror (an offline runner, a Docker Hub rate limit). The sidecar holds the
-  upstream proxy URL, credentials included.
+  upstream proxy URL, credentials included. The verifier of a public task,
+  which runs the agent's `/app` code as root, gets the host's proxy variables
+  without their `user:pw@`: a verify-time install behind a proxy that needs
+  credentials fails there, as it did before the proxy was forwarded at all.
   - **Allowlist.** Entries are `host:port`: the provider's hosts on 443 (the
     provider chosen as the CLI chooses it: Bedrock, then Foundry, then
     Vertex, each only for `1`/`true`/`yes`/`on`; Vertex's host follows
@@ -899,6 +946,10 @@ the agent solves on the internal network, and a solve that needs a host (pip,
 a package mirror) must list it under `environment.egress`. A `-host` agent
 solves with the host's network whatever the task declares
 (`metrics.isolation.network: open`).
+The oracle and verifier steps of a public-network
+task also receive the host's `http(s)_proxy`/`no_proxy`, since verifiers such
+as SkillsBench's install packages at verify time (90 of its 101 `test.sh`
+install something; 52 install both `uv` and pytest).
 
 SkillsBench tasks (`task.md`) run through the `benchflow:*` harnesses:
 
