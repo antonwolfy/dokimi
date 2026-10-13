@@ -1,15 +1,19 @@
 # Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-"""Parse the result object ``claude -p --output-format json`` prints."""
+"""Parse and record the result object ``claude -p --output-format json`` prints."""
 
 from __future__ import annotations
 
 import json
 import re
-from typing import Optional
+import subprocess
+from pathlib import Path
+from typing import Any, Optional
 
 from agent_benchmarks.metrics.usage import UsageRecord
+
+from .models import OperationRecord
 
 
 def _parse_claude_json(stdout: str, task: str, model: str, latency: float) -> Optional[UsageRecord]:
@@ -123,3 +127,32 @@ def terminal_reason(stdout: str) -> Optional[str]:
         return None
     reason = obj.get("terminal_reason") or obj.get("subtype")
     return str(reason) if reason else None
+
+
+def record_solver(proc: subprocess.CompletedProcess, task: str, model: Optional[str],
+                  latency: float, output_dir: Path, operations: list[OperationRecord], log,
+                  extra_metrics: dict[str, Any], edited: bool = False) -> Optional[UsageRecord]:
+    """Log one solver run, save ``solver.json``, and fold its telemetry into the run.
+
+    *edited*: the work tree changed during the run (see :func:`solver_error`).
+    """
+    log.write(proc.stdout or "")
+    log.write(proc.stderr or "")
+    error = solver_error(proc.stdout, edited=edited)
+    if error:  # no attempt was made: the runner leaves the cell out, like metrics.error
+        extra_metrics["solver_error"] = error
+    usage = _parse_claude_json(proc.stdout, task, model or "", latency)
+    reason = terminal_reason(proc.stdout) or ("no_result" if usage is None else None)
+    if reason:
+        extra_metrics["terminal_reason"] = reason
+    (output_dir / "solver.json").write_text(proc.stdout or "", encoding="utf-8")
+    if usage is not None:
+        # Kept if a later step fails (the copy back): the solve was paid for either way.
+        extra_metrics.update(usage.as_metrics_dict())
+        if usage.model:
+            extra_metrics["model"] = usage.model
+        operations.append(
+            OperationRecord(type="loop", name="claude-turns", elapsed_sec=usage.latency_sec,
+                            metadata={"n_calls": usage.n_calls})
+        )
+    return usage

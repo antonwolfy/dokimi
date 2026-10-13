@@ -64,8 +64,9 @@ jobs:
   # skill/task from an external catalog. Clones a real, public
   # uxlfoundation/skills checkout, scans it with `catalog scan`, then runs one
   # of its real tasks through our own `docker-oracle` harness (build + solve +
-  # verify), the same code path `docker-claude`/`docker-claude-skill` use for
-  # the LLM-driven with-skill/without-skill experiment. It asserts the actual
+  # verify: the build and verifier steps `docker-claude`/`docker-claude-skill`
+  # share) and `docker-probe` (the in-container agent launch those arms use,
+  # without the LLM). It asserts the actual
   # pass rate in "Verify pass rate" below -- `tasks run`'s own exit code does
   # not reflect pass/fail (it is a reporting command, used by callers that want
   # partial results), so without that explicit check this job would stay green
@@ -117,26 +118,19 @@ jobs:
       - name: catalog scan
         run: |
           python cli.py catalog scan --root "${{ runner.temp }}/uxl-skills" --kind all
-      - name: Run a real external task through docker-oracle
+      - name: Run a real external task through docker-oracle and docker-probe
         run: |
           python cli.py tasks run \
             --tasks onetbb-histogram-local-aggregation \
             --tasks-root "${{ runner.temp }}/uxl-skills/evaluation/harbor/tasks" \
-            --harnesses docker-oracle \
+            --harnesses docker-oracle,docker-probe \
             --out-json "${{ github.workspace }}/logs/external-catalog-smoke/runs.json"
+      # Every cell passed and none errored (an errored cell leaves pass_rate's
+      # denominator, so pass_rate alone would read 1.0), and the probe's fetch
+      # was denied by the egress proxy; see scripts/check_smoke_runs.py.
       - name: Verify pass rate
         run: |
-          python - "${{ github.workspace }}/logs/external-catalog-smoke/runs.json" <<'PY'
-          import json, sys
-          data = json.load(open(sys.argv[1], encoding="utf-8"))
-          stats = data["summary"]["per_harness"]["docker-oracle"]
-          errored = stats.get("errored", 0)
-          print(f"docker-oracle: {stats['passed']}/{stats['n']} pass, {errored} errored "
-                f"(rate={stats['pass_rate']})")
-          # Not pass_rate == 1.0: an errored cell is excluded from pass_rate's
-          # denominator, so one pass plus one harness error would still read 1.0.
-          sys.exit(0 if stats["n"] > 0 and stats["passed"] == stats["n"] and not errored else 1)
-          PY
+          python scripts/check_smoke_runs.py "${{ github.workspace }}/logs/external-catalog-smoke/runs.json"
       - name: Upload run artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1

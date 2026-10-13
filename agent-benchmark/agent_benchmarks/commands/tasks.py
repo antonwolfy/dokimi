@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 _TASKS_ROOT_HELP = (
@@ -53,6 +54,30 @@ def cmd_tasks_harnesses(args: argparse.Namespace) -> None:
         print(f"{name}\t{description}")
 
 
+def _launch_mismatches(harnesses: list[str], baseline: str | None) -> list[str]:
+    """Claude arms whose agent runs somewhere else than the baseline's (host vs container).
+
+    Their pass rates come from different sandboxes, so a delta between them is
+    not the treatment's alone.
+    """
+    from agent_benchmarks.harnesses import create_harness
+    from agent_benchmarks.harnesses.docker_solver import DockerSolverHarness
+
+    def location(name: str) -> str | None:
+        try:
+            h = create_harness(name)
+        except ValueError:
+            return None
+        return h.agent_location if isinstance(h, DockerSolverHarness) and h.mode == "claude" else None
+
+    base = location(baseline) if baseline else None
+    if base is None:
+        return []
+    where = {"host": "on the host", "container": "in the task container"}
+    return [f"{h} runs its agent {where[loc]}, the baseline {baseline} {where[base]}"
+            for h in harnesses if h != baseline and (loc := location(h)) not in (None, base)]
+
+
 def cmd_tasks_run(args: argparse.Namespace) -> None:
     from agent_benchmarks.harnesses import TaskSuiteRunner, discover_tasks, load_task
 
@@ -74,6 +99,9 @@ def cmd_tasks_run(args: argparse.Namespace) -> None:
     if args.baseline_harness and args.baseline_harness not in harnesses:
         print(f"Also running baseline harness: {args.baseline_harness}")
         harnesses.insert(0, args.baseline_harness)
+    for mismatch in _launch_mismatches(harnesses, args.baseline_harness):
+        print(f"WARNING: {mismatch}; their pass rates come from different sandboxes and "
+              "should not be compared", file=sys.stderr)
 
     runner = TaskSuiteRunner(
         tasks=tasks,

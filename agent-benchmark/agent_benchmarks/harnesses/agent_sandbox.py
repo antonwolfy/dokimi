@@ -77,7 +77,8 @@ _ENV_EXACT = frozenset({
 _ENV_PREFIXES = ("LC_", "AWS_CONTAINER_CREDENTIALS_", "VERTEX_REGION_")
 
 # Leak classes the probe reports, in report order.
-LEAK_CLASSES = ("task_files", "treatment", "operator_config", "checkout_walk", "network", "env")
+LEAK_CLASSES = ("task_files", "treatment", "operator_config", "checkout_walk", "network", "env",
+                "docker_api", "dns")
 
 
 def operator_source_env(environ: Optional[dict[str, str]] = None) -> dict[str, str]:
@@ -263,6 +264,68 @@ elif command -v python3 >/dev/null 2>&1; then
 else
   net="untested"
 fi
+# Raw sockets need no client at all: a CONNECT through the proxy the agent was
+# given, a plain-HTTP absolute-form GET through its HTTP proxy (a different code
+# path in a forward proxy), and a direct TCP connect that ignores both
+# ($PROBE_DIRECT is "ip port").
+if command -v bash >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
+  [ "$net" = "untested" ] && net="closed"
+  raw=$(PROBE_PROXY="${HTTPS_PROXY:-${https_proxy:-}}" PROBE_HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-}}" \
+        timeout 12 bash -c '
+    if [ -n "$PROBE_PROXY" ]; then
+      hp="${PROBE_PROXY#*://}"; hp="${hp%%/*}"; h="${hp%:*}"; p="${hp##*:}"
+      if exec 3<>"/dev/tcp/$h/$p" 2>/dev/null; then
+        printf "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n" >&3
+        read -r -t 5 status <&3 && case "$status" in *" 200"*) echo open; exit;; esac
+      fi
+    fi
+    if [ -n "$PROBE_HTTP_PROXY" ]; then
+      hp="${PROBE_HTTP_PROXY#*://}"; hp="${hp%%/*}"; h="${hp%:*}"; p="${hp##*:}"
+      if exec 5<>"/dev/tcp/$h/$p" 2>/dev/null; then
+        printf "GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n" >&5
+        read -r -t 5 status <&5 && case "$status" in *" 200"*|*" 30"[0-9]*) echo open; exit;; esac
+      fi
+    fi
+    set -- $PROBE_DIRECT
+    if [ -n "${1:-}" ] && exec 4<>"/dev/tcp/$1/$2" 2>/dev/null; then echo open; fi
+  ' 2>/dev/null)
+  [ "$raw" = "open" ] && net="open"
+fi
+# The Docker API is a way around every other wall (docker cp, exec into anything):
+# a writable socket, or a daemon listening on the gateway (the Docker host).
+# No known gateway (a failed lookup) means the daemon ports were never tried:
+# "untested", not a "closed" nothing proved.
+dapi="closed"
+uid="$(id -u 2>/dev/null || echo x)"
+for sock in $PROBE_DOCKER_SOCKETS "/run/user/$uid/docker.sock" "/run/user/$uid/podman/podman.sock" \
+    "${XDG_RUNTIME_DIR:-/nonexistent}/docker.sock" "${HOME:-/nonexistent}/.docker/desktop/docker.sock"; do
+  if [ -S "$sock" ] && [ -w "$sock" ]; then dapi="open"; fi
+done
+if [ "$dapi" != "open" ]; then
+  if [ -z "${PROBE_GATEWAY:-}" ] || ! command -v bash >/dev/null 2>&1 \
+      || ! command -v timeout >/dev/null 2>&1; then
+    dapi="untested"
+  else
+    for port in 2375 2376; do
+      if timeout 3 bash -c "exec 3<>/dev/tcp/$PROBE_GATEWAY/$port" 2>/dev/null; then dapi="open"; fi
+    done
+  fi
+fi
+# A name that resolves means queries reach a resolver outside the sandbox (a
+# podman --internal network still forwards DNS upstream): a channel out.
+dns="untested"
+if command -v getent >/dev/null 2>&1; then
+  dns="closed"
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 5 getent hosts "$PROBE_DNS_NAME" >/dev/null 2>&1 && dns="open"
+  else
+    getent hosts "$PROBE_DNS_NAME" >/dev/null 2>&1 && dns="open"
+  fi
+elif command -v python3 >/dev/null 2>&1; then
+  dns="closed"
+  python3 -c "import socket,sys; socket.setdefaulttimeout(5); socket.gethostbyname(sys.argv[1])" \
+    "$PROBE_DNS_NAME" >/dev/null 2>&1 && dns="open"
+fi
 # A dropped variable leaks if its host *value* is in the environ of this
 # process, its parent chain or PID 1: the agent's own env, and on the host the
 # harness and the operator's shell, which run as the agent's uid. Tokens are
@@ -308,11 +371,21 @@ check_paths treatment "$PROBE_TREATMENT"; printf ','
 check_paths operator_config "$PROBE_OPERATOR"; printf ','
 emit checkout_walk "$walk"; printf ','
 emit network "$net"; printf ','
-emit env "$envleak"
+emit env "$envleak"; printf ','
+emit docker_api "$dapi"; printf ','
+emit dns "$dns"; printf ','
+emit env_leaked "${leaked# }"
 printf '}\n'
 """
 
 PROBE_URL = "https://example.com/"
+# A public anycast address, so the direct check needs no DNS.
+PROBE_DIRECT = "1.1.1.1 443"
+# Rootful Docker and podman; the probe adds the per-uid rootless and Desktop paths.
+PROBE_DOCKER_SOCKETS = "/var/run/docker.sock /run/docker.sock /run/podman/podman.sock"
+PROBE_HOST_GATEWAY = "127.0.0.1"
+# A public name; resolving it inside the sandbox means DNS gets out.
+PROBE_DNS_NAME = "example.com"
 
 
 def probe_script() -> str:
@@ -320,7 +393,8 @@ def probe_script() -> str:
 
 
 def probe_env(forbidden: dict[str, list[Path]], deny_env: Iterable[str],
-              url: str = PROBE_URL) -> dict[str, str]:
+              url: str = PROBE_URL, direct: str = "",
+              dns_name: Optional[str] = None) -> dict[str, str]:
     """Variables the probe script reads (newline-separated path lists, space-separated
     :func:`env_fingerprints` tokens)."""
 
@@ -333,6 +407,9 @@ def probe_env(forbidden: dict[str, list[Path]], deny_env: Iterable[str],
         "PROBE_OPERATOR": paths("operator_config"),
         "PROBE_ENV_DENY": " ".join(deny_env),
         "PROBE_URL": url,
+        "PROBE_DIRECT": direct,
+        "PROBE_DOCKER_SOCKETS": PROBE_DOCKER_SOCKETS,
+        "PROBE_DNS_NAME": PROBE_DNS_NAME if dns_name is None else dns_name,
     }
 
 
@@ -340,7 +417,7 @@ def denied_env_names(source: dict[str, str]) -> list[str]:
     """Names present in *source* that the allowlist drops (the probe checks every one)."""
     return sorted(k for k in source if k not in _ENV_EXACT and not k.startswith(_ENV_PREFIXES)
                   and k not in ("HOME", "PWD", "OLDPWD", "SHLVL", "_", "TMPDIR",
-                                "CLAUDE_CONFIG_DIR"))
+                                "CLAUDE_CONFIG_DIR", "HOSTNAME", "container"))
 
 
 def env_fingerprints(source: dict[str, str], names: Iterable[str]) -> list[str]:
@@ -377,11 +454,13 @@ def _posix_cksum(data: bytes) -> int:
 
 def run_probe(workspace: AgentWorkspace, source_env: dict[str, str],
               extra_env: Optional[dict[str, str]] = None, timeout: float = 60.0,
-              url: Optional[str] = None) -> dict[str, str]:
+              url: Optional[str] = None, direct: Optional[str] = None) -> dict[str, str]:
     """Run the probe on the host, in the agent's cwd and env. Returns ``{leak_class: state}``."""
     env = workspace.env(source_env, extra_env)
     deny = env_fingerprints(source_env, denied_env_names(source_env))
-    env.update(probe_env(workspace.forbidden, deny, url or PROBE_URL))
+    env.update(probe_env(workspace.forbidden, deny, url or PROBE_URL,
+                         PROBE_DIRECT if direct is None else direct))
+    env["PROBE_GATEWAY"] = PROBE_HOST_GATEWAY  # a daemon on the host's own tcp port
     # run_harness kills the whole process group (job object on Windows) on a timeout, so a
     # hung fetch or ls does not outlive the probe in a deleted scratch dir.
     proc = run_harness(["sh", "-c", _PROBE_SH], cwd=str(workspace.work), env=env, timeout=timeout)
@@ -396,7 +475,10 @@ def parse_probe_output(stdout: str) -> dict[str, str]:
                 data = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            return {k: str(data.get(k, "untested")) for k in LEAK_CLASSES}
+            result = {k: str(data.get(k, "untested")) for k in LEAK_CLASSES}
+            if data.get("env_leaked"):  # names only, so a reader can tell which ones
+                result["env_leaked"] = str(data["env_leaked"])
+            return result
     return {k: "untested" for k in LEAK_CLASSES}
 
 

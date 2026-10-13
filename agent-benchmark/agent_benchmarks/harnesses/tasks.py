@@ -113,3 +113,32 @@ def load_task(path_or_name: str | Path, root: Path | None = None) -> TaskSpec:
 
 def _table(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+# Docker-harness defaults for a task that does not set its own.
+_DEFAULT_BUILD_TIMEOUT = 600.0
+_DEFAULT_VERIFY_TIMEOUT = 180.0
+
+
+def _is_public(task: TaskSpec) -> bool:
+    return str(task.environment.get("network_mode") or "none") == "public"
+
+
+def _task_build_timeout(task: TaskSpec) -> float:
+    """Image build timeout: the task's ``environment.build_timeout_sec`` if set,
+    else :data:`_DEFAULT_BUILD_TIMEOUT`."""
+    val = task.environment.get("build_timeout_sec")
+    try:
+        return float(val) if val is not None else _DEFAULT_BUILD_TIMEOUT
+    except (TypeError, ValueError):
+        return _DEFAULT_BUILD_TIMEOUT
+
+
+def _task_verify_timeout(task: TaskSpec) -> float:
+    """Verifier timeout: the task's ``verifier.timeout_sec`` if set, else
+    :data:`_DEFAULT_VERIFY_TIMEOUT`."""
+    val = task.verifier.get("timeout_sec")
+    try:
+        return float(val) if val is not None else _DEFAULT_VERIFY_TIMEOUT
+    except (TypeError, ValueError):
+        return _DEFAULT_VERIFY_TIMEOUT

@@ -70,6 +70,12 @@ def _scratch_under_tmp(tmp_path, monkeypatch):
     scratch.mkdir()
     monkeypatch.setattr(sandbox.tempfile, "tempdir", str(scratch))
     monkeypatch.setattr(sandbox, "PROBE_URL", _CLOSED_URL)
+    monkeypatch.setattr(sandbox, "PROBE_DIRECT", "127.0.0.1 9")
+    monkeypatch.setattr(sandbox, "PROBE_DOCKER_SOCKETS", str(tmp_path / "no-docker.sock"))
+    monkeypatch.setattr(sandbox, "PROBE_HOST_GATEWAY", "127.0.0.1")  # nothing on 2375/2376
+    monkeypatch.setattr(sandbox, "PROBE_DNS_NAME", "no-such-host.invalid")
+    for var in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "no-operator-config"))
 
 
@@ -183,6 +189,8 @@ def test_probe_on_host_reports_absolute_paths_open_and_the_rest_closed(tmp_path)
         "checkout_walk": "closed",   # the work tree is no longer inside a checkout
         "network": "closed",         # loopback port 9: nothing listens
         "env": "closed",             # dropped by the allowlist, and in no parent
+        "docker_api": "closed",      # no socket, no daemon on the gateway
+        "dns": "closed",             # the pinned name never resolves
     }
     assert probe_reward(result) == 0.0
 
@@ -193,6 +201,7 @@ def test_probe_sees_a_variable_that_slips_through(tmp_path):
                        extra_env={"GITHUB_TOKEN": "x"})
     ws.cleanup()
     assert result["env"] == "open"
+    assert result["env_leaked"] == "GITHUB_TOKEN"
 
 
 @pytest.mark.parametrize("marker", [".git", "task.toml", "CLAUDE.md"])
@@ -229,6 +238,55 @@ def test_probe_network_open_when_something_answers(tmp_path):
     assert result["network"] == "open"
 
 
+def _probe_script_run(tmp_path, **env) -> dict[str, str]:
+    """The probe script itself, with every variable it reads set (it runs under set -u)."""
+    full = {"PATH": "/usr/bin:/bin", **sandbox.probe_env({}, [], _CLOSED_URL, ""),
+            "PROBE_GATEWAY": "127.0.0.1", **env}
+    proc = subprocess.run(["sh", "-c", sandbox.probe_script()], cwd=str(tmp_path), env=full,
+                          text=True, capture_output=True, timeout=60, check=False)
+    return parse_probe_output(proc.stdout)
+
+
+_needs_bash_and_timeout = pytest.mark.skipif(
+    not (shutil.which("bash", path="/usr/bin:/bin") and shutil.which("timeout", path="/usr/bin:/bin")),
+    reason="the raw-socket checks need bash and timeout in /usr/bin:/bin")
+
+
+@_needs_bash_and_timeout
+def test_probe_gateway_unknown_is_untested(tmp_path):
+    """A failed gateway lookup never tried the daemon ports: not a pass."""
+    result = _probe_script_run(tmp_path, PROBE_GATEWAY="", PROBE_DNS_NAME="no-such-host.invalid")
+    assert result["network"] == "closed"  # the script ran to the end
+    assert result["docker_api"] == "untested"
+    assert probe_reward(result) == 0.0
+
+
+@_needs_bash_and_timeout
+def test_probe_gateway_known_and_unreachable_is_closed(tmp_path):
+    result = _probe_script_run(tmp_path, PROBE_GATEWAY="127.0.0.1")
+    assert result["docker_api"] == "closed"
+
+
+def test_probe_dns_open_when_a_name_resolves(tmp_path):
+    # A numeric address resolves from nothing but itself; "localhost" can send an
+    # AAAA query through the search domains and outlast the probe's 5 s budget.
+    result = _probe_script_run(tmp_path, PROBE_DNS_NAME="127.0.0.1")
+    assert result["dns"] == "open"
+    assert probe_reward({**{k: "closed" for k in LEAK_CLASSES}, "dns": "open"}) == 0.0
+
+
+def test_probe_dns_closed_when_nothing_resolves(tmp_path):
+    result = _probe_script_run(tmp_path, PROBE_DNS_NAME="no-such-host.invalid")
+    assert result["dns"] == "closed"
+    assert result["network"] == "closed"
+
+
+def test_probe_env_carries_the_dns_name(monkeypatch):
+    assert sandbox.probe_env({}, [], dns_name="x.test")["PROBE_DNS_NAME"] == "x.test"
+    monkeypatch.setattr(sandbox, "PROBE_DNS_NAME", "y.test")
+    assert sandbox.probe_env({}, [])["PROBE_DNS_NAME"] == "y.test"
+
+
 def test_parse_probe_output_marks_garbage_untested():
     assert parse_probe_output("noise\n") == {k: "untested" for k in LEAK_CLASSES}
     assert probe_reward(parse_probe_output("")) == 0.0
@@ -248,7 +306,7 @@ def _patch_docker(monkeypatch, calls: list):
 
     monkeypatch.setattr(mod, "_docker", fake_docker)
     monkeypatch.setattr(DockerSolverHarness, "_build_image", lambda self, t, i, log: None)
-    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log: None)
+    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log, sandbox=None: None)
 
 
 def test_probe_harness_scores_the_probe_and_skips_the_verifier(tmp_path, monkeypatch):
@@ -258,7 +316,7 @@ def test_probe_harness_scores_the_probe_and_skips_the_verifier(tmp_path, monkeyp
     monkeypatch.setattr(DockerSolverHarness, "_verify",
                         lambda *a, **k: pytest.fail("probe must not run the verifier"))
 
-    result = create_harness("docker-probe").run(task, output_dir=tmp_path / "out")
+    result = create_harness("docker-probe-host").run(task, output_dir=tmp_path / "out")
 
     assert result.reward == 0.0 and result.passed is False
     probe = result.metrics["isolation_probe"]
@@ -297,7 +355,7 @@ def test_claude_solve_runs_in_scratch_with_sealed_env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
     out = tmp_path / "out"
-    result = create_harness(f"docker-claude-skill:{skill}").run(task, output_dir=out)
+    result = create_harness(f"docker-claude-host-skill:{skill}").run(task, output_dir=out)
 
     cwd = seen["cwd"]
     assert out not in cwd.parents and tmp_path / "content" not in cwd.parents
@@ -333,7 +391,7 @@ def test_probe_with_a_skill_forbids_it_even_outside_the_task_checkout(tmp_path, 
     (loose / "instruction.md").write_text("x", encoding="utf-8")
     (loose / "task.toml").write_text("", encoding="utf-8")
     _patch_docker(monkeypatch, [])
-    result = create_harness(f"docker-probe:{elsewhere / 'SKILL.md'}").run(
+    result = create_harness(f"docker-probe-host:{elsewhere / 'SKILL.md'}").run(
         load_task(loose), output_dir=tmp_path / "out")
     assert result.metrics["isolation_probe"]["treatment"] == "open"
 
@@ -353,7 +411,7 @@ def test_a_timed_out_solve_keeps_the_agent_tree(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod.subprocess, "run", slow_claude)
     out = tmp_path / "out"
-    result = create_harness("docker-claude").run(task, output_dir=out)
+    result = create_harness("docker-claude-host").run(task, output_dir=out)
     assert result.returncode == 124
     assert (out / "work" / "half-done.cpp").read_text(encoding="utf-8") == "partial"
 
@@ -384,7 +442,7 @@ def _run_fake_claude(tmp_path, monkeypatch, stdout, *, edit=False, fail_copy_bac
         return subprocess.CompletedProcess(cmd, 0, stdout, "")
 
     monkeypatch.setattr(mod.subprocess, "run", claude)
-    return create_harness("docker-claude").run(task, output_dir=tmp_path / "out")
+    return create_harness("docker-claude-host").run(task, output_dir=tmp_path / "out")
 
 
 def test_a_crash_with_no_result_after_real_edits_is_scored(tmp_path, monkeypatch):
@@ -422,7 +480,7 @@ def test_a_relative_probe_skill_path_is_resolved(tmp_path, monkeypatch):
     (loose / "instruction.md").write_text("x", encoding="utf-8")
     (loose / "task.toml").write_text("", encoding="utf-8")
     _patch_docker(monkeypatch, [])
-    result = create_harness("docker-probe:myskill").run(load_task(loose), output_dir=tmp_path / "out")
+    result = create_harness("docker-probe-host:myskill").run(load_task(loose), output_dir=tmp_path / "out")
     assert result.metrics["isolation_probe"]["treatment"] == "open"
 
 
@@ -464,7 +522,7 @@ def test_scratch_root_is_removed_when_the_snapshot_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "_docker", failing_docker)
     task = load_task(_content_checkout(tmp_path))
     with pytest.raises(RuntimeError):
-        create_harness("docker-probe")._prepare_workspace(task, "c1", log=None)
+        create_harness("docker-probe-host")._prepare_workspace(task, "c1", log=None)
     assert not list((tmp_path / "scratch").iterdir())
 
 
@@ -596,7 +654,7 @@ def test_a_probe_timeout_records_every_class_untested(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "run_probe", hung)
     out = tmp_path / "out"
-    result = create_harness("docker-probe").run(load_task(_content_checkout(tmp_path)), output_dir=out)
+    result = create_harness("docker-probe-host").run(load_task(_content_checkout(tmp_path)), output_dir=out)
     assert result.metrics["isolation_probe"] == {k: "untested" for k in LEAK_CLASSES}
     assert result.reward == 0.0 and result.returncode == 0
     assert json.loads((out / "isolation_probe.json").read_text(encoding="utf-8"))["env"] == "untested"
@@ -651,7 +709,7 @@ def test_a_rerun_does_not_see_its_previous_tree_or_verdict(tmp_path, monkeypatch
         return subprocess.CompletedProcess(cmd, 0, '{"num_turns": 1}', "")
 
     monkeypatch.setattr(mod.subprocess, "run", fake_run)
-    create_harness("docker-claude").run(task, output_dir=out)
+    create_harness("docker-claude-host").run(task, output_dir=out)
     assert seen == {"work": False, "reward": False}
 
 
@@ -660,7 +718,7 @@ def test_a_failed_copy_back_keeps_the_paid_solve_metrics(tmp_path, monkeypatch):
 
     task = load_task(_content_checkout(tmp_path))
     monkeypatch.setattr(DockerSolverHarness, "_build_image", lambda self, t, i, log: None)
-    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log: None)
+    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log, sandbox=None: None)
 
     def docker(args, log, **kwargs):
         if args[0] == "cp" and str(args[-1]).endswith(":/app/"):
@@ -673,7 +731,7 @@ def test_a_failed_copy_back_keeps_the_paid_solve_metrics(tmp_path, monkeypatch):
     real_run = subprocess.run
     monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: (
         subprocess.CompletedProcess(cmd, 0, paid, "") if cmd[0] == "claude" else real_run(cmd, **kw)))
-    result = create_harness("docker-claude").run(task, output_dir=tmp_path / "out")
+    result = create_harness("docker-claude-host").run(task, output_dir=tmp_path / "out")
     assert result.reward is None and result.passed is False
     assert "docker cp failed" in result.metrics["error"]
     assert result.metrics["cost_usd"] == 1.25

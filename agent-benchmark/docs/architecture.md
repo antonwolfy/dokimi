@@ -161,17 +161,23 @@ directories — Docker environment, `instruction.md`, oracle solution, and pytes
 verifier — supplied from an external content checkout named with `--tasks-root`
 (format spec:
 [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)). CI
-builds a container from a pinned external catalog and runs its oracle to make
-sure the harness, the task format, and the verifier path all still work.
+builds a container from a pinned external catalog and runs its oracle and the
+isolation probe, to make sure the harness, the task format, the verifier path
+and the agent's sandbox all still work.
 
 `agent_benchmarks/harnesses/` turns those task directories into measured
 `task_runs.v1` artifacts. Built-in harness aliases include `codex`,
 `claude-code`, and `terminal-bench:<agent>`; each runs a Harbor-compatible agent,
 records operation telemetry (`harness`, `loop`, `tool`, `subagent`, ...), and
 summarizes pass-rate deltas against a baseline harness. Entry point:
-`python cli.py tasks run`. `harnesses/agent_sandbox.py` owns the environment
-a `docker-claude` solver is launched in and the `docker-probe` isolation
-probe that measures it.
+`python cli.py tasks run`. Three modules own the solver's launch:
+
+- `harnesses/container_agent.py` runs the agent in the task container, on an
+  internal network.
+- `harnesses/egress_proxy.py` is the allowlisting proxy that container's only
+  way out goes through.
+- `harnesses/agent_sandbox.py` is the host launch for the `-host` variants,
+  and holds the `docker-probe` isolation probe that measures both launches.
 
 See [contributing-terminal-bench-task.md](contributing-terminal-bench-task.md)
 to add a task and [coding-harnesses.md](coding-harnesses.md) to run harness
@@ -272,8 +278,11 @@ label. The other two:
 
 6. **external-catalog-smoke** — clones a pinned external content catalog, runs
    `catalog scan` over it, then drives one of its real tasks through the
-   `docker-oracle` harness (build + solve + verify, `--network none` at solve and
-   verify time) and asserts the pass rate. Task definitions are not in this
+   `docker-oracle` harness (build + solve + verify, with the task's own
+   `network_mode`, bridge for this public task) and the `docker-probe`
+   isolation probe. It asserts both pass
+   rates, so a launch change that lets an in-container agent reach the grader,
+   the skills or the network fails CI. Task definitions are not in this
    repository, so this job proves the harness and the task format rather than any
    particular task.
 7. **benchmark** — runs the static agent-quality benchmark with `--strict`, so

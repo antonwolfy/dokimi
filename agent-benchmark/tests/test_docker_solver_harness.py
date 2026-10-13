@@ -284,8 +284,9 @@ def _patch_pipeline(monkeypatch, *, reward: float, usage_json: str | None):
     # run()'s cleanup calls _docker(["rm", ...]); stub it so these stay
     # Docker-free even on hosts without a `docker` binary.
     monkeypatch.setattr(mod, "_docker", lambda *a, **k: None)
+    monkeypatch.setattr(mod.ContainerSandbox, "open", classmethod(lambda cls, *a, **k: None))
     monkeypatch.setattr(DockerSolverHarness, "_build_image", lambda self, t, i, log: None)
-    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log: None)
+    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log, sandbox=None: None)
     monkeypatch.setattr(DockerSolverHarness, "_solve_oracle", lambda self, t, c, log: None)
 
     def fake_verify(self, task, container, output_dir, log):
@@ -296,7 +297,7 @@ def _patch_pipeline(monkeypatch, *, reward: float, usage_json: str | None):
 
     if usage_json is not None:
         def fake_solve_claude(self, task, container, output_dir, model, timeout,
-                              operations, log, extra_metrics):
+                              operations, log, extra_metrics, sandbox=None):
             (output_dir / "solver.json").write_text(usage_json, encoding="utf-8")
             return _parse_claude_json(usage_json, task.name, model or "", 1.0)
 
@@ -448,15 +449,17 @@ def test_recompile_failure_recorded_in_metrics(tmp_path, monkeypatch):
     import agent_benchmarks.harnesses.docker_solver as mod
 
     monkeypatch.setattr(mod, "_docker", lambda *a, **k: None)
+    monkeypatch.setattr(mod.ContainerSandbox, "open", classmethod(lambda cls, *a, **k: None))
     monkeypatch.setattr(DockerSolverHarness, "_build_image", lambda self, t, i, log: None)
-    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log: None)
+    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log, sandbox=None: None)
     monkeypatch.setattr(DockerSolverHarness, "_verify", lambda self, t, c, o, log: 0.0)
 
     # Snapshot copy-out and the claude subprocess are stubbed; recompile "fails".
     monkeypatch.setattr(DockerSolverHarness, "_recompile",
                         lambda self, t, c, log: ["g++ -O3 bench.cpp -o /app/bench"])
 
-    def fake_solve(self, task, container, output_dir, model, timeout, operations, log, extra_metrics):
+    def fake_solve(self, task, container, output_dir, model, timeout, operations, log, extra_metrics,
+                   sandbox=None):
         failed = self._recompile(task, container, log)
         if failed:
             extra_metrics["recompile_failed"] = failed
@@ -466,6 +469,35 @@ def test_recompile_failure_recorded_in_metrics(tmp_path, monkeypatch):
     result = create_harness("docker-claude").run(task, model="haiku", output_dir=tmp_path / "out")
     assert result.metrics["recompile_failed"] == ["g++ -O3 bench.cpp -o /app/bench"]
     assert result.passed is False
+
+
+def test_api_error_is_recorded_as_a_solver_error(tmp_path, monkeypatch):
+    """A refused or flagged request scores 0 like a miss; metrics must say it was not one."""
+    import agent_benchmarks.harnesses.docker_solver as mod
+
+    flagged = json.dumps({"type": "result", "is_error": True, "terminal_reason": "api_error",
+                          "num_turns": 2, "total_cost_usd": 0.07,
+                          "result": "API Error: request flagged\nDetails: x"})
+    task = load_task(_fixture_task(tmp_path))
+    monkeypatch.setattr(mod, "_docker", lambda *a, **k: subprocess.CompletedProcess(a, 0, "", ""))
+    monkeypatch.setattr(mod.ContainerSandbox, "open", classmethod(lambda cls, *a, **k: None))
+    monkeypatch.setattr(DockerSolverHarness, "_build_image", lambda self, t, i, log: None)
+    monkeypatch.setattr(DockerSolverHarness, "_start_container", lambda self, t, i, c, log, sandbox=None: None)
+    monkeypatch.setattr(DockerSolverHarness, "_verify", lambda self, t, c, o, log: 0.0)
+    monkeypatch.setattr(DockerSolverHarness, "_recompile", lambda self, t, c, log: [])
+    real_run = subprocess.run
+    monkeypatch.setattr(mod.subprocess, "run", lambda cmd, **kw: (
+        subprocess.CompletedProcess(cmd, 0, flagged, "") if cmd[0] == "claude" else real_run(cmd, **kw)))
+    result = create_harness("docker-claude-host").run(task, model="haiku", output_dir=tmp_path / "out")
+    assert result.metrics["solver_error"] == "api_error: API Error: request flagged"
+    assert result.passed is False
+
+
+def test_a_completed_run_has_no_solver_error():
+    from agent_benchmarks.harnesses.claude_json import solver_error
+
+    assert solver_error(_CLAUDE_JSON) is None
+    assert solver_error("") == "no result object on stdout"
 
 
 def test_model_is_taken_from_the_result_when_not_given():

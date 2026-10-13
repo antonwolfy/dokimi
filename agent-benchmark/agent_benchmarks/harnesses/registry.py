@@ -19,9 +19,12 @@ def known_harnesses() -> dict[str, str]:
         "claude-code": "Claude Code via Harbor agent 'claude-code'",
         "terminal-bench:<agent>": "Arbitrary Harbor/terminal-bench agent id",
         "docker-oracle": "Local Docker: apply the task's own solve.sh (no LLM)",
-        "docker-claude": "Local Docker: solve with `claude -p`, full cost/token telemetry",
+        "docker-claude": "Local Docker: `claude -p` inside the task container, egress to the LLM only",
         "docker-claude-skill:<skill>": "docker-claude with a skill dir exposed (with-skill arm)",
         "docker-probe": "Local Docker: no LLM; report what a docker-claude agent could reach",
+        "docker-claude-host": "docker-claude with the agent on the host (absolute paths, network open)",
+        "docker-claude-host-skill:<skill>": "docker-claude-host with a skill dir exposed",
+        "docker-probe-host": "docker-probe for the docker-claude-host launch",
         "docker-probe:<skill>": "docker-probe that also forbids <skill> (the baseline's treatment)",
         "command:<template>": "Custom shell-like command template",
     }
@@ -47,16 +50,19 @@ def create_harness(harness: str, *, command_template: str | None = None):
         return _harbor("claude-code", "claude-code")
     if harness == "docker-oracle":
         return DockerSolverHarness(harness_id=harness, mode="oracle")
-    if harness == "docker-claude":
-        return DockerSolverHarness(harness_id=harness, mode="claude")
-    if harness == "docker-probe":
-        return DockerSolverHarness(harness_id=harness, mode="probe")
-    if harness.startswith("docker-probe:"):
-        return DockerSolverHarness(harness_id=harness, mode="probe",
-                                   skill_path=_skill_arg(harness, "docker-probe"))
-    if harness.startswith("docker-claude-skill:"):
-        return DockerSolverHarness(harness_id=harness, mode="claude",
-                                   skill_path=_skill_arg(harness, "docker-claude-skill"))
+    for prefix, location in (("docker-claude-host", "host"), ("docker-claude", "container")):
+        if harness == prefix:
+            return DockerSolverHarness(harness_id=harness, mode="claude", agent_location=location)
+        if harness.startswith(f"{prefix}-skill:"):
+            return DockerSolverHarness(harness_id=harness, mode="claude",
+                                       skill_path=_skill_arg(harness, f"{prefix}-skill"),
+                                       agent_location=location)
+    for name, location in (("docker-probe-host", "host"), ("docker-probe", "container")):
+        if harness == name:
+            return DockerSolverHarness(harness_id=harness, mode="probe", agent_location=location)
+        if harness.startswith(f"{name}:"):
+            return DockerSolverHarness(harness_id=harness, mode="probe",
+                                       skill_path=_skill_arg(harness, name), agent_location=location)
     if harness.startswith("terminal-bench:"):
         agent = harness.split(":", 1)[1]
         if not agent:

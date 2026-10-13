@@ -102,7 +102,8 @@ Field by field, with the consumer that actually reads it:
 | `environment.build_timeout_sec` | `docker-*` harnesses | Image-build budget; used instead of the default when set (oneAPI/pip-heavy images need > 10 min). |
 | `environment.docker_image` | Harbor | Image tag Harbor expects to exist (`harbor run` does **not** build it for you). The in-repo `docker-*` harnesses build and tag `agent-bench/<task-name>:latest` themselves. |
 | `environment.cpus`, `memory_mb` | `docker-*` harnesses | Container limits (`--cpus`, `--memory`); default to 4 CPUs / 2048 MB when absent. A malformed value falls back to the default rather than failing the run. |
-| `environment.network_mode` | `docker-*` harnesses | `"public"` gives the solve/verify container NAT'd internet (bridge). Anything else, including absent, means `--network none`. The image *build* always gets host network. Prefer offline. |
+| `environment.network_mode` | `docker-*` harnesses | `"public"` gives the **verifier** NAT'd internet (bridge), and `docker-oracle`'s solve too. The `docker-claude` agent never gets it: it solves on an internal network whose only way out is the egress proxy (see `environment.egress`). Anything else, including absent, means `--network none`. The image *build* always gets host network. Prefer offline. |
+| `environment.egress` | `docker-claude` | Hosts the agent's solve may reach through the egress proxy, e.g. `["pypi.org", "files.pythonhosted.org"]`. A bare host means `host:443`; `host:port` is accepted. No wildcards (`*.pythonhosted.org`), commas or leading/trailing dots: list each host. A plain-HTTP host is reached directly, so it must be in the operator's `NO_PROXY`. |
 | `environment.allow_internet` | Harbor | Harbor's equivalent policy flag; set it `false` and keep it consistent with `network_mode`. |
 | `environment.storage_mb`, `gpus` | Harbor | Declared resource envelope. |
 
@@ -176,8 +177,27 @@ python cli.py tasks run \
   --out-json results/oracle.json
 ```
 
-Expect `passed: 1` / `pass_rate: 1.0` in the summary. To check the two halves by
-hand:
+Expect `passed: 1` / `pass_rate: 1.0` in the summary. The oracle solves with
+`network_mode`'s network, which a `docker-claude` agent never gets, so also run
+the probe, and before a sweep one `docker-claude` cell (paid) if the solve
+needs the network:
+
+```bash
+python cli.py tasks run \
+  --tasks-root <checkout>/evaluation/harbor/tasks \
+  --tasks <library>-<concept> \
+  --harnesses docker-probe \
+  --out-json results/probe.json
+```
+
+The probe needs no LLM. It runs the agent's launch (uid 10001 in the task
+container, internal network, egress proxy) and passes only if every leak class
+is closed. The container launch needs a glibc image (the host's `claude` binary
+is copied in) and an `/app` that uid 10001 can own. A solve that needs pip or
+another host gets a 403 from the proxy unless the host is under
+`environment.egress`.
+
+To check the two halves by hand:
 
 ```bash
 TASK=<checkout>/evaluation/harbor/tasks/<library>-<concept>

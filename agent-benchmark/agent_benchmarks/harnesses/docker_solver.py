@@ -26,11 +26,13 @@ Three solver modes:
     ``~/.claude``, the network, host env) is reachable. Free; run it before a
     paid sweep to know what the arms could have read.
 
-The agent runs on the HOST (the ``claude`` CLI is a host tool); we snapshot
-``/app`` into a scratch tree outside any checkout (see
-:class:`~.agent_sandbox.AgentWorkspace`), let the agent edit it, copy it back,
-and recompile inside the container so the binary matches the image's (older)
-glibc. What the host cannot seal is recorded per run in ``metrics.isolation``.
+By default the agent runs inside the task container (:mod:`.container_agent`):
+it edits ``/app`` in place, behind an egress proxy that reaches only the LLM.
+The ``-host`` variants run it on the host instead (:mod:`.agent_sandbox`): we
+snapshot ``/app`` into a scratch tree outside any checkout, let the agent edit
+it, and copy it back. Either way the documented compile commands are re-run in
+the container before the verifier. What a launch seals is recorded per run in
+``metrics.isolation``.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,18 +60,24 @@ from .agent_sandbox import (
     run_probe,
     solver_cli_flags,
 )
-from .claude_json import _last_json_object, _parse_claude_json, solver_error, terminal_reason  # noqa: F401
+from .claude_json import _last_json_object, _parse_claude_json, record_solver  # noqa: F401
 from .command import _parse_reward_text
+from .container_agent import AGENT_BIN, FILES_DIR, ContainerSandbox
 from .models import HarnessResult, OperationRecord
-from .tasks import TaskSpec
+from .tasks import (  # noqa: F401  (timeouts re-exported)
+    _DEFAULT_BUILD_TIMEOUT,
+    _DEFAULT_VERIFY_TIMEOUT,
+    TaskSpec,
+    _is_public,
+    _task_build_timeout,
+    _task_verify_timeout,
+)
 
 # Recompile commands embedded in instruction.md, e.g. `g++ -O3 ... -o /app/bench`.
 # C tasks (missing-restrict) use gcc, C++ tasks use g++.
 _RECOMPILE_RE = re.compile(r"(g\+\+|gcc) [^`\n]*-o /app/[^ `\n]*")
 _PROXY_VARS = ("http_proxy", "https_proxy", "no_proxy", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY")
 _DEFAULT_SOLVE_TIMEOUT = 600.0
-_DEFAULT_BUILD_TIMEOUT = 600.0
-_DEFAULT_VERIFY_TIMEOUT = 180.0
 
 
 @dataclass(frozen=True)
@@ -79,6 +88,8 @@ class DockerSolverHarness:
     skill directory or its ``SKILL.md``; in claude mode the whole skill tree is
     exposed to the agent as the with-skill treatment arm, in probe mode it is a
     path the probe must not reach.
+    ``agent_location`` is ``container`` (the agent runs in the task container,
+    see :mod:`.container_agent`) or ``host`` (see :mod:`.agent_sandbox`).
     """
 
     harness_id: str
@@ -87,6 +98,7 @@ class DockerSolverHarness:
     model_default: Optional[str] = None
     kind: str = "docker"
     env: dict[str, str] = field(default_factory=dict)
+    agent_location: str = "container"
 
     def run(
         self,
@@ -137,6 +149,7 @@ class DockerSolverHarness:
         returncode = 0
         extra_metrics: dict[str, Any] = {}
         reward: Optional[float] = None
+        sandbox: Optional[ContainerSandbox] = None
         try:
             try:
                 self._build_image(task, image, log)
@@ -148,23 +161,37 @@ class DockerSolverHarness:
                 raise RuntimeError(
                     f"docker build timed out after {exc.timeout}s; see run.log"
                 ) from exc
-            self._start_container(task, image, container, log)
+            if self.mode in ("claude", "probe") and self.agent_location == "container":
+                sandbox = ContainerSandbox.open(container, _docker, log, source_env=operator_source_env(),
+                                                task_egress=task.environment.get("egress"),
+                                                with_agent=self.mode == "claude")
             try:
-                if self.mode == "oracle":
-                    self._solve_oracle(task, container, log)
-                elif self.mode == "claude":
-                    usage = self._solve_claude(
-                        task, container, output_dir, model, solve_timeout,
-                        operations, log, extra_metrics,
-                    )
-                elif self.mode == "probe":
-                    reward = self._solve_probe(task, container, output_dir, log, extra_metrics)
-                else:
-                    raise ValueError(f"unknown mode {self.mode!r}")
-                if self.mode != "probe":  # the probe's reward is its own verdict
-                    reward = self._verify(task, container, output_dir, log)
+                self._start_container(task, image, container, log, sandbox)
+                try:
+                    if self.mode == "oracle":
+                        self._solve_oracle(task, container, log)
+                    elif self.mode == "claude":
+                        usage = self._solve_claude(
+                            task, container, output_dir, model, solve_timeout,
+                            operations, log, extra_metrics, sandbox,
+                        )
+                    elif self.mode == "probe":
+                        reward = self._solve_probe(task, container, output_dir, log, extra_metrics,
+                                                   sandbox)
+                    else:
+                        raise ValueError(f"unknown mode {self.mode!r}")
+                    if sandbox is not None:
+                        sandbox.stop_proxy(_docker, log)  # the verifier gets no route out either
+                        if _is_public(task):  # "public" is the verifier's, after the agent exits
+                            _docker(["network", "connect", "bridge", container], log)
+                    if self.mode != "probe":  # the probe's reward is its own verdict
+                        reward = self._verify(task, container, output_dir, log)
+                finally:
+                    _docker(["rm", "-f", container], log, check=False)
             finally:
-                _docker(["rm", "-f", container], log, check=False)
+                if sandbox is not None:  # also when the container never started
+                    sandbox.close(_docker, log, output_dir)
+                    extra_metrics["egress"] = sandbox.egress_summary()
         except subprocess.TimeoutExpired as exc:
             log.write(f"\nTIMEOUT: {exc}\n")
             returncode = 124
@@ -222,19 +249,15 @@ class DockerSolverHarness:
             log, timeout=timeout,
         )
 
-    def _start_container(self, task: TaskSpec, image: str, container: str, log) -> None:
-        # Our own tasks never set network_mode and never need network at
-        # solve/verify time, so this defaults to the historical --network
-        # none. External tasks (e.g. uxlfoundation/skills) can declare
-        # environment.network_mode = "public" for solve/verify steps that
-        # need it; build already gets host network via _build_image
-        # regardless of this setting. Bridge (not host): "public" means
-        # "needs outbound internet," not "may see the host's own network" --
-        # bridge gets NAT'd internet access without exposing host-local
-        # services (loopback ports, metadata endpoints) to untrusted task
-        # code the way --network host would.
-        network_mode = str(task.environment.get("network_mode") or "none")
-        network = "bridge" if network_mode == "public" else "none"
+    def _start_container(self, task: TaskSpec, image: str, container: str, log,
+                         sandbox: Optional[ContainerSandbox] = None) -> None:
+        # --network none unless the task declares environment.network_mode =
+        # "public"; then bridge (NAT'd internet), not host, so host-local
+        # services stay out of reach. Build always gets host network. An
+        # in-container agent brings its own internal network + egress proxy,
+        # and a "public" task joins bridge only for its verifier.
+        net_args = (sandbox.run_args() if sandbox is not None
+                    else ["--network", "bridge" if _is_public(task) else "none"])
 
         cpus_raw = task.environment.get("cpus")
         cpus = str(cpus_raw) if cpus_raw is not None else "4"
@@ -248,10 +271,14 @@ class DockerSolverHarness:
         except (TypeError, ValueError):
             memory = "2g"
 
+        # PID 1 must outlive the solve and the verifier: when it exits, an
+        # in-container agent dies mid-solve and the verifier finds no container.
+        lifetime = int(max(1800.0, (task.timeout_sec or _DEFAULT_SOLVE_TIMEOUT)
+                           + _task_verify_timeout(task) + 600))
         _docker(["rm", "-f", container], log, check=False)
         _docker(
-            ["run", "-d", "--name", container, "--network", network,
-             "--cpus", cpus, "--memory", memory, image, "sleep", "1800"],
+            ["run", "-d", "--name", container, *net_args,
+             "--cpus", cpus, "--memory", memory, image, "sleep", str(lifetime)],
             log,
         )
 
@@ -273,9 +300,9 @@ class DockerSolverHarness:
     def _solve_claude(
         self, task: TaskSpec, container: str, output_dir: Path,
         model: Optional[str], timeout: float, operations: list[OperationRecord], log,
-        extra_metrics: dict[str, Any],
+        extra_metrics: dict[str, Any], sandbox: Optional[ContainerSandbox] = None,
     ) -> Optional[UsageRecord]:
-        """Snapshot /app, solve on the host, copy back, recompile in-container.
+        """Solve with ``claude -p`` in the task container (*sandbox*) or on the host.
 
         Returns a :class:`UsageRecord` parsed from ``claude --output-format json``
         (cost/tokens/cache/latency/turns), or ``None`` if the JSON was missing.
@@ -283,11 +310,25 @@ class DockerSolverHarness:
         # A rerun must not find its own previous tree or verdict during the solve.
         _rmtree(output_dir / "work")
         (output_dir / "reward.txt").unlink(missing_ok=True)
+        if sandbox is not None:
+            return self._solve_claude_in_container(task, container, output_dir, model, timeout,
+                                                   operations, log, extra_metrics, sandbox)
         workspace, skill_note = self._prepare_workspace(task, container, log, output_dir)
         extra_metrics["isolation"] = workspace.isolation()
         try:
-            return self._run_claude(task, container, output_dir, model, timeout,
-                                    operations, log, extra_metrics, workspace, skill_note)
+            work = workspace.work
+            cmd = ["claude", *self._claude_args(task, skill_note, model, output_dir)]
+            before = workspace.state()
+            t0 = time.time()
+            proc = subprocess.run(
+                cmd, cwd=str(work), text=True, capture_output=True,
+                timeout=timeout, check=False, env=workspace.env(operator_source_env(), self.env),
+            )
+            usage = record_solver(proc, task.name, model, time.time() - t0, output_dir,
+                                  operations, log, extra_metrics,
+                                  edited=workspace.state() != before)
+            _rmtree(work / ".skill")  # don't ship the skill files into /app for the verifier
+            _docker(["cp", f"{str(work)}/.", f"{container}:/app/"], log)
         finally:
             # Keep the agent's tree with the run (also after a timeout), without the skill.
             _rmtree(workspace.work / ".skill")
@@ -297,6 +338,52 @@ class DockerSolverHarness:
             except OSError as exc:  # never mask the solve's own outcome
                 log.write(f"\n[keep work tree] {exc}\n")
             workspace.cleanup()
+        failed = self._recompile(task, container, log)
+        if failed:
+            extra_metrics["recompile_failed"] = failed
+        return usage
+
+    def _solve_claude_in_container(
+        self, task: TaskSpec, container: str, output_dir: Path,
+        model: Optional[str], timeout: float, operations: list[OperationRecord], log,
+        extra_metrics: dict[str, Any], sandbox: ContainerSandbox,
+    ) -> Optional[UsageRecord]:
+        """The agent edits ``/app`` in place; the grader files are not in the container yet."""
+        extra_metrics["isolation"] = sandbox.isolation()
+        skill_note = ""
+        skill_dir = self._resolve_skill_dir()
+        if skill_dir is not None:
+            # docker cp ships symlinks as links (dangling in the container); copy
+            # with links followed first, as the host arm's copytree does.
+            staged = Path(tempfile.mkdtemp(prefix="abskill-"))
+            try:
+                _copytree(skill_dir, staged / "skill")
+                _docker(["cp", str(staged / "skill"), f"{container}:/app/.skill"], log)
+            finally:
+                shutil.rmtree(staged, ignore_errors=True)
+            skill_note = self._skill_note(skill_dir)
+        sandbox.prepare(container, _docker, log)
+        env = sandbox.env(operator_source_env(), self.env)
+        argv, client_env = sandbox.exec_argv(container, env, [AGENT_BIN, *self._claude_args(
+            task, skill_note, model, output_dir)])
+        t0 = time.time()
+        try:
+            proc = subprocess.run(argv, text=True, capture_output=True, timeout=timeout,
+                                  check=False, env=client_env)
+        finally:  # also on a timeout: stop the agent, keep its tree for debugging
+            sandbox.reap(container, _docker, log)  # nothing the agent backgrounded sees /tests
+            _docker(["exec", "-u", "root", container, "rm", "-rf", "/app/.skill"], log, check=False)
+            _rmtree(output_dir / "work")
+            (output_dir / "work").mkdir(parents=True)
+            _docker(["cp", f"{container}:/app/.", str(output_dir / "work")], log, check=False)
+            # The verifier runs the agent's /app code as root, on bridge for a public task.
+            _docker(["exec", "-u", "root", container, "rm", "-rf", FILES_DIR], log, check=False)
+        usage = record_solver(proc, task.name, model, time.time() - t0, output_dir,
+                                    operations, log, extra_metrics)
+        failed = self._recompile(task, container, log)
+        if failed:
+            extra_metrics["recompile_failed"] = failed
+        return usage
 
     def _prepare_workspace(self, task: TaskSpec, container: str, log,
                            output_dir: Optional[Path] = None) -> tuple[AgentWorkspace, str]:
@@ -314,92 +401,70 @@ class DockerSolverHarness:
             skill_note = ""
             if skill_dir is not None and not probing:
                 _copytree(skill_dir, workspace.work / ".skill")
-                entry = self._skill_entry(skill_dir)
-                skill_note = (
-                    f"A performance skill is available at ./.skill/ "
-                    f"(start with ./.skill/{entry}). Read the files it references "
-                    "before fixing.\n\n"
-                )
+                skill_note = self._skill_note(skill_dir)
         except BaseException:  # also Ctrl-C: don't leave the abrun-* snapshot behind
             workspace.cleanup()
             raise
         return workspace, skill_note
 
-    def _solve_probe(self, task: TaskSpec, container: str, output_dir: Path, log,
-                     extra_metrics: dict[str, Any]) -> float:
-        """Run the isolation probe where the agent would run; reward 1.0 only if sealed."""
-        workspace, _ = self._prepare_workspace(task, container, log, output_dir)
-        try:
-            result = run_probe(workspace, operator_source_env(), self.env)
-        except subprocess.TimeoutExpired as exc:  # a hung check: nothing was shown closed
-            log.write(f"\n[probe] TIMEOUT: {exc}\n")
-            result = {k: "untested" for k in LEAK_CLASSES}
-        finally:
-            workspace.cleanup()
-        log.write(f"\n[probe] {json.dumps(result)}\n")
-        (output_dir / "isolation_probe.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-        extra_metrics["isolation"] = workspace.isolation()
-        extra_metrics["isolation_probe"] = result
-        return probe_reward(result)
+    def _skill_note(self, skill_dir: Path) -> str:
+        entry = self._skill_entry(skill_dir)
+        return (
+            f"A performance skill is available at ./.skill/ "
+            f"(start with ./.skill/{entry}). Read the files it references "
+            "before fixing.\n\n"
+        )
 
-    def _run_claude(
-        self, task: TaskSpec, container: str, output_dir: Path,
-        model: Optional[str], timeout: float, operations: list[OperationRecord], log,
-        extra_metrics: dict[str, Any], workspace: AgentWorkspace, skill_note: str,
-    ) -> Optional[UsageRecord]:
-        work = workspace.work
+    def _claude_args(self, task: TaskSpec, skill_note: str, model: Optional[str],
+                     output_dir: Path) -> list[str]:
+        """``claude`` argv after the executable; the prompt is also saved as ``prompt.txt``."""
         prompt = (
             f"{skill_note}"
             "Solve this coding task. Edit files in the current directory only. "
             "When done, leave the optimized source and any required outputs in place.\n\n"
             f"{task.instruction}"
         )
-        prompt_file = output_dir / "prompt.txt"
-        prompt_file.write_text(prompt, encoding="utf-8")
+        (output_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
+        args = ["-p", prompt, "--output-format", "json", *solver_cli_flags()]
+        return args + (["--model", model] if model else [])
 
-        cmd = ["claude", "-p", prompt, "--output-format", "json", *solver_cli_flags()]
-        if model:
-            cmd += ["--model", model]
-        before = workspace.state()
-        t0 = time.time()
-        proc = subprocess.run(
-            cmd, cwd=str(work), text=True, capture_output=True,
-            timeout=timeout, check=False, env=workspace.env(operator_source_env(), self.env),
-        )
-        latency = time.time() - t0
-        log.write(proc.stdout or "")
-        log.write(proc.stderr or "")
-        error = solver_error(proc.stdout, edited=workspace.state() != before)
-        if error:  # no attempt was made: the runner leaves the cell out, like metrics.error
-            extra_metrics["solver_error"] = error
-        usage = _parse_claude_json(proc.stdout, task.name, model or "", latency)
-        reason = terminal_reason(proc.stdout) or ("no_result" if usage is None else None)
-        if reason:
-            extra_metrics["terminal_reason"] = reason
-        (output_dir / "solver.json").write_text(proc.stdout or "", encoding="utf-8")
-        if usage is not None:
-            # Kept if the copy back below fails: the solve was paid for either way.
-            extra_metrics.update(usage.as_metrics_dict())
-            if usage.model:
-                extra_metrics["model"] = usage.model
-            operations.append(
-                OperationRecord(type="loop", name="claude-turns", elapsed_sec=usage.latency_sec,
-                                metadata={"n_calls": usage.n_calls})
-            )
-
-        _rmtree(work / ".skill")  # don't ship the skill files into /app for the verifier
-        _docker(["cp", f"{str(work)}/.", f"{container}:/app/"], log)
-        failed = self._recompile(task, container, log)
-        if failed:
-            extra_metrics["recompile_failed"] = failed
-        return usage
+    def _solve_probe(self, task: TaskSpec, container: str, output_dir: Path, log,
+                     extra_metrics: dict[str, Any],
+                     sandbox: Optional[ContainerSandbox] = None) -> float:
+        """Run the isolation probe where the agent would run; reward 1.0 only if sealed."""
+        untested = {k: "untested" for k in LEAK_CLASSES}
+        if sandbox is not None:
+            sandbox.prepare(container, _docker, log)
+            skill_dir = self._resolve_skill_dir()  # docker-probe:<skill>: forbidden, never offered
+            try:
+                result = sandbox.run_probe(container, task.path, operator_source_env(), self.env,
+                                           _docker, log, [skill_dir] if skill_dir else [])
+            except subprocess.TimeoutExpired as exc:  # a hung check: nothing was shown closed
+                log.write(f"\n[probe] TIMEOUT: {exc}\n")
+                result = untested
+            isolation = sandbox.isolation()
+        else:
+            workspace, _ = self._prepare_workspace(task, container, log, output_dir)
+            try:
+                result = run_probe(workspace, operator_source_env(), self.env)
+            except subprocess.TimeoutExpired as exc:
+                log.write(f"\n[probe] TIMEOUT: {exc}\n")
+                result = untested
+            finally:
+                workspace.cleanup()
+            isolation = workspace.isolation()
+        log.write(f"\n[probe] {json.dumps(result)}\n")
+        (output_dir / "isolation_probe.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        extra_metrics["isolation"] = isolation
+        extra_metrics["isolation_probe"] = result
+        return probe_reward(result)
 
     def _recompile(self, task: TaskSpec, container: str, log) -> list[str]:
-        """Recompile inside the container so the binary matches the image glibc.
+        """Re-run the compile command(s) documented in instruction.md, in the container.
 
-        The agent edits source on the host (newer glibc); a host-built binary may
-        fail in the older task image, so re-run the compile command(s) documented
-        in instruction.md in-container. Matches both ``g++`` and ``gcc``.
+        A host-launched agent builds against the host's (newer) glibc, which may
+        not run in the older task image; an in-container agent may simply not
+        have built. Matches both ``g++`` and ``gcc``.
 
         Returns the compile commands that failed. A recompile failure is a
         *tooling* failure, not a solve failure: the caller records it in
@@ -430,6 +495,10 @@ class DockerSolverHarness:
         )
         if pulled.returncode == 0 and reward_file.is_file():
             return _parse_reward_text(reward_file.read_text(encoding="utf-8", errors="replace"))
+        if proc.returncode != 0:  # no verdict at all if the container is gone, not a 0
+            running = _docker(["inspect", "-f", "{{.State.Running}}", container], log, check=False)
+            if (getattr(running, "stdout", "") or "").strip() != "true":
+                raise RuntimeError(f"task container {container} is not running at verify time; see run.log")
         # No reward file written: fall back to verifier exit code.
         return 1.0 if proc.returncode == 0 else 0.0
 
@@ -457,26 +526,6 @@ class DockerSolverHarness:
         return parts
 
 
-def _task_build_timeout(task: TaskSpec) -> float:
-    """Image build timeout: the task's ``environment.build_timeout_sec`` if set,
-    else :data:`_DEFAULT_BUILD_TIMEOUT`."""
-    val = task.environment.get("build_timeout_sec")
-    try:
-        return float(val) if val is not None else _DEFAULT_BUILD_TIMEOUT
-    except (TypeError, ValueError):
-        return _DEFAULT_BUILD_TIMEOUT
-
-
-def _task_verify_timeout(task: TaskSpec) -> float:
-    """Verifier timeout: the task's ``verifier.timeout_sec`` if set, else
-    :data:`_DEFAULT_VERIFY_TIMEOUT`."""
-    val = task.verifier.get("timeout_sec")
-    try:
-        return float(val) if val is not None else _DEFAULT_VERIFY_TIMEOUT
-    except (TypeError, ValueError):
-        return _DEFAULT_VERIFY_TIMEOUT
-
-
 def _docker(args: list[str], log, *, check: bool = True,
             timeout: Optional[float] = None) -> subprocess.CompletedProcess:
     """Run a ``docker`` subcommand, tee-ing output to the run log."""
@@ -494,14 +543,10 @@ def _docker(args: list[str], log, *, check: bool = True,
 
 
 def _copytree(src: Path, dest: Path) -> None:
-    import shutil
-
     shutil.copytree(src, dest)
 
 
 def _rmtree(path: Path) -> None:
-    import shutil
-
     shutil.rmtree(path, ignore_errors=True)
 
 

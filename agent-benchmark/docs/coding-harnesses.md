@@ -19,9 +19,14 @@ latency, turns):
 
 - `docker-oracle` — apply the task's own `solution/solve.sh` (no LLM). Free; use
   it to validate that a task image + verifier work end to end.
-- `docker-claude` — solve with `claude -p --output-format json`. The JSON result
+- `docker-claude` — solve with `claude -p --output-format json` **inside the
+  task container**, with egress to the LLM endpoint only (see
+  [What the agent can reach](#what-the-agent-can-reach)). The JSON result
   carries `total_cost_usd`, token `usage`, `duration_ms`, `ttft_ms`, and
-  `num_turns`, which are folded into the run artifact's `metrics{}`.
+  `num_turns`, which are folded into the run artifact's `metrics{}`. A run
+  the CLI ended with an error before any attempt carries
+  `metrics.solver_error` and is counted as errored, not as a miss (see
+  below).
 - `docker-claude-skill:<skill-path>` — `docker-claude` with a skill directory
   exposed to the agent. This is the **with-skill treatment arm**; compare it
   against `docker-claude` (without-skill) as the baseline.
@@ -32,16 +37,21 @@ latency, turns):
   a paid sweep. `docker-probe:<skill-path>` also forbids that skill. Use it
   when the with-skill arm's skill lives outside the task's checkout, so the
   baseline is checked against the treatment it must not see.
+- `docker-claude-host`, `docker-claude-host-skill:<skill-path>`,
+  `docker-probe-host`, `docker-probe-host:<skill-path>` — the same, with the
+  agent on the host. These are weaker: use them only where the in-container
+  launch cannot run, and do not compare a host arm against a container
+  baseline (`tasks run` warns).
 
 ### What the agent can reach
 
 A task's `solution/` and `tests/` live beside the skills in one content
 checkout. A solver that can read them copies the answer instead of solving the
 task. A baseline arm that can read the skills is no longer a baseline. The
-probe reports six leak classes. Each is `open` or `closed`; `n/a` (nothing to
-protect was declared) passes, and `untested` (the image lacks the tool, or the
-probe timed out) fails like `open`. The result is in `metrics.isolation_probe`
-and `isolation_probe.json`:
+probe reports eight leak classes. Each is `open` or `closed`; `n/a` (nothing
+to protect was declared) passes, and `untested` (the image lacks the tool, the
+gateway lookup returned nothing, or the probe timed out) fails like `open`.
+The result is in `metrics.isolation_probe` and `isolation_probe.json`:
 
 | class | what the probe tries |
 |---|---|
@@ -49,29 +59,126 @@ and `isolation_probe.json`:
 | `treatment` | read any `skills/` on the way up from the task (with or without a `.git`), or the `docker-probe:<skill>` skill, by absolute path. `n/a` if neither exists: nothing was tested, and that is not the same as `closed` |
 | `operator_config` | read the operator's `~/.claude`, `~/.claude.json`, or `$CLAUDE_CONFIG_DIR` and its `.claude.json` |
 | `checkout_walk` | find a `.git`, `task.toml`, or `CLAUDE.md` in a directory above the work tree |
-| `network` | fetch `https://example.com/` through whatever proxy variables it was given |
-| `env` | find the host value of a variable the allowlist drops in the environ of the probe, its parent chain or PID 1 (`/proc/<pid>/environ`). `n/a` if the allowlist dropped nothing |
+| `network` | fetch `https://example.com/` through whatever proxy variables it was given; with `bash`, also a raw `CONNECT example.com:443` and a plain-HTTP `GET http://example.com/` through the proxy, and a direct TCP connect to `1.1.1.1:443` that ignores it. `untested` with no client at all |
+| `env` | find the host value of a variable the allowlist drops in the environ of the probe, its parent chain or PID 1 (`/proc/<pid>/environ`); names in `env_leaked`. `n/a` if the allowlist dropped nothing |
+| `docker_api` | a writable Docker or podman socket (rootful, rootless `/run/user/<uid>/...`, Desktop), or a daemon on the gateway's 2375/2376 (the host's loopback for a host launch); either gets around every other wall. `untested` when the gateway is unknown or not an IPv4 address. A `DOCKER_HOST` over tcp/ssh is not checked |
+| `dns` | resolve a public name (`example.com`); an answer means queries reach a resolver outside the sandbox, e.g. a podman `--internal` network that forwards DNS upstream |
 
-`docker-claude` runs the agent on the host. It cannot hide an absolute path or
-close the network there, so it states what it does and does not seal in every
-run's `metrics.isolation`. It does the following:
+`docker-claude` runs the agent inside the task container, as uid 10001:
 
-- solves in a fresh `abrun-*` temp tree outside any checkout;
-- points `HOME` and `CLAUDE_CONFIG_DIR` at empty scratch dirs;
-- passes only an allowlist of variables: provider credentials, proxy, locale;
-- runs `claude` with `--tools Read,Edit,Write,Bash,Glob,Grep --setting-sources ""
-  --strict-mcp-config --no-session-persistence`. Before this change it used
-  `--allowedTools`, which only pre-approves tools, so `WebFetch`, `Agent`,
-  `Skill` and the operator's skills, CLAUDE.md files and MCP servers loaded in
-  both arms. The Bash tool can still start a nested `claude -p` with the
-  default tool set; its spend is not in the outer `total_cost_usd`.
+- **Grader files.** `solution/` and `tests/` are copied in only by the
+  verifier, after the agent has exited.
+- **Mounts.** Nothing is bind-mounted. Host files reach the container only
+  by `docker cp`: the `claude` binary, the files named by the file-valued
+  variables below (CA bundles, `AWS_SHARED_CREDENTIALS_FILE` with every
+  profile in it, `AWS_CONFIG_FILE`, `GOOGLE_APPLICATION_CREDENTIALS`), and
+  the skill arm's `/app/.skill` (copied with symlinks followed, as the host
+  arm's copy does).
+- **Image needs.** A glibc image (the host's `claude` binary is copied in; a
+  musl image fails the `--version` check), and an `/app` that uid 10001 can
+  own (it is `chown`ed before the agent starts).
+- **Memory.** The agent's CLI and its tmpfs HOME run inside the task's
+  cgroup, so they count against `environment.memory_mb` (about 100 MB for a
+  short session); the host launch ran outside it.
+- **Network.** The container sits on a per-run `--internal` Docker network,
+  which has no route out. The agent reaches the LLM through an allowlisting
+  CONNECT proxy (`harnesses/egress_proxy.py`, stdlib only). It runs in a
+  sidecar container on that network and the default bridge, and listens on
+  its internal-network address only. The sidecar image is
+  `python:3.12-slim` pinned by digest; set `AGENT_BENCH_PROXY_IMAGE` to a
+  mirror (an offline runner, a Docker Hub rate limit). The sidecar holds the
+  upstream proxy URL, credentials included.
+  - **Allowlist.** Entries are `host:port`: the provider's hosts on 443 (the
+    provider chosen as the CLI chooses it: Bedrock, then Foundry, then
+    Vertex, each only for `1`/`true`/`yes`/`on`; Vertex's host follows
+    `CLOUD_ML_REGION` as the CLI maps it, `global`, `us`, `eu` included), the
+    `ANTHROPIC_BASE_URL` host on its own port, and the task's
+    `environment.egress` entries. A bare `host` there means `host:443`; no
+    wildcards, commas or leading/trailing dots.
+  - **Plain HTTP.** An `http://` gateway such as LiteLLM is forwarded only
+    directly. The request is rewritten to origin-form with `Connection: close`,
+    so each connection carries one checked request. Plain HTTP is never
+    chained through an upstream proxy, so a host behind one must be listed
+    in `NO_PROXY`.
+  - **Loopback.** A loopback base URL (`localhost`, `127.*`) fails fast,
+    because no container can reach it; use `docker-claude-host` instead.
+  - **Logging.** Every proxy decision is saved as `egress.jsonl` (an allowed
+    one before the connect, so a pending CONNECT is logged too), and
+    `metrics.egress` carries the `allowed`, `denied` and `errors` host sets
+    and `denied_entries` (`host:port`).
+- **`network_mode = "public"`.** It applies to the verifier only. The
+  container joins the default bridge after the agent exits. Every
+  uxlfoundation/skills task declares it, and none of their solutions or tests
+  uses the network, so a task whose solve needs a host must list it under
+  `environment.egress`.
+- **Environment.** HOME is its own tmpfs, `/run/abhome`; the image's `/tmp`
+  is left alone. The environment is:
+  - the provider-credential allowlist;
+  - the proxy (also as `ALL_PROXY` and `FTP_PROXY`), and
+    `NO_PROXY=localhost,127.0.0.1,::1`. They replace what the Docker client
+    injects from `proxies.default`: a `NO_PROXY` would send an LLM host around
+    the proxy, an `ALL_PROXY` would hand the agent the client's credentials;
+  - `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
+  - file-valued variables (`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`,
+    `AWS_SHARED_CREDENTIALS_FILE`, `GOOGLE_APPLICATION_CREDENTIALS`, ...),
+    whose file is copied in and re-pointed.
 
-A host probe reports `checkout_walk` closed, and `task_files`, `treatment`,
-`operator_config`, `network` and `env` open. `env` is open because the agent
-runs as the operator's uid: it can read the harness's `/proc/<pid>/environ`
-(every variable the allowlist dropped) and its command line and cwd
-(`--tasks-root`, `--output-dir`, the skill arm's path). Yama `ptrace_scope=1`
-does not stop this; it only gates attach.
+  It reaches `docker exec` in a 0600 `--env-file`, never on argv. The `docker`
+  CLI keeps the operator's environment, so its context and `DOCKER_HOST` stay
+  the operator's.
+- **Fails before the agent starts.** A setup that cannot work in a container
+  errors the cell after its image build: a loopback base URL or upstream
+  proxy, Bedrock with only an `AWS_PROFILE` or SSO login, Vertex without
+  `GOOGLE_APPLICATION_CREDENTIALS` or `CLAUDE_CODE_SKIP_VERTEX_AUTH`, a
+  provider the allowlist has no hosts for (`anthropicAws`, `mantle`, ...), or
+  an `environment.egress` entry that is a URL. A `claude` binary that cannot
+  run in the image (a musl image) is caught after the container starts.
+- **Lifetime.** The task container lives for the solve timeout plus the
+  verifier timeout plus 10 minutes (at least 30). A verifier that finds the
+  container gone errors the cell instead of scoring it 0.
+- **Leftovers.** The network, sidecar and task container carry the label
+  `agent-bench.run=<id>`, and the sidecar exits after 4 h on its own. A
+  killed harness can also leave its `abenv-*` dir, whose env file holds the
+  agent's credentials. Clean up with:
+
+  ```bash
+  docker ps -aq --filter label=agent-bench.run | xargs -r docker rm -f
+  docker network ls -q --filter label=agent-bench.run | xargs -r docker network rm
+  rm -rf "${TMPDIR:-/tmp}"/abenv-*
+  ```
+
+The launch goes only through the Docker API, never through a bind mount or a
+listener in the harness process. It therefore works the same with a local
+daemon and on a Docker-in-Docker CI runner. CI's `external-catalog-smoke`
+job requires a container probe to report every class closed. It also
+requires the proxy to have denied the probe's `example.com` CONNECT (`:443`)
+and its plain-HTTP GET (`:80`), which shows both reached the sidecar.
+
+One gap remains: a service on the Docker host that listens on the internal
+network's gateway address or on `0.0.0.0` is reachable.
+
+The `-host` variants run the agent on the host instead. The host cannot hide an
+absolute path or close the network, so these harnesses state what they seal in
+every run's `metrics.isolation`. What they do:
+
+- solve in a fresh `abrun-*` temp tree outside any checkout;
+- point `HOME` and `CLAUDE_CONFIG_DIR` at empty scratch dirs;
+- pass only an allowlist of variables;
+- reach `task_files`, `treatment`, `operator_config`, `network` and `env` by
+  absolute path, proxy or `/proc`, as a host probe shows.
+
+`env` is open on the host because the agent runs as the operator's uid: it can
+read the harness's `/proc/<pid>/environ` (every variable the allowlist
+dropped) and its command line and cwd (`--tasks-root`, `--output-dir`, the
+skill arm's path). Yama `ptrace_scope=1` does not stop this; it only gates
+attach.
+
+Both launches run `claude` with `--tools Read,Edit,Write,Bash,Glob,Grep
+--setting-sources "" --strict-mcp-config --no-session-persistence`. An older
+launch used `--allowedTools`, which only pre-approves tools, so `WebFetch`,
+`Agent`, `Skill`, and the operator's skills, CLAUDE.md files and MCP servers
+were loaded in both arms. The Bash tool can still start a nested `claude -p`
+with the default tool set; its spend is not in the outer `total_cost_usd`.
 
 Provider credentials come from the environment, for example
 `AWS_BEARER_TOKEN_BEDROCK`, `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`.
@@ -90,9 +197,9 @@ unknown model id) also carries `metrics.solver_error`. The runner counts that
 cell as errored, like `metrics.error`: it is out of `pass_rate` and out of the
 McNemar pairing (`n_excluded`), so do not drop cells by hand. An error after
 an attempt (a 529 at turn 40, `prompt_too_long` in a skill arm that read too
-much) is the arm's own outcome and is scored. So is a CLI that dies with no
+much) is the arm's own outcome and is scored. So is a host-launch CLI that dies with no
 result object (`terminal_reason: no_result`) after it edited the work tree; with
-the tree untouched it is a `solver_error`. Without `--model`,
+the tree untouched, or in the container launch, it is a `solver_error`. Without `--model`,
 `metrics.model` is the `modelUsage` entry that cost the most.
 
 `docker-probe*` and `docker-oracle` rows are never compared against
@@ -263,12 +370,12 @@ python cli.py dataset export --kind task_runs \
 ```
 
 What the harnesses handle for you:
-pass the host proxy through to `docker build` (corporate networks), run
-solve/verify as root for images that set a non-root `USER`, expose the whole
-skill tree to the agent (not just `SKILL.md`), and recompile inside the
-container using the `g++`/`gcc` command from `instruction.md` — the agent edits
-source on the host, whose newer glibc would otherwise break the binary in the
-older task image.
+pass the host proxy through to `docker build` (corporate networks), run the
+oracle and the verifier as root for images that set a non-root `USER` (the
+agent runs as uid 10001), expose the whole skill tree to the agent (not just
+`SKILL.md`), and re-run the `g++`/`gcc` command from `instruction.md` inside
+the container after the solve — a `-host` agent builds against the host's
+newer glibc, and an in-container agent may not have built at all.
 
 For a single throwaway oracle check, run one task through `docker-oracle`
 rather than reaching for a shell script — it is the same Docker flow and it
@@ -294,7 +401,12 @@ python cli.py tasks run --tasks <task-name> \
   `UsageRecord` fields — `cost_usd`, `prompt_tokens`, `completion_tokens`,
   `total_tokens`, `cache_read_tokens`, `cache_write_tokens`, `latency_sec`,
   `ttft_sec`, `n_calls` (agent turns) — plus `operation_count` /
-  `operations_by_type`.
+  `operations_by_type`, `model`, `terminal_reason`, `solver_error` and
+  `recompile_failed` when set. The `docker-claude*` and `docker-probe*` rows
+  also carry `isolation` (`agent_location`, `work_tree`, `operator_config`,
+  `env`, `tools`, `host_filesystem`, `network`, and `memory` for the
+  container launch); container rows carry `egress`, probe rows
+  `isolation_probe`.
 - `summary.per_harness`: pass rate with a `pass_rate_ci{}` interval, elapsed
   time, operation totals, `skill_invocation_rate` / `skill_invocation_n`, a
   rolled-up `cost{}` block (`total_cost_usd` is `null` when no call was priced;
@@ -304,8 +416,10 @@ python cli.py tasks run --tasks <task-name> \
   significance block against `--baseline-harness` (below).
 
 The artifact is schema-validated on write, like question/answer/eval/arms
-artifacts. Per-run detail (the agent's `claude --output-format json` result, the
-prompt, and `run.log`) is written under each cell's output directory.
+artifacts. Per-run detail is written under each cell's output directory: the
+agent's `claude --output-format json` result (`solver.json`), `prompt.txt`,
+`run.log`, `reward.txt`, the agent's final tree (`work/`), `egress.jsonl` for
+a container launch and `isolation_probe.json` for a probe.
 
 ## Statistics on the execution-verified track
 
@@ -462,9 +576,11 @@ python cli.py tasks run --tasks onetbb-histogram-local-aggregation \
 harbor run -p /tmp/uxl-skills/evaluation/harbor/tasks/onetbb-histogram-local-aggregation -a oracle
 ```
 
-`docker-claude`/`docker-oracle` read `environment.network_mode` from the
-task's own `task.toml` for the task *container*, defaulting to no network — a
-task whose container legitimately needs network can declare
-`network_mode = "public"`, alongside `cpus`/`memory_mb` if declared. The
-`docker-claude` agent itself runs on the host and solves with the host's
-network whatever the task declares (`metrics.isolation.network: open`).
+The `docker-*` harnesses read `environment.network_mode` from the task's own
+`task.toml`, alongside `cpus`/`memory_mb`. Without it the task container has
+no network. `network_mode = "public"` gives `docker-oracle` bridge for its
+solve and verify, but for `docker-claude` it applies to the **verifier only**:
+the agent solves on the internal network, and a solve that needs a host (pip,
+a package mirror) must list it under `environment.egress`. A `-host` agent
+solves with the host's network whatever the task declares
+(`metrics.isolation.network: open`).

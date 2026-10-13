@@ -289,7 +289,7 @@ GitHub Actions runs three checks on pull requests:
 
 1. `test` — installs `requirements.lock.txt` and runs pytest offline with coverage; on a PR, 80% of the changed lines must be covered.
 2. `benchmark` — runs the static agent-quality benchmark in strict mode (a gate or band failure fails the job) and uploads artifacts.
-3. `External catalog smoke test` — clones a pinned public content catalog, scans it, and drives one of its real tasks through the `docker-oracle` harness, asserting the pass rate.
+3. `External catalog smoke test` — clones a pinned public content catalog, scans it, and drives one of its real tasks through the `docker-oracle` harness and the `docker-probe` isolation probe, asserting both pass rates.
 
 ## Repository hygiene
 
