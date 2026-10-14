@@ -59,7 +59,8 @@ markdown_extensions:
           format: !!python/name:pymdownx.superfences.fence_code_format
 
 # Relative links from docs/ into the source tree (../dokimi/..., ../../README.md)
-# work when the Markdown is read on GitHub; the hook points them at GitHub for the site.
+# work when the Markdown is read on GitHub; the hook points them at GitHub for the
+# site, and warns on a page whose lists nest differently here than on GitHub.
 hooks:
   - scripts/docs/hooks.py
 
