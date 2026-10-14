@@ -682,3 +682,21 @@ def test_harness_significance_uses_the_unrounded_adjusted_p():
     for cr in comparisons.values():
         assert cr["mcnemar"]["p_adjusted"] == 0.05
         assert cr["mcnemar"]["significant_adjusted"] is True
+
+
+def test_command_harness_ignores_a_reward_left_by_a_previous_run(tmp_path):
+    task = load_task(_fixture_task(tmp_path / "tasks"))
+    cell = tmp_path / "out" / "cell"
+    (cell / "a-old-job").mkdir(parents=True)
+    (cell / "a-old-job" / "reward.txt").write_text("1.0")
+    script = (
+        "import os, pathlib; "
+        "d = pathlib.Path(os.environ['DOKIMI_OUTPUT_DIR']) / 'b-new-job'; "
+        "d.mkdir(parents=True); (d / 'reward.txt').write_text('0.0')"
+    )
+    harness = CommandHarness("fake", f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}")
+
+    result = harness.run(task, output_dir=cell)
+
+    assert (result.passed, result.reward) == (False, 0.0)
+    assert not (cell / "a-old-job").exists()

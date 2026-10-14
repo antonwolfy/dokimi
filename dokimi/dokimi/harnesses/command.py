@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -68,6 +69,10 @@ class CommandHarness:
         # read below would miss them and fall back to the exit code.
         output_dir = given_dir.absolute() if given_dir else None
         if output_dir:
+            # The cell's dir is deterministic: a reward left by a previous run
+            # would otherwise be read back as this run's.
+            if not dry_run:
+                shutil.rmtree(output_dir, ignore_errors=True)
             output_dir.mkdir(parents=True, exist_ok=True)
 
         command = self.build_command(task, model=model, output_dir=output_dir)
