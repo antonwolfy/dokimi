@@ -203,3 +203,10 @@ class TestRetrievalHitRate:
         row = next(line for line in format_trust_block(v).splitlines()
                    if line.startswith("| retrieval_hit_rate"))
         assert "✅" not in row and "Not measured" in row
+
+    def test_verdict_line_counts_unmeasured_checks(self):
+        v = evaluate_trust(_evals(20))
+        assert v.not_measured == ["retrieval_hit_rate"]
+        verdict = next(line for line in format_trust_block(v).splitlines()
+                       if line.startswith("**Verdict:"))
+        assert verdict.endswith(f"(1 of {len(v.checks)} not measured)")

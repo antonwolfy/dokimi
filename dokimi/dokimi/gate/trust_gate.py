@@ -74,6 +74,11 @@ class TrustVerdict:
         return [c for c in self.checks if not c.passed and c.severity == "fail"]
 
     @property
+    def not_measured(self) -> List[str]:
+        """Checks whose input this run did not produce; they pass without having been run."""
+        return [c.name for c in self.checks if not c.measured]
+
+    @property
     def status(self) -> str:
         if self.failures:
             return "❌ FAIL"
@@ -243,7 +248,9 @@ def format_trust_block(verdict: TrustVerdict) -> str:
     lines = [
         "## Can We Trust This Run?",
         "",
-        f"**Verdict: {verdict.status}**",
+        f"**Verdict: {verdict.status}**"
+        + (f" ({len(verdict.not_measured)} of {len(verdict.checks)} not measured)"
+           if verdict.not_measured else ""),
         "",
         "| Check | Status | Value | Threshold | Notes |",
         "|-------|--------|-------|-----------|-------|",
