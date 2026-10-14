@@ -15,6 +15,10 @@ copyright: Copyright &copy; 2026 Intel Corporation
 
 docs_dir: docs
 site_dir: site
+# The reference pages are generated from these: `mkdocs serve` rebuilds on their edits too.
+watch:
+  - dokimi
+  - scripts/docs
 
 theme:
   name: material

@@ -3,8 +3,10 @@
 
 # Documentation site: dokimi/mkdocs.yml, built from dokimi/docs/ plus the CLI and
 # API reference generated from the code. Every PR builds it with --strict, so a
-# broken link or anchor fails the check; a push to main publishes it to GitHub
-# Pages (repository Settings -> Pages -> Source: GitHub Actions).
+# broken link or anchor between pages, a missing link target, or a list that
+# nests differently on the site than on GitHub fails the check; a push to main
+# publishes it to GitHub Pages (repository Settings -> Pages -> Source: GitHub
+# Actions).
 
 name: docs
 
@@ -17,6 +19,9 @@ on:
 permissions:
   contents: read
 
+# One group per ref, unlike ci.yml's per-run groups: Pages takes one deployment at a
+# time and the newest push should win. A per-run group would let a slow older build
+# deploy over a newer one.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -26,7 +31,9 @@ defaults:
     working-directory: dokimi
 
 env:
-  # Material's notice about MkDocs 2.0; requirements-docs.txt pins mkdocs<2.
+  # MkDocs 2.0 notices from Material and from ProperDocs (pulled in by
+  # gen-files and literate-nav); requirements-docs.txt pins mkdocs<2.
+  NO_MKDOCS_2_WARNING: 'true'
   DISABLE_MKDOCS_2_WARNING: 'true'
 
 jobs:
@@ -56,8 +63,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     permissions:
-      pages: write
-      id-token: write
+      pages: write     # to deploy to Pages
+      id-token: write  # OIDC token the Pages API verifies
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
