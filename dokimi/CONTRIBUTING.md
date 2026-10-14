@@ -11,6 +11,8 @@ By submitting a contribution you agree that it is licensed under the
 
 ## Development setup
 
+With Python 3.11+:
+
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"        # editable install + dev tooling

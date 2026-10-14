@@ -1,19 +1,18 @@
 # Locked dependency closure for dokimi (runtime + test), resolved for
-# every supported Python (3.10+): pins that differ by interpreter carry an
+# every supported Python (3.11+): pins that differ by interpreter carry an
 # environment marker. CI installs from this file.
 # Regenerate (uv keeps the pins already in the -o file; add --upgrade to take upgrades):
 #   uv pip compile requirements.txt requirements-test.txt --universal \
-#     --python-version 3.10 --no-header --no-annotate -o requirements.lock.txt
+#     --python-version 3.11 --no-header --no-annotate -o requirements.lock.txt
 # Install with: pip install -r requirements.lock.txt
 aiohappyeyeballs==2.7.1
-aiohttp==3.14.3
+aiohttp==3.14.5
 aiosignal==1.4.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anthropic==0.125.0
 anyio==4.15.1
 appdirs==1.4.4
-async-timeout==4.0.3 ; python_full_version < '3.11'
 attrs==26.1.0
 beautifulsoup4==4.15.0
 boto3==1.43.107
@@ -33,14 +32,12 @@ dill==0.4.1
 diskcache==5.6.3
 distro==1.9.0
 docstring-parser==0.18.0
-exceptiongroup==1.3.1 ; python_full_version < '3.11'
 fastuuid==0.14.0
 filelock==4.0.9
 frozenlist==1.8.0
 fsspec==2026.6.0
 gitdb==4.0.12
 gitpython==3.2.0
-greenlet==3.5.6 ; (python_full_version < '3.11' and platform_machine == 'AMD64') or (python_full_version < '3.11' and platform_machine == 'WIN32') or (python_full_version < '3.11' and platform_machine == 'aarch64') or (python_full_version < '3.11' and platform_machine == 'amd64') or (python_full_version < '3.11' and platform_machine == 'ppc64le') or (python_full_version < '3.11' and platform_machine == 'win32') or (python_full_version < '3.11' and platform_machine == 'x86_64')
 h11==0.16.0
 h2==4.4.1
 hf-xet==1.6.0 ; platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'
@@ -79,30 +76,28 @@ langgraph-sdk==0.4.5
 langsmith==0.14.3
 litellm==1.103.2
 markdown-it-py==4.2.0
-markupsafe==3.0.3
+markupsafe==3.0.4
 marshmallow==3.26.2
 mdurl==0.1.2
 multidict==6.9.1
 multiprocess==0.70.19
 mypy-extensions==1.1.0
 nest-asyncio==1.6.0
-networkx==3.4.2 ; python_full_version < '3.11'
-networkx==3.6.1 ; python_full_version >= '3.11'
-numpy==2.2.6 ; python_full_version < '3.11'
-numpy==2.4.6 ; python_full_version >= '3.11'
+networkx==3.6.1
+numpy==2.4.6 ; python_full_version < '3.12'
+numpy==2.5.4 ; python_full_version >= '3.12'
 openai==2.54.0
 orjson==3.12.0
 ormsgpack==1.12.2
 packaging==26.3
-pandas==2.3.3 ; python_full_version < '3.11'
-pandas==3.0.6 ; python_full_version >= '3.11'
+pandas==3.0.6
 pillow==12.3.0
 pluggy==1.6.0
 propcache==0.5.4
-pyarrow==25.0.1
+pyarrow==26.0.0
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
-pydantic==2.13.5
-pydantic-core==2.46.5
+pydantic==2.14.1
+pydantic-core==2.50.1
 pydantic-settings==2.15.0
 pygithub==2.10.0
 pygments==2.21.0
@@ -114,7 +109,6 @@ pytest-mock==3.16.0
 pytest-socket==0.8.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.4
-pytz==2026.5 ; python_full_version < '3.11'
 pyyaml==6.0.3
 ragas==0.3.9
 referencing==0.37.0
@@ -122,19 +116,17 @@ regex==2026.9.29
 requests==2.34.2
 requests-toolbelt==1.0.0
 rich==14.3.4
-rpds-py==0.30.0 ; python_full_version < '3.11'
-rpds-py==2026.6.3 ; python_full_version >= '3.11'
+rpds-py==2026.6.3
 s3transfer==0.19.2
 scikit-network==0.33.5
-scipy==1.15.3 ; python_full_version < '3.11'
-scipy==1.17.1 ; python_full_version >= '3.11'
+scipy==1.17.1 ; python_full_version < '3.12'
+scipy==1.18.1 ; python_full_version >= '3.12'
 shellingham==1.5.4
 six==1.17.0
 smmap==5.0.3
 sniffio==1.3.1
 soupsieve==2.10
-sqlalchemy==2.0.54 ; python_full_version < '3.11'
-sqlalchemy==2.1.1 ; python_full_version >= '3.11'
+sqlalchemy==2.1.1
 tenacity==9.1.4
 tiktoken==0.14.0
 tokenizers==0.23.2
@@ -145,7 +137,7 @@ typer==0.27.2
 typing-extensions==4.16.0
 typing-inspect==0.9.0
 typing-inspection==0.4.4
-tzdata==2026.5 ; python_full_version < '3.11' or sys_platform == 'emscripten' or sys_platform == 'win32'
+tzdata==2026.5 ; sys_platform == 'emscripten' or sys_platform == 'win32'
 urllib3==2.8.0
 uuid-utils==0.17.1
 websockets==16.1.1
