@@ -103,9 +103,9 @@ For the framework's quickstart, CLI surface, and architecture, see
 
 ## Where to start reading
 
-The documentation is published at <https://intel.github.io/dokimi/>, with a
-CLI and API reference generated from the code; the same pages read here on
-GitHub under [`dokimi/docs/`](dokimi/docs/README.md).
+The documentation is published at <https://intel.github.io/dokimi/>, which adds a
+CLI and API reference generated from the code. The hand-written pages can also be
+read on GitHub under [`dokimi/docs/`](dokimi/docs/README.md).
 
 | You want to understand… | Read |
 |---|---|

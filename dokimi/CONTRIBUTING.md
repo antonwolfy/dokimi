@@ -48,9 +48,16 @@ CI additionally holds a PR to:
   `pytest --cov=dokimi --cov-branch --cov-report=xml`.
 - **mypy on the whole package.** Modules listed under `[[tool.mypy.overrides]]` in
   `pyproject.toml` are exempt until fixed; do not add to that list.
-- **Docs build** — `pip install -r requirements-docs.txt`, then
-  `mkdocs build --strict`: a link or `#anchor` that does not resolve fails it.
-  `mkdocs serve` previews the site.
+- **Docs build** — `mkdocs build --strict`, from `dokimi/`. `make dev` already
+  installs its packages and `make ci-local` runs it; by hand, install them with
+  `pip install -r requirements.lock.txt -r requirements-docs.lock.txt`. It fails on
+  a link or `#anchor` between pages that does not resolve, on a link into the
+  source tree whose file does not exist (an anchor into such a file is not
+  checked), and on a list that nests differently on the site than on GitHub
+  (Python-Markdown wants nested items indented 4 spaces and a blank line before
+  a list). A new page goes in two places: the `docs/README.md` index
+  (`tests/test_docs_links.py` checks it) and `nav:` in `mkdocs.yml` (the
+  build fails on a page missing from it). `mkdocs serve` previews the site.
 - **Workflow lint** — `zizmor --offline --min-severity medium .github/workflows` when you
   edit a workflow.
 
