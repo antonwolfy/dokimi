@@ -155,8 +155,9 @@ def render_spans(spans: list[Span]) -> str:
     return "\n".join(f"[{span.id}] ({span.kind}) {span.text}" for span in spans)
 
 
-class _EmptyReply(ValueError):
-    """The call returned no content. Not split: half a batch would come back empty too."""
+_EMPTY_REPLY = "the extractor returned an empty reply"
+# Verdicts verify_atoms can record; anything else is `unchecked`.
+_FAITHFULNESS = ("supported", "distorted", "unsupported")
 
 
 @dataclass
@@ -172,18 +173,26 @@ class ExtractionReport:
         unread_tokens: Token cost of those spans.
         unparseable_span_ids: The subset whose reply arrived but did not parse even one
             span per call, which is what a too-low output ceiling looks like.
+        empty_span_ids: The subset whose call returned no content. A reasoning model that
+            spends its output ceiling before answering does that (see
+            :class:`~dokimi.novelty.client.LLMClient`), so these also need a higher
+            ``--max-tokens``. Not split: half a batch comes back empty too. Kept for the
+            warning; the artifact records only the totals.
         retried_batches: Batches whose reply did not parse and were split and re-asked.
         calls: Extraction calls made, splits included, so the cost of re-asking is visible.
-        batches: Calls the same run would make with no splitting.
+        batches: Calls the same run would make with no splitting: a batch counts once it
+            is asked, and its halves count at its level, so a run the cap stopped early
+            counts only the batches it reached.
         parse_error: The last parse failure on a span that stayed unread.
-        call_error: The last failed call (or empty reply) on a span that stayed unread.
-            Errors that splitting recovered from are not recorded: they did not lose
-            anything, and quoting one would blame the wrong cause.
+        call_error: The last failed call on a span that stayed unread. Errors that
+            splitting recovered from are not recorded: they did not lose anything, and
+            quoting one would blame the wrong cause.
     """
 
     unread_span_ids: list[str] = field(default_factory=list)
     unread_tokens: int = 0
     unparseable_span_ids: list[str] = field(default_factory=list)
+    empty_span_ids: list[str] = field(default_factory=list)
     retried_batches: int = 0
     calls: int = 0
     batches: int = 0
@@ -193,14 +202,17 @@ class ExtractionReport:
     @property
     def last_error(self) -> str:
         """The error behind the unread spans: a failed call first, since it is not a ceiling."""
-        return self.call_error or self.parse_error
+        if self.call_error or self.parse_error:
+            return self.call_error or self.parse_error
+        return _EMPTY_REPLY if self.empty_span_ids else ""
 
     def warnings(self, n_spans: int) -> list[str]:
         """Artifact warnings: spans left unread, and the calls re-asking cost."""
         out: list[str] = []
         if self.unread_span_ids:
             unparseable = len(self.unparseable_span_ids)
-            failed = len(self.unread_span_ids) - unparseable
+            empty = len(self.empty_span_ids)
+            failed = len(self.unread_span_ids) - unparseable - empty
             causes = []
             if unparseable:
                 causes.append(
@@ -208,10 +220,16 @@ class ExtractionReport:
                     f"reply cut off mid-JSON means the output ceiling is too low for one "
                     f"span, so raise --max-tokens (last parse error: {self.parse_error})"
                 )
+            if empty:
+                causes.append(
+                    f"{empty} got an empty reply, which a reasoning model returns when it "
+                    f"spends the output ceiling before answering, so raise --max-tokens "
+                    f"(empty replies are not split: half a batch comes back empty too)"
+                )
             if failed:
                 causes.append(
-                    f"{failed} were lost to calls that failed or came back empty, which "
-                    f"are not split and re-asked (last error: {self.call_error})"
+                    f"{failed} were lost to calls that failed, which are not split and "
+                    f"re-asked (last error: {self.call_error})"
                 )
             out.append(
                 f"atom extraction could not read {len(self.unread_span_ids)} of {n_spans} "
@@ -258,8 +276,9 @@ def extract_atoms(
     that defaults to 4096 output tokens truncates a 25-span reply mid-array, and a
     truncated array does not parse. Splitting recovers without knowing the ceiling, at a
     cost of up to 2n-1 calls for an n-span batch that never parses; ``report.calls``
-    counts them. A call that raises (transport, auth) or returns nothing is not split,
-    because re-asking smaller would only multiply it.
+    counts them, against ``report.batches`` for the batches the run reached. A call that
+    raises (transport, auth) or returns nothing is not split, because re-asking smaller
+    would only multiply it.
 
     Args:
         spans: Spans from :func:`~dokimi.novelty.spans.segment`.
@@ -284,12 +303,17 @@ def extract_atoms(
     seen: set[str] = set()
     atoms: list[Atom] = []
     lost: Exception | None = None
-    pending = [spans[start:start + batch_spans] for start in range(0, len(spans), batch_spans)]
-    report.batches += len(pending)
+    # (spans, is a half): a half was counted in ``batches`` with the batch it came from.
+    pending = [
+        (spans[start:start + batch_spans], False)
+        for start in range(0, len(spans), batch_spans)
+    ]
     while pending:
         if cap is not None and len(atoms) >= cap:
             break
-        batch = pending.pop(0)
+        batch, is_half = pending.pop(0)
+        if not is_half:
+            report.batches += 1
         prompt = _EXTRACT_PROMPT.format(
             kinds=", ".join(ATOM_KINDS), tags=", ".join(ATOM_TAGS), spans=render_spans(batch)
         )
@@ -298,7 +322,14 @@ def extract_atoms(
             report.calls += 1
             reply = client.text(prompt, system=_EXTRACT_SYSTEM, accept=usable)
             if not reply.strip():
-                raise _EmptyReply("the extractor returned an empty reply")
+                # Its own cause, not a failed call: the fix is a higher output ceiling.
+                lost = ValueError(
+                    f"{_EMPTY_REPLY}; a reasoning model returns one when it spends the "
+                    "output ceiling before answering, so raise --max-tokens"
+                )
+                report.empty_span_ids.extend(span.id for span in batch)
+                _mark_unread(batch, report)
+                continue
             unparseable = True
             rows = extract_json_array(reply)
         except Exception as exc:
@@ -307,7 +338,7 @@ def extract_atoms(
                 # so atoms keep document order. Not recorded as an error: if the halves
                 # parse, nothing was lost.
                 half = len(batch) // 2
-                pending[:0] = [batch[:half], batch[half:]]
+                pending[:0] = [(batch[:half], True), (batch[half:], True)]
                 report.retried_batches += 1
                 continue
             # One lost batch must not lose the others; the report names it.
@@ -318,10 +349,7 @@ def extract_atoms(
                 report.unparseable_span_ids.extend(span.id for span in batch)
             else:
                 report.call_error = error
-            for span in batch:
-                span.unread = True
-            report.unread_span_ids.extend(span.id for span in batch)
-            report.unread_tokens += sum(span.tokens for span in batch)
+            _mark_unread(batch, report)
             continue
         for row in rows:
             atom = _atom_from_row(row, valid_ids)
@@ -336,6 +364,13 @@ def extract_atoms(
         # result, and a recovered parse error is not a failure.
         raise ExtractionError(f"no atoms: every extraction call failed ({lost})") from lost
     return atoms
+
+
+def _mark_unread(batch: list[Span], report: ExtractionReport) -> None:
+    for span in batch:
+        span.unread = True
+    report.unread_span_ids.extend(span.id for span in batch)
+    report.unread_tokens += sum(span.tokens for span in batch)
 
 
 def _atom_from_row(row: object, valid_ids: set[str]) -> Atom | None:
@@ -383,13 +418,19 @@ def verify_atoms(
         source = "\n".join(by_id[s].text for s in atom.span_ids if s in by_id)
         try:
             verdict = str(client.json_object(
-                _VERIFY_PROMPT.format(statement=atom.statement, source=source)
+                _VERIFY_PROMPT.format(statement=atom.statement, source=source),
+                usable=_names_a_faithfulness_verdict,
             ).get("verdict", "")).strip()
         except Exception:
             verdict = ""
         atom.faithfulness = verdict if verdict in tally and verdict != "unchecked" else "unchecked"
         tally[atom.faithfulness] += 1
     return tally
+
+
+def _names_a_faithfulness_verdict(reply: dict) -> bool:
+    """Cache only a reply that names one; ``{"verdict": null}`` replayed reads ``unchecked``."""
+    return reply.get("verdict") in _FAITHFULNESS
 
 
 def save_atoms(

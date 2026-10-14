@@ -107,7 +107,7 @@ def test_a_partial_transport_failure_names_the_lost_spans():
     assert len(atoms) == 5
     assert set(report.unread_span_ids) == first_batch
     lost = report.warnings(len(spans))[0]
-    assert "5 were lost to calls that failed or came back empty" in lost
+    assert "5 were lost to calls that failed, which are not split" in lost
     assert "RuntimeError: throttled" in lost
     assert "--max-tokens" not in lost  # a failed call is not an output ceiling
 
@@ -164,18 +164,75 @@ def test_an_empty_reply_is_not_split():
                       batch_spans=5, report=report)
     assert len(calls) == 2
     assert len(report.unread_span_ids) == len(spans) and report.unparseable_span_ids == []
+    assert report.empty_span_ids == report.unread_span_ids
 
 
-def _half_lost(n: int = 50):
-    """``n`` one-sentence spans, every one carrying an atom, the first batch lost."""
+def test_an_empty_reply_is_its_own_cause_with_the_max_tokens_hint():
+    spans = segment(DOC)
+    first_batch = {s.id for s in spans[:5]}
+
+    def starved_first(prompt, system):
+        if first_batch & set(re.findall(r"^\[(s\d+)\]", prompt, flags=re.M)):
+            return "", None
+        return json.dumps(_rows(prompt)), None
+
+    report = ExtractionReport()
+    atoms = extract_atoms(spans, client=LLMClient(model="x", transport=starved_first),
+                          batch_spans=5, report=report)
+    assert len(atoms) == 5 and set(report.empty_span_ids) == first_batch
+    assert report.calls == 2 and report.retried_batches == 0  # not split
+    tokens = sum(s.tokens for s in spans[:5])
+    assert report.warnings(len(spans)) == [
+        f"atom extraction could not read 5 of {len(spans)} spans ({tokens} tokens): 5 got an "
+        "empty reply, which a reasoning model returns when it spends the output ceiling "
+        "before answering, so raise --max-tokens (empty replies are not split: half a batch "
+        "comes back empty too). Unread spans are left out of `frac_carrying_nothing` and "
+        "dead weight, labelled `unread`, kept by every shortening candidate, and listed in "
+        "`extraction.unread_span_ids`; whatever they assert is missing from every rate"
+    ]
+    # No private class name, and no "failed call" cause for a call that worked.
+    assert "_EmptyReply" not in report.last_error
+    assert report.last_error == "the extractor returned an empty reply"
+    assert report.as_dict()["last_error"] == report.last_error
+
+
+def test_a_capped_extraction_counts_only_the_batches_it_reached():
+    """200 spans, 3 atoms each; every 25-span reply is cut and both halves parse."""
+    doc = "\n\n".join(f"Setting number {i} defaults to {i * 10}." for i in range(1, 201))
+    spans = segment(doc)
+
+    def three_per_span_cut_above_13(prompt, system):
+        ids = re.findall(r"^\[(s\d+)\]", prompt, flags=re.M)
+        rows = [dict(row, statement=f"{row['statement']} ({k})",
+                     question=f"q{k} {row['span_ids'][0]}")
+                for row in _rows(prompt) for k in range(3)]
+        reply = json.dumps(rows)
+        return (reply[:-2] if len(ids) > 13 else reply), None
+
+    report = ExtractionReport()
+    client = LLMClient(model="x", transport=three_per_span_cut_above_13)
+    atoms = extract_atoms(spans, client=client, cap=120, report=report)
+    assert len(atoms) == 120
+    # Two 25-span batches reached the cap: each cost one cut call and two halves.
+    assert (report.calls, report.batches, report.retried_batches) == (6, 2, 2)
+    assert (
+        "atom extraction re-asked 2 unparseable batches as halves: 6 extraction calls where "
+        "2 would do without splitting; a higher --max-tokens avoids the extra calls"
+    ) in report.warnings(len(spans))
+
+
+def _half_lost(n: int = 50, silent: frozenset[int] = frozenset()):
+    """``n`` one-sentence spans, the first batch lost; every read span carries an atom
+    except those at the ``silent`` indexes, which are read and assert nothing."""
     doc = "\n\n".join(f"Setting number {i} defaults to {i * 10}." for i in range(1, n + 1))
     spans = segment(doc)
     first_batch = {s.id for s in spans[:25]}
+    quiet = {spans[i].id for i in silent}
 
     def throttled_first(prompt, system):
         if first_batch & set(re.findall(r"^\[(s\d+)\]", prompt, flags=re.M)):
             raise RuntimeError("RateLimitError: slow down")
-        return json.dumps(_rows(prompt)), None
+        return json.dumps([r for r in _rows(prompt) if r["span_ids"][0] not in quiet]), None
 
     report = ExtractionReport()
     atoms = extract_atoms(spans, client=LLMClient(model="x", transport=throttled_first),
@@ -198,10 +255,24 @@ def test_unread_spans_are_not_counted_as_carrying_nothing():
     assert dead_weight(rows) == []
     assert {r.label for r in rows[:25]} == {"unread"}
 
+    # Half the text unread is below the gate's read-share floor: reported, not judged.
     check = next(c for c in evaluate_novelty({"spans": summary}).checks
                  if c.name == "dead_tokens")
-    assert check.passed and check.measured
-    assert "25 spans" in check.message and "never read by extraction" in check.message
+    assert check.passed and not check.measured
+    assert "25 spans" in check.message and "tokens unread; floor 80%" in check.message
+
+
+def test_the_dead_token_share_is_over_the_read_text_only():
+    from dokimi.novelty.spans import span_summary
+
+    spans, atoms, _report = _half_lost(silent=frozenset({49}))
+
+    summary = span_summary(spans, atoms)
+    read = sum(s.tokens for s in spans[25:])
+    assert summary["tokens_carrying_nothing"] == spans[49].tokens
+    # Over the whole text it would be half this: the unread half is not in the denominator.
+    assert summary["frac_carrying_nothing"] == round(spans[49].tokens / read, 4)
+    assert summary["frac_carrying_nothing"] != round(spans[49].tokens / summary["tokens"], 4)
 
 
 def test_the_shortener_never_cuts_an_unread_span():

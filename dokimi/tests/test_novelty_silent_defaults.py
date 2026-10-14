@@ -88,6 +88,20 @@ def test_ask_in_batches_does_not_split_an_empty_reply():
 def test_ask_in_batches_does_not_send_a_chunk_below_min_size():
     sizes: list[int] = []
 
+    def answers(prompt, system):
+        sizes.append(len(prompt.splitlines()))
+        return "[]", None
+
+    result = ask_in_batches(LLMClient(model="x", transport=answers), list(range(5)), size=2,
+                            prompt=lambda chunk: "\n".join("x" for _ in chunk),
+                            parse=json.loads, min_size=2)
+    assert sizes == [2, 2]  # the one-item remainder is never asked
+    assert result.too_small == [4] and result.failed == []
+
+
+def test_ask_in_batches_fails_a_chunk_it_cannot_halve_above_min_size():
+    sizes: list[int] = []
+
     def garbled(prompt, system):
         sizes.append(len(prompt.splitlines()))
         return "not json", None
@@ -95,9 +109,10 @@ def test_ask_in_batches_does_not_send_a_chunk_below_min_size():
     result = ask_in_batches(LLMClient(model="x", transport=garbled), list(range(5)), size=5,
                             prompt=lambda chunk: "\n".join("x" for _ in chunk),
                             parse=json.loads, min_size=2)
-    assert min(sizes) == 2
-    assert sorted(result.failed + result.too_small) == list(range(5))
-    assert result.too_small  # the singletons a split left behind were never asked
+    # 5 splits into 2 + 3; neither halves into two chunks of 2, so neither is re-asked.
+    assert sizes == [5, 2, 3] and result.calls == 3 and result.retried_batches == 1
+    assert result.failed == list(range(5)) and result.too_small == []
+    assert result.last_error.startswith("JSONDecodeError: ")
 
 
 def test_ask_in_batches_does_not_split_a_transport_failure():
@@ -246,9 +261,16 @@ def test_conflict_chunks_are_not_split_into_single_statements():
     detect_conflicts(atoms, client=LLMClient(model="x", transport=garbled_above_one),
                      report=report)
     assert min(sizes) == 2  # a one-statement call has no pair to check
-    assert len(report.unchecked) == 40 and report.pairs_compared == 0
-    assert any(w.startswith("40 of 40 atoms were not checked for conflicts")
-               for w in report.warnings(len(atoms)))
+    # 40 -> 20 -> 10 -> 5 -> 2 + 3: the 2s and 3s cannot halve into pairs, so they fail
+    # with the parse error rather than becoming singletons "alone in a batch".
+    assert len(sizes) == report.calls == 31 and report.retried_batches == 15
+    assert len(report.unchecked) == 40 and report.unchecked_alone == 0
+    assert report.pairs_compared == 0
+    assert report.conflict_error.startswith("ValueError: ")
+    assert (
+        f"40 of 40 atoms were not checked for conflicts (40 in calls that failed "
+        f"(last error: {report.conflict_error}))"
+    ) in report.warnings(len(atoms))
 
 
 def test_the_response_cache_still_replays_a_parseable_batch(monkeypatch, tmp_path):
@@ -300,7 +322,8 @@ _AMBIGUOUS = (Atom(statement="alpha beta gamma delta", question="q", answer="a",
 
 @pytest.mark.parametrize("reply", [
     '{"verdict": null}', '{"why": "no verdict key"}', '{"verdict": "maybe"}',
-    '{"verdict": 1}', "[]", '{"verdict": "reta',
+    '{"verdict": 1}', "[]", '{"verdict": "reta', '{"verdict": "retained?"}',
+    '{"verdict": "Retained ?"}',
 ])
 def test_a_reply_with_no_usable_verdict_is_an_error_not_a_cached_absent(tmp_path, reply):
     atom, text = _AMBIGUOUS
@@ -349,7 +372,8 @@ def test_an_unusable_disk_cache_entry_is_asked_again(tmp_path, stored):
     assert oracle.verdict(atom, text).method == "llm"
 
 
-def _completion_counter(monkeypatch, tmp_path, content: str) -> list[int]:
+def _completion_counter(monkeypatch, tmp_path, content: str,
+                        finish_reason: str = "stop") -> list[int]:
     """Route the real default transport into a fake completion, with the response cache on."""
     import litellm
 
@@ -361,7 +385,7 @@ def _completion_counter(monkeypatch, tmp_path, content: str) -> list[int]:
         calls.append(1)
         return SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content=content),
-                                     finish_reason="stop")],
+                                     finish_reason=finish_reason)],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
         )
 
@@ -434,3 +458,147 @@ def test_a_streamed_reply_cut_at_the_output_ceiling_is_logged(monkeypatch, caplo
                                           stream=True)
     assert text == "[{\"a\": 1"
     assert any("output ceiling" in r.getMessage() for r in caplog.records)
+
+
+# Every other caller of the response cache: routing (text), the answerer (text), and the
+# json_object callers (the grader, verify_atoms, the need graph). Each reply below parses
+# or is prose, so only a shape test keeps it out of the cache.
+
+def _route():
+    from dokimi.novelty.routing import Candidate, model_routing
+
+    cards = [Candidate("alpha", "does alpha things"), Candidate("beta", "does beta things")]
+    return model_routing(cards, ["do alpha"], client=LLMClient(model="m", provider="openai"))
+
+
+@pytest.mark.parametrize("reply, asked", [
+    ('{"pick":', 2), ('{"choice": 1}', 2), ('{"pick": 1}', 1), ('{"pick": 0}', 1),
+    ('{"pick": null}', 1), ('{"pick": "2"}', 1),
+    ('{"pick": "abc"}', 2), ('{"pick": 2.9}', 2), ('{"pick": [1]}', 2), ('{"pick": 999}', 2),
+    ('{"pick": -1}', 2), ('{"pick": true}', 2),
+])
+def test_routing_caches_only_a_reply_that_names_a_pick(monkeypatch, tmp_path, reply, asked):
+    calls = _completion_counter(monkeypatch, tmp_path, reply)
+    for _ in range(2):
+        result = _route()
+        assert result["n_failed"] == 0
+    assert len(calls) == asked  # a cut reply is an abstention this run, not a cached one
+
+
+def _measure_once(judge_reply: str = '{"verdict": "correct_complete"}'):
+    from dokimi.novelty.measure import run_measurement
+    from dokimi.novelty.probes import Probe
+
+    atom = Atom(statement="x is 1", question="What is x?", answer="1", span_ids=("s1",))
+    probe = Probe(atom_id=atom.id, kind="direct", question=atom.question, expected="1")
+    judge = LLMClient(model="j", transport=lambda p, s: (judge_reply, None))
+    return run_measurement([atom], [probe], "x is 1", concurrency=1, judge=judge,
+                           answerer=LLMClient(model="m", provider="openai"))
+
+
+@pytest.mark.parametrize("answer, asked", [("1\nconfidence: 0.9", 2), ("The value of x is", 4)])
+def test_the_answerer_caches_only_an_answer_that_reached_its_confidence_line(
+        monkeypatch, tmp_path, answer, asked):
+    calls = _completion_counter(monkeypatch, tmp_path, answer)
+    for _ in range(2):
+        _measure_once()
+    assert len(calls) == asked  # two arms; a cut answer is asked again on every run
+
+
+def test_an_answer_with_no_text_at_all_gets_the_max_tokens_hint(monkeypatch, tmp_path):
+    calls = _completion_counter(monkeypatch, tmp_path, None)
+    result = _measure_once()
+    assert all(run.errored for run in result.runs)
+    assert "raise --max-tokens" in result.runs[0].response
+    _measure_once()
+    assert len(calls) == 4  # nothing was stored
+
+
+def test_a_hedged_verdict_stored_by_the_v2_cache_is_not_read(tmp_path, monkeypatch):
+    from dokimi.novelty import retention
+
+    atom, text = _AMBIGUOUS
+    monkeypatch.setattr(retention, "_CACHE_VERSION", b"retention-cache-v2\0")
+    old_key = _key(atom, text)
+    monkeypatch.undo()
+    (tmp_path / f"{old_key}.json").write_text('{"verdict": "retained", "score": 0.4}',
+                                              encoding="utf-8")
+    oracle = RetentionOracle(
+        client=LLMClient(model="x", transport=lambda p, s: ('{"verdict": "absent"}', None)),
+        cache_dir=tmp_path,
+    )
+    assert oracle.verdict(atom, text).method == "llm"
+
+
+def test_a_cut_answer_logs_the_truncation_on_every_run(monkeypatch, tmp_path, caplog):
+    from dokimi import llm
+
+    _completion_counter(monkeypatch, tmp_path, "The value of x is", finish_reason="length")
+    with caplog.at_level(logging.WARNING, logger=llm.__name__):
+        for _ in range(2):
+            _measure_once()
+    assert sum("output ceiling" in r.getMessage() for r in caplog.records) == 4
+
+
+def test_an_empty_answer_is_a_dropped_pair_not_a_wrong_one(monkeypatch, tmp_path):
+    calls = _completion_counter(monkeypatch, tmp_path, "")
+    result = _measure_once()
+    assert all(run.errored for run in result.runs)
+    assert "raise --max-tokens" in result.runs[0].response
+    assert result.paired("lenient")["n_unpaired_dropped"] == 1
+    _measure_once()
+    assert len(calls) == 4  # not cached either
+
+
+def _grade_twice(monkeypatch, tmp_path, reply):
+    from dokimi.novelty.measure import _grade
+    from dokimi.novelty.probes import Probe
+
+    calls = _completion_counter(monkeypatch, tmp_path, reply)
+    probe = Probe(atom_id="a", kind="direct", question="q", expected="1")
+    verdicts = [_grade(probe, "1", LLMClient(model="j", provider="openai")) for _ in range(2)]
+    return verdicts, len(calls)
+
+
+@pytest.mark.parametrize("reply, verdict, asked", [
+    ('{"verdict": null}', "error", 2), ('{"why": "no verdict"}', "error", 2),
+    ('{"verdict": ""}', "error", 2), ('{"verdict": "incorrect"}', "wrong_other", 2),
+    ('{"verdict": "correct_complete"}', "correct_complete", 1),
+])
+def test_the_grader_caches_only_a_named_verdict(monkeypatch, tmp_path, reply, verdict, asked):
+    verdicts, n_calls = _grade_twice(monkeypatch, tmp_path, reply)
+    assert verdicts == [verdict, verdict] and n_calls == asked
+
+
+@pytest.mark.parametrize("reply, label, asked", [
+    ('{"verdict": null}', "unchecked", 2), ('{"verdict": "maybe"}', "unchecked", 2),
+    ('{"verdict": "supported"}', "supported", 1),
+])
+def test_verify_atoms_caches_only_a_faithfulness_verdict(monkeypatch, tmp_path, reply, label,
+                                                         asked):
+    from dokimi.novelty.atoms import verify_atoms
+    from dokimi.novelty.spans import segment
+
+    calls = _completion_counter(monkeypatch, tmp_path, reply)
+    spans = segment("Setting 1 defaults to 10.")
+    for _ in range(2):
+        atom = Atom(statement="Setting 1 defaults to 10.", question="q", answer="10",
+                    span_ids=(spans[0].id,))
+        verify_atoms([atom], spans, client=LLMClient(model="m", provider="openai"))
+        assert atom.faithfulness == label
+    assert len(calls) == asked
+
+
+@pytest.mark.parametrize("reply, n_nodes, asked", [
+    ('{"nodes": []}', 0, 2), ('{"edges": []}', 0, 2), ('{"nodes": [{"text": ""}]}', 0, 2),
+    ('{"nodes": [{"id": "n1", "text": "pick a backend"}]}', 1, 1),
+])
+def test_the_need_graph_caches_only_a_graph_with_a_node(monkeypatch, tmp_path, reply,
+                                                        n_nodes, asked):
+    from dokimi.novelty.needs import build_need_graph
+
+    calls = _completion_counter(monkeypatch, tmp_path, reply)
+    for _ in range(2):
+        graph = build_need_graph("n", "d", client=LLMClient(model="m", provider="openai"))
+        assert len(graph.nodes) == n_nodes
+    assert len(calls) == asked
