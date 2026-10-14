@@ -300,7 +300,8 @@ label. The other two:
    drift.
 4. **test** — pytest from `requirements.lock.txt`, offline, with coverage
    (Python 3.11–3.14); on a PR, 80% of the changed lines must be covered.
-5. **package-smoke** — builds/installs the package and exercises the console and
+5. **package-smoke** — builds/installs the package with a fresh resolve of its
+   dependency ranges (Python 3.11 and 3.13) and exercises the console and
    module entry points.
 
 **`agent-quality.yml`** — task and benchmark checks:
