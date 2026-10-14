@@ -156,9 +156,11 @@ def analyze(
     """
     warnings: list[str] = []
     span_list = spans.segment(text)
+    extraction = atoms_mod.ExtractionReport()
     atom_list = atoms_mod.extract_atoms(
-        span_list, client=extractor, cap=config.max_atoms
+        span_list, client=extractor, cap=config.max_atoms, report=extraction
     )
+    warnings.extend(extraction.warnings(len(span_list)))
     if tier:
         # From what this run did, not the tier's text: an override or an atom set under
         # the cap changes which claims are forfeit.
@@ -263,12 +265,14 @@ def analyze(
     categories: dict[str, str] = {}
     conflicts: list[dict] = []
     if config.classify_content and atom_list:
+        judged = classify.ClassifyReport()
         verdicts = classify.judge_value(
-            atom_list, client=extractor, task=graph.task_statement()
+            atom_list, client=extractor, task=graph.task_statement(), report=judged
         )
-        conflicts = classify.detect_conflicts(atom_list, client=extractor)
+        conflicts = classify.detect_conflicts(atom_list, client=extractor, report=judged)
         classify.apply_conflicts(verdicts, conflicts)
         categories = classify.categorize(atom_list, verdicts, outcomes)
+        warnings.extend(judged.warnings(len(atom_list)))
     elif not config.classify_content:
         warnings.append("content categories were not judged (--no-classify)")
 
@@ -355,6 +359,10 @@ def analyze(
                 "resource_words_on_disk but carry no atoms"
             )
 
+    oracle_warning = retention.error_warning(oracle)
+    if oracle_warning:
+        warnings.append(oracle_warning)
+
     payload = report.build_novelty_artifact(
         artifact_kind=config.artifact_kind,
         artifact_ref=config.artifact_ref,
@@ -384,6 +392,7 @@ def analyze(
         sole_carriers=attribute.sole_carriers(attributions),
         topics=attribute.topic_rollup(attributions),
         conflicts=conflicts,
+        extraction=extraction.as_dict(),
         cost=roll_up_cost([extractor, answerer, judge]),
         warnings=warnings,
     )

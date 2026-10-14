@@ -314,6 +314,91 @@ def test_an_extractor_that_fails_every_batch_fails_the_run(tmp_path):
         analyze(body, config, extractor=extractor, answerer=answerer, judge=judge)
 
 
+def test_a_failed_value_judge_leaves_atoms_out_of_the_categories_and_says_so(tmp_path):
+    scripted = _scripted("informed")
+
+    def judge_down(prompt, system):
+        if "judge how it functions" in prompt:
+            raise RuntimeError("throttled")
+        return scripted(prompt, system)
+
+    path = tmp_path / "s" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                           description=description, frontmatter=frontmatter, concurrency=1)
+    _, answerer, judge = _clients()
+    extractor = LLMClient(model="extractor-m", role="extractor", transport=judge_down)
+    artifact = analyze(body, config, extractor=extractor, answerer=answerer,
+                       judge=judge).artifact
+    assert sum(artifact["categories"].values()) == 0
+    assert any(w.startswith(f"{len(_ATOMS)} of {len(_ATOMS)} atoms got no need/scaffolding")
+               for w in artifact["warnings"])
+
+
+def test_a_failed_conflict_check_reaches_the_artifact(tmp_path):
+    scripted = _scripted("informed")
+
+    def conflicts_down(prompt, system):
+        if "Find pairs of statements" in prompt:
+            raise RuntimeError("throttled")
+        return scripted(prompt, system)
+
+    artifact = _analyze_with(tmp_path, conflicts_down)
+    n = len(_ATOMS)
+    assert any(w.startswith(f"{n} of {n} atoms were not checked for conflicts")
+               for w in artifact["warnings"])
+    assert any("0 of 1 atom pairs shared a call" in w for w in artifact["warnings"])
+
+
+def test_a_truncating_extractor_is_recovered_and_an_unreadable_span_is_a_warning(tmp_path):
+    import re
+
+    scripted = _scripted("informed")
+
+    def ceiling(prompt, system):
+        # Truncates any multi-span extraction reply, as a 4096-token default does on a
+        # long batch, and never parses the background span at all.
+        if "Extract the checkable knowledge" not in prompt:
+            return scripted(prompt, system)
+        ids = set(re.findall(r"^\[(s\d+)\]", prompt, flags=re.M))
+        rows = json.dumps([a for a in _ATOMS if set(a["span_ids"]) & ids])
+        if len(ids) > 1 or "research prototype" in prompt:
+            rows = rows[: len(rows) // 2] or "["
+        return rows, None
+
+    path = tmp_path / "s" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                           description=description, frontmatter=frontmatter, concurrency=1)
+    _, answerer, judge = _clients()
+    extractor = LLMClient(model="extractor-m", role="extractor", transport=ceiling)
+    result = analyze(body, config, extractor=extractor, answerer=answerer, judge=judge)
+    artifact = result.artifact
+    assert artifact["atoms"]["n"] == len(_ATOMS)
+    lost = [w for w in artifact["warnings"]
+            if w.startswith("atom extraction could not read 1 of")]
+    assert len(lost) == 1
+    background = next(s for s in result.spans if "research prototype" in s.text)
+    assert artifact["extraction"]["unread_span_ids"] == [background.id]
+    assert artifact["extraction"]["retried_batches"] >= 1
+    assert artifact["extraction"]["calls"] > artifact["extraction"]["batches"]
+    # The unread span is reported, not counted as dead weight.
+    no_atom = sum(s.tokens for s in result.spans if not s.atom_ids)
+    assert (artifact["spans"]["n_unread"], artifact["spans"]["tokens_unread"]) == (
+        1, background.tokens)
+    assert artifact["spans"]["tokens_carrying_nothing"] == no_atom - background.tokens
+    assert all(row["span_id"] != background.id for row in artifact["views"]["dead_weight"])
+    assert artifact["attribution"]["spans_by_label"]["unread"] == 1
+    for candidate in result.candidates:
+        assert background.id in candidate.kept_span_ids
+    save_artifact("novelty", artifact, tmp_path / "novelty.json")  # validates the new fields
+    assert f"| unread spans | 1 ({background.tokens} tok) |" in render_novelty_markdown(artifact)
+
+
 def test_no_atoms_is_not_reported_as_a_skipped_classification(tmp_path):
     transport = _scripted("informed")
     empty = LLMClient(model="extractor-m", role="extractor", transport=lambda p, s: (
@@ -495,3 +580,32 @@ def test_estimate_brackets_counted_calls(tmp_path):
         if not (estimate["total_calls"] <= len(calls)
                 <= estimate["total_calls_if_every_pair_escalates"]):
             pytest.fail(f"{tier}: counted {len(calls)} outside {estimate}")
+
+
+def _analyze_with(tmp_path, transport):
+    path = tmp_path / "s" / "SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text(SKILL, encoding="utf-8")
+    kind, name, description, frontmatter, body = load_artifact_text(f"skill:{path}")
+    config = AnalyzeConfig(artifact_ref=f"skill:{path}", artifact_kind=kind, name=name,
+                           description=description, frontmatter=frontmatter, concurrency=1)
+    _, answerer, judge = _clients()
+    extractor = LLMClient(model="extractor-m", role="extractor", transport=transport)
+    return analyze(body, config, extractor=extractor, answerer=answerer,
+                   judge=judge).artifact
+
+
+def test_a_failed_adjudication_is_a_warning_and_a_count(tmp_path):
+    scripted = _scripted("informed")
+
+    def adjudicator_down(prompt, system):
+        if "Can the STATEMENT be recovered" in prompt:
+            raise RuntimeError("throttled")
+        return scripted(prompt, system)
+
+    artifact = _analyze_with(tmp_path, adjudicator_down)
+    errors = artifact["retention"]["llm_errors"]
+    assert errors >= 1
+    assert any(w.startswith(f"{errors} of {artifact['retention']['llm_escalations']} "
+                            "retention adjudications got no usable verdict")
+               for w in artifact["warnings"])
