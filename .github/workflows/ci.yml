@@ -44,7 +44,8 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: '3.13'
-      - run: pip install 'ruff>=0.6'
+      # 0.12: per-file-target-version, and the version syntax errors it enables.
+      - run: pip install 'ruff>=0.12'
       - name: ruff check
         run: ruff check .
 

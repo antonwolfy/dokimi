@@ -46,7 +46,7 @@ dev = [
   "pytest-mock>=3.12.0",
   "pytest-socket>=0.7",
   "diff-cover>=10.0",
-  "ruff>=0.6",
+  "ruff>=0.12",
   "mypy>=1.8",
   "types-PyYAML",
   "types-jsonschema",
@@ -79,6 +79,15 @@ dokimi = ["schemas/*.json", "repos/profiles/*.yaml", "repos/support/*.py"]
 line-length = 100
 target-version = "py311"
 extend-exclude = ["benchmarks", "data"]
+
+# These two run on another interpreter, not dokimi's: the hook on the task
+# image's python3, the proxy in the sidecar (DOKIMI_PROXY_IMAGE can be any image
+# with Python 3). Either may still be 3.10, so keep its syntax checked there.
+# per-file-target-version needs ruff 0.9.8; the version-related syntax errors it
+# feeds are reported by default from ruff 0.12.
+[tool.ruff.per-file-target-version]
+"dokimi/repos/support/no_background.py" = "py310"
+"dokimi/harnesses/egress_proxy.py" = "py310"
 
 # Correctness-focused gate to start (pyflakes + bugbear + syntax). Stylistic
 # modernization (import sorting, PEP 585/604 hints) is deferred to a follow-up
