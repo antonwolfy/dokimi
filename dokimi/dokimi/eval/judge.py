@@ -553,20 +553,21 @@ class Judge:
                 raise ValueError(f"Missing keys in judge response: {missing}")
             # A non-numeric dimension ("N/A", true, NaN, Infinity) is a formatting
             # failure too. A numeric string ("7") is read as a number, and a finite
-            # number off the 0-100 scale is clamped, as panel.py does.
+            # number off the 0-100 scale is clamped, as panel.py does. Every score
+            # is stored as a float, so 80 and "80" end up the same.
             for dim in weights.keys() | {"specificity"}:
                 value = scores[dim]
-                if isinstance(value, str):
-                    try:
-                        value = scores[dim] = float(value)
-                    except ValueError:
-                        raise ValueError(f"Judge score {dim!r} is not a number: {value!r}") from None
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                if isinstance(value, bool) or not isinstance(value, (int, float, str)):
                     raise ValueError(f"Judge score {dim!r} is not a number: {value!r}")
-                if not math.isfinite(value):
+                try:
+                    number = float(value)
+                except ValueError:
+                    raise ValueError(f"Judge score {dim!r} is not a number: {value!r}") from None
+                except OverflowError:  # an integer literal past the float range
+                    number = math.inf
+                if not math.isfinite(number):
                     raise ValueError(f"Judge score {dim!r} is not finite: {value!r}")
-                if not 0 <= value <= 100:
-                    scores[dim] = min(max(value, 0), 100)
+                scores[dim] = min(max(number, 0.0), 100.0)
             self._cap_for_wrong_figures(scores)
             return scores, self._compute_aggregate(scores, weights)
 

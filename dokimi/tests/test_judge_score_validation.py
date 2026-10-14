@@ -3,8 +3,9 @@
 
 """A judge reply is used and cached only if every dimension is a finite number.
 
-NaN, Infinity, booleans and numeric strings used to be accepted, scored and
-stored, so one bad reply replayed on every later run. Stubs only, no network.
+NaN, Infinity and booleans used to be accepted, scored and stored, so one bad
+reply replayed on every later run. A numeric string is read as a number, as
+panel.py does. Stubs only, no network.
 """
 
 import json
@@ -53,8 +54,10 @@ def _judge():
     return judge
 
 
-def _score(judge):
-    return judge._judge_answer(library_name="L", question="q", answer="a", context="c")
+def _score(judge, ground_truth=None):
+    return judge._judge_answer(
+        library_name="L", question="q", answer="a", context="c", ground_truth=ground_truth
+    )
 
 
 def _entries(cache_dir):
@@ -72,6 +75,7 @@ REJECTED = [
     pytest.param(_reply(correctness="X").replace('"X"', "Infinity"), id="infinity"),
     pytest.param(_reply(correctness="X").replace('"X"', "-Infinity"), id="minus-infinity"),
     pytest.param(_reply(correctness="X").replace('"X"', "1e999"), id="1e999"),
+    pytest.param(_reply(correctness="X").replace('"X"', "1" + "0" * 400), id="int-past-float-range"),
     pytest.param(_reply(specificity="X").replace('"X"', "NaN"), id="nan-in-unweighted-specificity"),
     pytest.param(_reply(correctness=True), id="true"),
     pytest.param(_reply(completeness=False), id="false"),
@@ -105,6 +109,7 @@ def test_valid_reply_is_unchanged_and_cached(cache_dir, monkeypatch):
     calls = _stub(monkeypatch, [_reply(correctness=90, completeness=70.5)])
     scores = _score(_judge())
     assert (scores["correctness"], scores["completeness"]) == (90, 70.5)
+    assert all(type(scores[d]) is float for d in DIMS)
     assert scores["aggregate"] == round((90 * 2 + 70.5 + 80 + 80) / 5, 1)
     assert len(calls) == 1 and len(_entries(cache_dir)) == 1
 
@@ -122,6 +127,20 @@ def test_out_of_range_score_is_clamped_to_the_scale(cache_dir, monkeypatch, give
     scores = _score(_judge())
     assert scores["completeness"] == scores["specificity"] == kept
     assert 0 <= scores["aggregate"] <= 100
+
+
+@pytest.mark.parametrize("bad", [
+    pytest.param(_reply(factual_grounding="X").replace('"X"', "NaN"), id="nan"),
+    pytest.param(_reply(factual_grounding=True), id="true"),
+    pytest.param(_reply(), id="missing"),
+])
+def test_grounded_reply_checks_factual_grounding_too(cache_dir, monkeypatch, bad):
+    calls = _stub(monkeypatch, [bad, _reply(factual_grounding=150)])
+    scores = _score(_judge(), ground_truth="excerpt")
+    assert scores["grounded"] is True
+    assert scores["factual_grounding"] == 100.0  # clamped, and weighted 2 like correctness
+    assert scores["aggregate"] == round((80 * 2 + 80 + 80 + 80 + 100 * 2) / 7, 1)
+    assert len(calls) == 2 and len(_entries(cache_dir)) == 1
 
 
 def test_nan_correctness_no_longer_bypasses_the_wrong_figure_cap(cache_dir, monkeypatch):
