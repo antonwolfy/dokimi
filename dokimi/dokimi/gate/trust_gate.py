@@ -33,6 +33,11 @@ DEFAULTS = {
     "min_agreement": 0.50,
     # Minimum fraction of questions where retrieval returned at least one doc
     "min_retrieval_hit_rate": 0.60,
+    # Share of evaluations that must record a retrieval outcome (``retrieval_hit``) before
+    # the hit rate is judged. Below it the rate describes a subset (e.g. 5 recorded of 20
+    # reads as 100%), so the check is reported as not measured. The complement of
+    # ``max_zero_fraction``: the gate already lets at most a fifth of rows be unusable.
+    "min_retrieval_coverage": 0.80,
     # Maximum allowed variance across multi-run scores (std of per-run WITH averages)
     "max_multirun_std": 5.0,
 }
@@ -196,9 +201,24 @@ def evaluate_trust(
     # context-arm prompt. The judge stamps that per evaluation as
     # ``retrieval_hit`` (from the answer's retrieved_docs / doc_source); eval
     # artifacts judged before that carry no retrieval outcome at all, and the
-    # check reports "not measured" for them rather than a pass.
+    # check reports "not measured" for them rather than a pass. So does a mix of
+    # the two below ``min_retrieval_coverage``: the rate would describe a subset.
     measured = [e["retrieval_hit"] for e in valid if isinstance(e.get("retrieval_hit"), bool)]
-    if measured:
+    if measured and len(measured) / n < cfg["min_retrieval_coverage"]:
+        checks.append(TrustCheck(
+            name="retrieval_hit_rate",
+            passed=True,
+            value=None,
+            threshold=cfg["min_retrieval_hit_rate"],
+            message=(
+                f"Not measured: only {len(measured)} of {n} evaluations record a retrieval "
+                f"outcome (retrieval_hit), under the {cfg['min_retrieval_coverage']:.0%} coverage "
+                f"floor; {sum(measured)} of those {len(measured)} hit"
+            ),
+            severity="warn",
+            measured=False,
+        ))
+    elif measured:
         retrieval_hits = sum(measured)
         hit_rate = retrieval_hits / len(measured)
         coverage = "" if len(measured) == n else f"; {n - len(measured)} unrecorded"

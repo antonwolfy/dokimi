@@ -210,3 +210,33 @@ class TestRetrievalHitRate:
         verdict = next(line for line in format_trust_block(v).splitlines()
                        if line.startswith("**Verdict:"))
         assert verdict.endswith(f"(1 of {len(v.checks)} not measured)")
+
+    def test_low_coverage_is_not_measured(self):
+        """5 recorded hits among 20 evaluations must not read as a 100% hit rate."""
+        v = evaluate_trust(self._judged(n_hit=5, n_miss=0) + _evals(15))
+        check = next(c for c in v.checks if c.name == "retrieval_hit_rate")
+        assert not check.measured
+        assert check.value is None
+        assert "5 of 20" in check.message and "coverage floor" in check.message
+        assert v.not_measured == ["retrieval_hit_rate"]
+        verdict = next(line for line in format_trust_block(v).splitlines()
+                       if line.startswith("**Verdict:"))
+        assert verdict.endswith(f"(1 of {len(v.checks)} not measured)")
+
+    def test_coverage_at_floor_is_measured(self):
+        v = evaluate_trust(self._judged(n_hit=12, n_miss=4) + _evals(4))
+        check = next(c for c in v.checks if c.name == "retrieval_hit_rate")
+        assert check.measured
+        assert check.value == 0.75
+        assert "4 unrecorded" in check.message
+
+    def test_report_json_lists_not_measured_checks(self):
+        import json
+
+        from dokimi.report.generator import ReportGenerator
+
+        report = json.loads(ReportGenerator().generate_report(
+            {"evaluations": _evals(20)}, {"questions": []}, output_format="json",
+        ))
+        assert report["trust"]["verdict"] == "✅ PASS"
+        assert report["trust"]["not_measured"] == ["retrieval_hit_rate"]
