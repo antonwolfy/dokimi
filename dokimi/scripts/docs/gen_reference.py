@@ -30,13 +30,17 @@ sys.path.insert(0, str(PROJECT))  # the package is run from the tree, not instal
 from dokimi.cli import build_parser  # noqa: E402
 
 
-SKIP_API = {("dokimi", "commands"), ("dokimi", "__main__")}
+SKIP_API = {("dokimi", "commands")}
 
 
 def _subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.ArgumentParser]:
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
-            return dict(action.choices)
+            subs: dict[str, argparse.ArgumentParser] = {}
+            for name, sub in action.choices.items():
+                if sub not in subs.values():  # an alias maps to the same parser
+                    subs[name] = sub
+            return subs
     return {}
 
 
@@ -48,6 +52,7 @@ def _write_help(fd, parser: argparse.ArgumentParser, level: int) -> None:
 
 def cli_reference() -> None:
     os.environ["COLUMNS"] = "100"  # argparse wraps to the terminal; keep pages stable
+    os.environ["PYTHON_COLORS"] = "0"  # 3.14+ argparse colours help on a TTY
     root = build_parser()
     nav = mkdocs_gen_files.Nav()
     with mkdocs_gen_files.open("reference/cli/index.md", "w") as fd:
@@ -68,13 +73,15 @@ def api_reference() -> None:
     nav = mkdocs_gen_files.Nav()
     for path in sorted(PACKAGE.rglob("*.py")):
         parts = path.relative_to(PACKAGE.parent).with_suffix("").parts
+        doc = Path(*parts).with_suffix(".md")
         if parts[-1] == "__init__":
+            # A package's page is its section's index (navigation.indexes).
             parts = parts[:-1]
+            doc = doc.with_name("index.md")
         if any(p.startswith("_") for p in parts) or parts[:2] in SKIP_API:
             continue
         if not (path.parent / "__init__.py").exists():
             continue
-        doc = Path(*parts).with_suffix(".md")
         nav[parts] = doc.as_posix()
         with mkdocs_gen_files.open(Path("reference/api", doc), "w") as fd:
             fd.write(f"::: {'.'.join(parts)}\n")
