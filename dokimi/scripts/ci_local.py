@@ -25,10 +25,16 @@ Differences from CI, all printed as notices:
   --offline; the docker job runs only with --with-docker.
 - Semgrep Secrets is an org-level check with no workflow file here; it runs as
   `semgrep scan --config p/secrets` when semgrep is on PATH, else is skipped.
+- Steps that diff against `origin/$BASE_REF` (in CI, origin is intel/dokimi)
+  use `<remote>/$BASE_REF` instead: <remote> is --remote / CI_LOCAL_REMOTE, else
+  the remote whose URL is github.com/intel/dokimi, else origin. In a fork clone
+  origin is often the fork or another repo. The ref is printed first; if it is
+  missing or shares no history with HEAD, those steps fail with that reason
+  instead of running. Nothing in the git config or refs is changed.
 
 Usage:
   python scripts/ci_local.py tools                # pip specs `make dev` installs
-  python scripts/ci_local.py run [--jobs a,b] [--offline] [--with-docker]
+  python scripts/ci_local.py run [--jobs a,b] [--offline] [--with-docker] [--remote intel]
 """
 
 from __future__ import annotations
@@ -60,6 +66,36 @@ PIP_INSTALL = re.compile(r"^\s*(python -m )?pip install\b")
 PAIRED = {"-r": "-r", "--requirement": "-r", "-c": "-c", "--constraint": "-c",
           "-e": "-e", "--editable": "-e"}
 URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")  # `-e git+https://...` is not a path
+UPSTREAM_URL = re.compile(r"github\.com[:/]intel/dokimi(\.git)?/?$", re.IGNORECASE)
+ORIGIN_BASE = re.compile(r"\borigin/(?=\$\{?BASE_REF\b)")  # `origin/$BASE_REF` in a step
+
+
+def _git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True)
+
+
+def upstream_remote(override: str | None) -> str:
+    """The remote standing in for CI's origin: the override, else the remote whose
+    URL is intel/dokimi (origin first if several are), else origin."""
+    if override:
+        return override
+    lines = _git("config", "--get-regexp", r"^remote\..*\.url$").stdout.splitlines()
+    names = [key[len("remote."):-len(".url")]
+             for key, _, url in (line.partition(" ") for line in lines)
+             if UPSTREAM_URL.search(url.strip())]
+    return "origin" if "origin" in names or not names else names[0]
+
+
+def resolve_base(base: str, remote: str) -> tuple[str, str | None]:
+    """`<remote>/<base>`, and why it cannot be diffed against (None if it can)."""
+    ref = f"{remote}/{base}"
+    pick = "or choose the remote with --remote / CI_LOCAL_REMOTE"
+    if _git("rev-parse", "--verify", "--quiet", f"refs/remotes/{ref}^{{commit}}").returncode:
+        return ref, f"{ref} does not exist: run `git fetch {remote}`, {pick}"
+    if _git("merge-base", "HEAD", ref).returncode:
+        return ref, (f"{ref} has no merge base with HEAD: {remote} is not intel/dokimi "
+                     f"or the clone is shallow (`git fetch --unshallow {remote}`), {pick}")
+    return ref, None
 
 
 def load_workflows() -> list[tuple[str, dict]]:
@@ -189,6 +225,11 @@ def run(args: argparse.Namespace) -> int:
     with tempfile.TemporaryDirectory(prefix="ci-local-") as t:
         tmp = Path(t)
         ctx = Context(args.base, py, tmp)
+        remote = upstream_remote(args.remote)
+        base_ref, base_err = resolve_base(args.base, remote)
+        print(f"Base: {base_ref} (CI's origin/{args.base})")
+        if base_err:
+            print(f"ERROR: {base_err}\n  Steps that diff against the base will fail.")
         summary = tmp / "step-summary.md"
         base_env = dict(os.environ, RUNNER_TEMP=str(tmp), GITHUB_STEP_SUMMARY=str(summary),
                         GITHUB_OUTPUT=str(tmp / "github-output"), GITHUB_WORKSPACE=str(REPO),
@@ -229,6 +270,12 @@ def run(args: argparse.Namespace) -> int:
                     if "if" in step and not ctx.condition(str(step["if"])):
                         record(name, "skip (step condition false)")
                         continue
+                    if ORIGIN_BASE.search(script):
+                        if base_err:
+                            print(f"\n=== {name}\nERROR: {base_err}")
+                            record(name, "FAIL (no usable base ref, see ERROR)")
+                            continue
+                        script = ORIGIN_BASE.sub(f"{remote}/", script)
                     try:
                         script = ctx.expand(script)
                         step_env = {k: ctx.expand(str(v)) for src in (wf, job, step)
@@ -276,7 +323,11 @@ def main() -> int:
     r = sub.add_parser("run", help="run the PR workflows' steps")
     r.add_argument("--jobs", help="comma-separated job ids to run (default: all)")
     r.add_argument("--base", default=os.environ.get("BASE_REF", "main"),
-                   help="base branch, compared as origin/<base> (default: main)")
+                   help="base branch, compared as <remote>/<base> (default: main)")
+    r.add_argument("--remote", default=os.environ.get("CI_LOCAL_REMOTE"),
+                   help="remote with intel/dokimi's branches, standing in for CI's origin "
+                        "(default: $CI_LOCAL_REMOTE, else the remote whose URL is "
+                        "github.com/intel/dokimi, else origin)")
     r.add_argument("--offline", action="store_true", help="skip steps that need the network")
     r.add_argument("--with-docker", action="store_true", help="also run the docker job")
     args = ap.parse_args()
