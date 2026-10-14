@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -259,10 +260,18 @@ class JudgePanel:
 
         def parse(raw: str) -> "tuple[Dict[str, Any], Dict[str, float]]":
             data = self._extract_json(raw)
-            # A non-numeric dimension ("N/A") is a formatting failure too.
-            scores = {
-                k: max(0.0, min(100.0, float(data[k]))) for k in SCORE_FIELDS if k in data
-            }
+            if not isinstance(data, dict):
+                raise ValueError("judge reply is not a JSON object")
+            missing = [k for k in SCORE_FIELDS if k not in data]
+            if missing:
+                raise ValueError(f"Missing keys in judge response: {missing}")
+            # A non-numeric ("N/A"), boolean or non-finite dimension is a
+            # formatting failure too; the clamp alone would turn NaN into 100.
+            raw_scores = {k: data[k] for k in SCORE_FIELDS}
+            if any(isinstance(v, bool) or not math.isfinite(float(v))
+                   for v in raw_scores.values()):
+                raise ValueError("judge reply has a non-numeric or non-finite score")
+            scores = {k: max(0.0, min(100.0, float(v))) for k, v in raw_scores.items()}
             return data, scores
 
         def parses(raw: str) -> bool:
