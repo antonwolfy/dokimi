@@ -44,19 +44,22 @@ def _judge_provider_actions(parser, path=()):
 NOT_THE_JUDGE_CLASS = {"novelty analyze --judge-provider", "novelty probe --judge-provider"}
 
 
-def test_cli_offers_only_judge_providers_the_judge_accepts():
+def test_every_judge_provider_flag_offers_exactly_judge_providers():
+    # Equality, not subset: a hardcoded list that merely omits a rejected
+    # provider (as ``eval score`` had) still drifts from what Judge accepts.
     actions = dict(_judge_provider_actions(build_parser()))
     for flag in ("benchmark run --judge-provider", "arms run --judge-provider",
                  "arms matrix-run --judge-provider", "subjects run --judge-provider",
-                 "evaluate --judge-provider"):
+                 "evaluate --judge-provider", "eval score --judge-provider",
+                 "eval judge-validity --escalate-provider"):
         assert flag in actions
     assert NOT_THE_JUDGE_CLASS <= actions.keys()
     for flag in NOT_THE_JUDGE_CLASS:
         del actions[flag]
     offenders = {
-        flag: sorted(set(choices) - set(JUDGE_PROVIDERS))
+        flag: list(choices)
         for flag, choices in actions.items()
-        if not set(choices) <= set(JUDGE_PROVIDERS)
+        if tuple(choices) != JUDGE_PROVIDERS
     }
     assert not offenders
 
