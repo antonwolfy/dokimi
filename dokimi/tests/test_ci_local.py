@@ -111,3 +111,54 @@ def test_pip_install_line_dropped_rest_of_step_runs(env: dict[str, Any]) -> None
     (cl.WORKFLOWS / "x.yml").write_text(wf)
     cl.run(ns())
     assert [c["cmd"][-1].strip() for c in env["calls"]] == ["echo after"]
+
+
+PY_WF = """on: pull_request
+jobs:
+  lint:
+    steps:
+      - uses: actions/setup-python@v1
+        with:
+          python-version: '{single}'
+      - run: echo lint
+  other:
+    steps:
+      - uses: actions/setup-python@v1
+        with:
+          python-version: '{single}'
+  test:
+    strategy:
+      matrix:
+        python-version: ['3.96', '{here}', '3.99']
+    steps:
+      - uses: actions/setup-python@v1
+        with:
+          python-version: ${{{{ matrix.python-version }}}}
+  odd:
+    steps:
+      - uses: actions/setup-python@v1
+        with:
+          python-version: '3.98'
+"""
+
+
+def test_ci_pythons_reads_single_version_and_matrix_legs(env: dict[str, Any]) -> None:
+    """The most-named literal setup-python version, and every matrix leg once."""
+    (cl.WORKFLOWS / "x.yml").write_text(PY_WF.format(single="3.97", here=PYV))
+    assert cl.ci_pythons() == ("3.97", ["3.96", PYV, "3.99"])
+
+
+def test_summary_names_the_uncovered_legs_and_a_python_mismatch(
+        env: dict[str, Any], capsys: Any) -> None:
+    """Legs not run are the matrix minus this venv's Python; a venv on another
+    Python than CI's single-version jobs gets a notice, at the start and the end."""
+    (cl.WORKFLOWS / "x.yml").write_text(PY_WF.format(single="3.97", here=PYV))
+    cl.run(ns())
+    out = capsys.readouterr().out
+    others = ", ".join(v for v in ("3.96", PYV, "3.99") if v != PYV)
+    assert f"matrix legs on other Pythons ({others})" in out
+    assert out.count(f"this venv runs Python {PYV}, CI's single-version jobs 3.97") == 2
+
+    (cl.WORKFLOWS / "x.yml").write_text(PY_WF.format(single=PYV, here=PYV))
+    cl.run(ns())
+    assert "this venv runs Python" not in capsys.readouterr().out

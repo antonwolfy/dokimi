@@ -20,7 +20,8 @@ Differences from CI, all printed as notices:
   on a copy of the tracked tree instead, so the dev venv stays as CI's.
 - Every step runs even when an earlier one fails, so one failure does not hide
   the next (CI stops a job at its first failing step).
-- A matrix runs one leg: the dev venv's Python.
+- A matrix runs one leg: the dev venv's Python. A notice says so when that is
+  not the Python CI's single-version jobs use.
 - Steps that need the network are skipped when PyPI is unreachable or with
   --offline; the docker job runs only with --with-docker.
 - Semgrep Secrets is an org-level check with no workflow file here; it runs as
@@ -34,6 +35,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import collections
 import os
 import re
 import shlex
@@ -90,6 +92,24 @@ def tool_specs() -> list[str]:
                         if a not in specs:
                             specs.append(a)
     return specs
+
+
+def ci_pythons() -> tuple[str | None, list[str]]:
+    """CI's single-version Python (the one most `setup-python` steps name) and the
+    Pythons of every matrix leg, from the workflows."""
+    single: collections.Counter[str] = collections.Counter()
+    legs: list[str] = []
+    for _, wf in load_workflows():
+        for job in wf["jobs"].values():
+            matrix = (job.get("strategy") or {}).get("matrix") or {}
+            for v in matrix.get("python-version", []):
+                if str(v) not in legs:
+                    legs.append(str(v))
+            for step in job.get("steps", []):
+                v = str((step.get("with") or {}).get("python-version", ""))
+                if "setup-python" in str(step.get("uses", "")) and v and "${{" not in v:
+                    single[v] += 1
+    return (single.most_common(1)[0][0] if single else None), legs
 
 
 class Context:
@@ -160,6 +180,12 @@ def make_isolated_env(tmp: Path, py: str) -> tuple[Path, dict]:
 def run(args: argparse.Namespace) -> int:
     py = f"{sys.version_info.major}.{sys.version_info.minor}"
     want = set(args.jobs.split(",")) if args.jobs else None
+    ci_py, legs = ci_pythons()
+    other_py = (f"NOTICE: this venv runs Python {py}, CI's single-version jobs {ci_py}: "
+                "steps conditioned on CI's version are skipped. Re-run `make dev` to "
+                "convert the venv in place.") if ci_py and py != ci_py else ""
+    if other_py:
+        print(other_py)
     online = not args.offline and network_ok()
     if not args.offline and not online:
         print("NOTICE: PyPI unreachable -- network steps will be skipped")
@@ -248,8 +274,11 @@ def run(args: argparse.Namespace) -> int:
     print(f"\n{len(failed)} failed, "
           f"{sum(r[1] == 'pass' for r in results)} passed, "
           f"{sum(r[1].startswith('skip') for r in results)} skipped")
-    print("Not covered locally: the other legs of the test matrix (3.11-3.14), "
+    others = ", ".join(v for v in legs if v != py) or "none"
+    print(f"Not covered locally: the matrix legs on other Pythons ({others}), "
           "and CI's merge commit (this runs your working tree).")
+    if other_py:
+        print(other_py)
     return 1 if failed else 0
 
 
