@@ -54,8 +54,10 @@ CI additionally holds a PR to:
 - **Workflow lint** — `zizmor --offline --min-severity medium .github/workflows` when you
   edit a workflow.
 
-Dependencies install from `requirements.lock.txt`. When you change a range in
-`requirements*.txt`, regenerate the lock (command in its header).
+Dependencies install from `requirements.lock.txt`, and the docs build's from
+`requirements-docs.lock.txt` on top of it. When you change a range in
+`requirements*.txt`, regenerate the lock (command in its header); the docs lock is
+constrained to the main one, so regenerate it after the main lock changes too.
 
 Guidelines:
 

@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Documentation site, published to GitHub Pages by .github/workflows/docs.yml.
-# Local preview, from this directory:
-#   pip install -r requirements.lock.txt -r requirements-docs.txt
+# Local preview, from this directory (`make dev` already installs both locks):
+#   pip install -r requirements.lock.txt -r requirements-docs.lock.txt
 #   mkdocs serve            # or: mkdocs build --strict (what CI runs)
 site_name: Dokimi
 site_description: Measure whether a skill, MCP doc source, documentation set or agent profile actually improves AI-agent answers and task outcomes
