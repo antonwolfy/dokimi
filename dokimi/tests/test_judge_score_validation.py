@@ -75,7 +75,7 @@ REJECTED = [
     pytest.param(_reply(specificity="X").replace('"X"', "NaN"), id="nan-in-unweighted-specificity"),
     pytest.param(_reply(correctness=True), id="true"),
     pytest.param(_reply(completeness=False), id="false"),
-    pytest.param(_reply(correctness="7"), id="numeric-string"),
+    pytest.param(_reply(correctness="NaN"), id="nan-string"),
     pytest.param(_reply(code_quality="N/A"), id="n-a"),
     pytest.param(_reply(code_quality=None), id="null"),
     pytest.param('{"correctness": 80}', id="missing-dimension"),
@@ -106,6 +106,13 @@ def test_valid_reply_is_unchanged_and_cached(cache_dir, monkeypatch):
     scores = _score(_judge())
     assert (scores["correctness"], scores["completeness"]) == (90, 70.5)
     assert scores["aggregate"] == round((90 * 2 + 70.5 + 80 + 80) / 5, 1)
+    assert len(calls) == 1 and len(_entries(cache_dir)) == 1
+
+
+def test_numeric_string_score_is_read_as_a_number(cache_dir, monkeypatch):
+    calls = _stub(monkeypatch, [_reply(correctness="90")])
+    scores = _score(_judge())
+    assert scores["correctness"] == 90.0
     assert len(calls) == 1 and len(_entries(cache_dir)) == 1
 
 

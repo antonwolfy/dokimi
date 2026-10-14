@@ -551,10 +551,16 @@ class Judge:
             missing = required - scores.keys()
             if missing:
                 raise ValueError(f"Missing keys in judge response: {missing}")
-            # A non-numeric dimension ("N/A", "7", true, NaN, Infinity) is a formatting
-            # failure too; a finite number off the 0-100 scale is clamped, as panel.py does.
+            # A non-numeric dimension ("N/A", true, NaN, Infinity) is a formatting
+            # failure too. A numeric string ("7") is read as a number, and a finite
+            # number off the 0-100 scale is clamped, as panel.py does.
             for dim in weights.keys() | {"specificity"}:
                 value = scores[dim]
+                if isinstance(value, str):
+                    try:
+                        value = scores[dim] = float(value)
+                    except ValueError:
+                        raise ValueError(f"Judge score {dim!r} is not a number: {value!r}") from None
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     raise ValueError(f"Judge score {dim!r} is not a number: {value!r}")
                 if not math.isfinite(value):
