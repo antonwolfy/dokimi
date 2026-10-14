@@ -6,6 +6,7 @@
 import hashlib
 import logging
 import json
+import math
 import os
 import re
 import time
@@ -550,7 +551,16 @@ class Judge:
             missing = required - scores.keys()
             if missing:
                 raise ValueError(f"Missing keys in judge response: {missing}")
-            # A non-numeric dimension ("N/A") is a formatting failure too.
+            # A non-numeric dimension ("N/A", "7", true, NaN, Infinity) is a formatting
+            # failure too; a finite number off the 0-100 scale is clamped, as panel.py does.
+            for dim in weights.keys() | {"specificity"}:
+                value = scores[dim]
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError(f"Judge score {dim!r} is not a number: {value!r}")
+                if not math.isfinite(value):
+                    raise ValueError(f"Judge score {dim!r} is not finite: {value!r}")
+                if not 0 <= value <= 100:
+                    scores[dim] = min(max(value, 0), 100)
             self._cap_for_wrong_figures(scores)
             return scores, self._compute_aggregate(scores, weights)
 
