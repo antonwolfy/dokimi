@@ -5,7 +5,6 @@
 
 import logging
 import json
-import os
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,6 +13,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+from dokimi.artifacts import save_artifact
 from dokimi.llm import llm_call_with_usage, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
 from dokimi.metrics.usage import UsageRecord, to_record
 
@@ -140,9 +140,14 @@ class Answerer:
         lock = threading.Lock()
         completed = [0]
 
+        stop = threading.Event()  # set by a failed save: queued questions are skipped, not paid for
+
         def _process(idx: int, q: Dict) -> None:
+            if stop.is_set():
+                return
             q_id = q.get("id") or q.get("question_id") or str(idx)
             t0 = time.time()
+            failure = None
             try:
                 pair = self._generate_answer_pair(
                     library_name=library_name,
@@ -150,33 +155,36 @@ class Answerer:
                     question=q,
                     max_tokens=max_tokens_per_question
                 )
-                elapsed = time.time() - t0
-                with lock:
-                    results[idx] = pair
-                    completed[0] += 1
-                    print(f"[{completed[0]}/{n}] {q_id} ✓ ({elapsed:.1f}s)", flush=True)
-                    if output_path is not None:
-                        ordered = [results[i] for i in sorted(results)]
-                        self._save_incremental(ordered, output_path)
             except Exception as e:
-                elapsed = time.time() - t0
-                with lock:
-                    results[idx] = {
-                        "question_id": q_id,
-                        "question_text": q.get("question") or q.get("text", ""),
-                        "library_name": library_name,
-                        "category": q.get("category"),
-                        "difficulty": q.get("difficulty"),
-                        "persona": q.get("persona"),
-                        "error": str(e),
-                        "with_docs": None,
-                        "without_docs": None
-                    }
-                    completed[0] += 1
-                    print(f"[{completed[0]}/{n}] {q_id} ✗ ({elapsed:.1f}s): {e}", flush=True)
-                    if output_path is not None:
-                        ordered = [results[i] for i in sorted(results)]
+                failure = e
+                pair = {
+                    "question_id": q_id,
+                    "question_text": q.get("question") or q.get("text", ""),
+                    "library_name": library_name,
+                    "category": q.get("category"),
+                    "difficulty": q.get("difficulty"),
+                    "persona": q.get("persona"),
+                    "error": str(e),
+                    "with_docs": None,
+                    "without_docs": None
+                }
+            elapsed = time.time() - t0
+            with lock:
+                results[idx] = pair
+                completed[0] += 1
+                if failure is None:
+                    print(f"[{completed[0]}/{n}] {q_id} ✓ ({elapsed:.1f}s)", flush=True)
+                else:
+                    print(f"[{completed[0]}/{n}] {q_id} ✗ ({elapsed:.1f}s): {failure}", flush=True)
+                if output_path is not None:
+                    ordered = [results[i] for i in sorted(results)]
+                    try:
+                        # Outside the generation try: a rejected save must not turn a paid answer
+                        # into an error record, and must not be retried per question.
                         self._save_incremental(ordered, output_path)
+                    except BaseException:
+                        stop.set()
+                        raise
 
         print(f"Generating answers for {n} questions (concurrency={concurrency})", flush=True)
 
@@ -431,7 +439,6 @@ class Answerer:
                     total_usage[k] += v
 
         return {
-            "schema_version": "answers.v1",
             "generated_at": self._get_timestamp(),
             "model": self.model,
             "provider": self.provider,
@@ -442,11 +449,7 @@ class Answerer:
 
     def _save_incremental(self, answers: List[Dict[str, Any]], output_path: Path) -> None:
         """Write current answers to disk atomically (called after each question)."""
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
-        with open(tmp_path, 'w', encoding='utf-8') as f:
-            json.dump(self._build_output(answers), f, indent=2)
-        os.replace(tmp_path, output_path)
+        save_artifact("answers", self._build_output(answers), output_path)
 
     def save_answers(
         self,
@@ -455,12 +458,10 @@ class Answerer:
         question_set_hash: str = None,
     ):
         """Save answers to JSON file."""
-        output_path.parent.mkdir(parents=True, exist_ok=True)
         data = self._build_output(answers)
         if question_set_hash:
             data["question_set_hash"] = question_set_hash
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2)
+        save_artifact("answers", data, output_path)
         logger.info(f"✓ Saved answers for {len(answers)} questions to {output_path}")
     
     @staticmethod
