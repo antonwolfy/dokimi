@@ -13,6 +13,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+from dokimi.utils import question_id
 from dokimi.artifacts import save_artifact
 from dokimi.llm import ChatModel
 from dokimi.llm import llm_call_with_usage, ChatOpenAI, ChatAnthropic, LANGCHAIN_AVAILABLE
@@ -148,7 +149,8 @@ class Answerer:
         def _process(idx: int, q: Dict) -> None:
             if stop.is_set():
                 return
-            q_id = q.get("id") or q.get("question_id") or str(idx)
+            q_id = question_id(q)
+            q_id = str(idx) if q_id is None else q_id
             t0 = time.time()
             failure = None
             try:
@@ -221,7 +223,8 @@ class Answerer:
             or question.get("text")
             or question.get("question_text", "")
         )
-        qid = question.get("id") or question.get("question_id") or "unknown_q"
+        qid = question_id(question)
+        qid = "unknown_q" if qid is None else qid
         
         # Context arm
         with_docs_answer = None
