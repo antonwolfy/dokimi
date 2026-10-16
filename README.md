@@ -5,7 +5,12 @@ SPDX-License-Identifier: Apache-2.0
 
 # Dokimi — agent measurement framework
 
+[![docs](https://github.com/intel/dokimi/actions/workflows/docs.yml/badge.svg?branch=main)](https://intel.github.io/dokimi/)
 [![codecov](https://codecov.io/gh/intel/dokimi/graph/badge.svg?branch=main)](https://codecov.io/gh/intel/dokimi)
+
+**Documentation: <https://intel.github.io/dokimi/>** — guides, plus a
+[CLI reference](https://intel.github.io/dokimi/reference/cli/) and an
+[API reference](https://intel.github.io/dokimi/reference/api/dokimi/) generated from the code.
 
 > **dokimi** — Greek *δοκιμή*, "test, proof". The name is the method: an
 > artifact does not get trusted because it was written or because it is popular,
@@ -224,9 +229,9 @@ For the framework's quickstart, CLI surface, and architecture, see
 
 ## Where to start reading
 
-The documentation is published at <https://intel.github.io/dokimi/>, which adds a
-CLI and API reference generated from the code. The hand-written pages can also be
-read on GitHub under [`dokimi/docs/`](dokimi/docs/README.md).
+The **Documentation** links at the top go to the published site and its CLI and API
+reference. The hand-written pages can also be read on GitHub under
+[`dokimi/docs/`](dokimi/docs/README.md).
 
 | You want to understand… | Read |
 |---|---|
