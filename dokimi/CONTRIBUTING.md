@@ -72,6 +72,10 @@ CI additionally holds a PR to:
   build fails on a page missing from it). `mkdocs serve` previews the site.
 - **Workflow lint** — `zizmor --offline --min-severity medium .github/workflows` when you
   edit a workflow.
+- **Changelog fragment** — a PR that changes the package (`dokimi/`) adds one to
+  `changelog.d/` (`scriv create`) instead of editing `CHANGELOG.md`; see
+  [changelog.d/README.md](changelog.d/README.md). A change with no user-visible
+  effect gets the `skip-changelog` label instead.
 
 **pre-commit.** `.pre-commit-config.yaml` at the repo root runs the fast
 offline checks on the files a commit stages: `ruff check` (the version and
@@ -138,6 +142,8 @@ Guidelines:
 - A new static metric: [docs/contributing-metric.md](docs/contributing-metric.md)
 - A new doc source: [docs/adding-doc-source.md](docs/adding-doc-source.md)
 - A terminal-bench task: [docs/contributing-terminal-bench-task.md](docs/contributing-terminal-bench-task.md)
+
+Versioning, the changelog and releases: [docs/releasing.md](docs/releasing.md).
 
 ## Docs-drift checklist
 

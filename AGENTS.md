@@ -48,12 +48,13 @@ also holds a PR to:
 - Anything else: the index, `dokimi/docs/README.md`. A new doc page also goes
   in the `nav:` of `dokimi/mkdocs.yml`, the published site.
 
-Registries at the top of `dokimi/`:
+Registries, bundled in the package (`dokimi/dokimi/`) so they ship in the wheel:
 
-- `products.yaml`: product identity and doc sources.
-- `intents.yaml`: problem/intent domains, and the only domain→product mapping.
-- `config/products.yaml`: LLM/runtime config for the eval track; its product
-  identity follows `products.yaml` (`config_check` fails on drift).
+- `dokimi/dokimi/products.yaml`: product identity and doc sources.
+- `dokimi/dokimi/intents.yaml`: problem/intent domains, and the only
+  domain→product mapping.
+- `dokimi/dokimi/config/products.yaml`: LLM/runtime config for the eval track;
+  its product identity follows `products.yaml` (`config_check` fails on drift).
 
 ## Persisted formats
 
@@ -77,6 +78,8 @@ Registries at the top of `dokimi/`:
   examples read: `data/skills/fastcontext/`, `data/agent_profiles/`,
   `data/explore_tasks/`. Question sets, product skills and tasks belong in
   their content repository.
+- A file the package reads at run time goes inside `dokimi/dokimi/` and into
+  `[tool.setuptools.package-data]`, or the installed wheel goes without it.
 - Design rationale, status and plans go in the PR description or an issue;
   the tree has no ADRs or status reports.
 
@@ -84,6 +87,11 @@ Registries at the top of `dokimi/`:
 
 - Commit with `git commit -s`: the repo is public and takes DCO sign-off
   (`CONTRIBUTING.md` at the root).
+- A PR that changes `dokimi/dokimi/`, `dokimi/data/` or the `[project]` /
+  `[tool.setuptools]` tables of `dokimi/pyproject.toml` adds a changelog fragment under
+  `dokimi/changelog.d/` (`scriv create`), never an edit to `CHANGELOG.md`; the
+  `changelog` workflow enforces it. Versioning and releases:
+  `dokimi/docs/releasing.md`.
 - Every change to `main` is a PR opened from a fork, based on `main`. Add the
   fork as its own remote so `origin` keeps pointing at `intel/dokimi`:
   `gh repo fork --remote --remote-name fork`, then `git push -u fork <branch>`

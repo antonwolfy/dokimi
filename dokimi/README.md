@@ -153,7 +153,8 @@ dashboards, and baselines, see
 
 ## Product and intent registries
 
-Two top-level YAML registries describe what the benchmark can evaluate:
+Two YAML registries, bundled in the package (`dokimi/products.yaml`,
+`dokimi/intents.yaml`), describe what the benchmark can evaluate:
 
 - **`products.yaml`** — *what products exist*: identity, description, repo, and
   doc sources for each product (oneTBB, oneMKL, VTune, dpnp, …). Used by
@@ -166,7 +167,7 @@ Two top-level YAML registries describe what the benchmark can evaluate:
 
 The domain→product mapping lives only in `intents.yaml`;
 `python -m dokimi.config_check` (run in CI) fails if it references an
-unregistered product, or if `config/products.yaml` drifts from `products.yaml`.
+unregistered product, or if `dokimi/config/products.yaml` drifts from `products.yaml`.
 Explore the mapping with:
 
 ```bash
@@ -230,11 +231,12 @@ The directory layout and `task.toml` fields a task must provide are specified in
 
 ```text
 cli.py                   Single entry point for all CLI commands
-benchmarks/              Static benchmark spec and schema
-config/                  LLM/runtime configuration for the eval track
-products.yaml            Product registry: identity + doc sources per product
-intents.yaml             Intent registry: problem/task domains mapped to products
+benchmarks/              Static benchmark spec (its schema is dokimi/runner/spec.schema.json)
+changelog.d/             Changelog fragments, one per PR (see changelog.d/README.md)
 dokimi/                  Main Python package
+  products.yaml          Product registry: identity + doc sources per product
+  intents.yaml           Intent registry: problem/task domains mapped to products
+  config/                LLM/runtime configuration for the eval track
   agent_profiles/        Agent persona prompt loader
   commands/              CLI subcommand definitions
   context/               Context window of a run, read from its harness trace
@@ -253,7 +255,7 @@ dokimi/                  Main Python package
   questions/             Question generation, validation, refinement
   repos/                 Repository subjects: manifest, sources, validation, harness profiles, reach probe
   report/                JSON/Markdown report generation
-  runner/                Benchmark orchestration
+  runner/                Benchmark orchestration and the spec schema
   schemas/               JSON Schemas for every persisted artifact
   skills/                SKILL.md loader
   subjects/              Subject descriptors and scorecards

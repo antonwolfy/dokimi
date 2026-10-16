@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from dokimi import defaults
+from dokimi import config, defaults
 from dokimi.cli import build_parser
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +34,7 @@ def test_the_defaults_are_the_pinned_values():
 
 
 def test_config_products_yaml_names_the_same_defaults():
-    llm = yaml.safe_load((ROOT / "config" / "products.yaml").read_text(encoding="utf-8"))["llm"]
+    llm = yaml.safe_load(config.DEFAULT_PRODUCTS_PATH.read_text(encoding="utf-8"))["llm"]
     assert llm["answerer"]["default"] == ANSWER[0]
     assert llm["judge"]["default"] == JUDGE[0]
     assert llm["generator"]["default"] == GENERATOR[0]
