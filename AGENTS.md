@@ -15,7 +15,7 @@ from there. The importable package is `dokimi` (`dokimi/dokimi/`); the CLI is
 ```bash
 make dev        # once, repo root: .venv with CI's Python, the lock, every CI tool
 make ci-local   # every PR CI step, read from .github/workflows/; pass/fail/skip table
-make ci-local CI_LOCAL_ARGS='--offline --jobs lint,typecheck'   # fast inner loop
+make ci-local CI_LOCAL_ARGS='--offline --jobs static,typecheck'   # fast inner loop
 ```
 
 A change is ready for a PR when no row of the `make ci-local` table is `FAIL`.
@@ -84,8 +84,8 @@ Registries, bundled in the package (`dokimi/dokimi/`) so they ship in the wheel:
   the tree has no ADRs or status reports.
 - A new file starts with the SPDX header (`Copyright (C) <year> Intel
   Corporation` / `SPDX-License-Identifier: Apache-2.0`) in its comment syntax.
-  The license-header CI job checks it and `make ci-local` does not: exemptions
-  and the local command are in `dokimi/CONTRIBUTING.md`.
+  CI's license header step (static job) checks it and `make ci-local` does
+  not: exemptions and the local command are in `dokimi/CONTRIBUTING.md`.
 
 ## Commits and pull requests
 
