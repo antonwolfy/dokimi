@@ -491,11 +491,17 @@ Protocol:
     - `cwd=<dir>`: started in each guidance directory, tools off.
     - `read=<dir>`: started at the root, read tool on. The agent is told to
       read `<dir>/REACH_PROBE.txt`, then list tokens.
-    - A scenario that runs past `--timeout` is an `error`. Its harness is
-      killed with its process group (POSIX) or job object (Windows). A process
-      that leaves the group, such as one that calls `setsid()` or daemonizes,
-      is not contained. It can outlive the run with the harness's environment,
-      credentials included.
+    - A scenario that runs past `--timeout` is an `error`; its raw stdout up
+      to the kill is kept in the trace. Its harness is killed with its process
+      group (POSIX) or job object (Windows), and so is anything left in that
+      group when the harness exits on its own. The group is also killed when
+      the `dokimi` CLI gets SIGTERM or SIGHUP (from `timeout(1)`, a CI
+      cancel or a closed terminal); the CLI then exits with that signal. Not
+      contained: the group of a CLI killed with SIGKILL, of a library caller
+      that did not call `process.install_signal_handlers()`, and a process
+      that leaves the group, such as one that calls `setsid()` or daemonizes.
+      These can outlive the run with the harness's environment, credentials
+      included.
 4. Ask for every token in the instructions or context, including context
    attached to a tool result. Parse the reported tokens from the answer, and
    the reads from `events.jsonl`.
@@ -627,6 +633,21 @@ without its tasks directory (tag `dokimi/<id>:<sha>`) unless
 `~/.cache/dokimi/caches/<id>/<name>`; `--cache NAME=PATH` points one
 elsewhere. `{source_dir}` is the source's own git directory, or
 `--source-dir`.
+
+Cloning and fetching a remote source (`url@rev`, in every `repo` command) is
+non-interactive by design: git runs with `GIT_TERMINAL_PROMPT=0`, stdin
+closed and no terminal, so neither git nor ssh prompts on a terminal for a
+password, a token, a key passphrase or a new host key. An askpass program the
+environment names (`GIT_ASKPASS`, `SSH_ASKPASS`, or `core.askPass`) still runs:
+it is how some CI systems and editors hand git a token, and a graphical one
+(VS Code sets `GIT_ASKPASS`) can still show a dialog. Set up access before
+the run: a credential helper holding a token for an `https://` URL (for
+GitHub, `gh auth setup-git`), or for an SSH URL a key loaded into
+`ssh-agent` and the host in `~/.ssh/known_hosts`. When git would have prompted, the error names the line
+git or ssh printed (`Host key verification failed.`,
+`Permission denied (publickey)`, `could not read Username ...: terminal
+prompts disabled`) and the fix; any other git failure shows its last `fatal:`
+line, else its last `error:` line, else its last line.
 
 ```bash
 # self-check: no LLM; exits 1 if any task is broken or unsupported
