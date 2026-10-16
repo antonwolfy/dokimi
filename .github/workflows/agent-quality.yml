@@ -23,12 +23,13 @@ defaults:
   run:
     working-directory: dokimi
 
+# Every job on intel-ubuntu-latest, `changes` too: see ci.yml.
 jobs:
   # Whether a PR changes anything besides Markdown. The Docker smoke test below
   # cannot be affected by a docs-only change, and it holds a runner
   # for minutes; the benchmark job measures the docs, so it always runs.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'intel' && 'intel-ubuntu-latest' || 'ubuntu-latest' }}
     outputs:
       code: ${{ steps.diff.outputs.code }}
     defaults:
@@ -78,7 +79,7 @@ jobs:
     name: External catalog smoke test (uxlfoundation/skills)
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'intel' && 'intel-ubuntu-latest' || 'ubuntu-latest' }}
     permissions:
       contents: read
     timeout-minutes: 15
@@ -142,7 +143,7 @@ jobs:
   # gate or band failure in benchmarks/spec.v1.yaml fails the job. (It used to
   # be non-strict with continue-on-error, so it could not fail at all.)
   benchmark:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner == 'intel' && 'intel-ubuntu-latest' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
