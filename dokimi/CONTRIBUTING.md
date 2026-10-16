@@ -1,3 +1,8 @@
+<!--
+Copyright (C) 2026 Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
 # Contributing
 
 Thanks for your interest in improving dokimi. This guide covers the
@@ -8,6 +13,26 @@ mechanics; for architecture and design context start with
 
 By submitting a contribution you agree that it is licensed under the
 [Apache License 2.0](../LICENSE), the same license as the project.
+
+Every new file starts with the SPDX header, in its comment syntax (Markdown
+uses an HTML comment, after any front matter):
+
+```python
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+```
+
+The year is the year the file is added. CI's license-header job checks the
+header; the files exempt (JSON, generated locks, text agents read verbatim,
+changelog fragments) are listed in
+[`.github/.licenserc.yaml`](../.github/.licenserc.yaml). `make ci-local` does
+not run this job; check locally with Docker, from the root of a clone (in a
+`git worktree` it also scans untracked files such as `.venv`):
+
+```bash
+docker run --rm -v "$PWD:/github/workspace" -w /github/workspace \
+  apache/skywalking-eyes:0.9.0 -c .github/.licenserc.yaml header check
+```
 
 ## Development setup
 
