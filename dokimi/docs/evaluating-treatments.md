@@ -476,7 +476,7 @@ Both are upper bounds on harness behaviour (see *Real harness* below). The posit
 a trigger set are routing queries for their skill:
 
 ```bash
-jq '[.questions[] | select(.expected_skill == "linux-perf") | .text]' trigger_questions.json > linux-perf.queries.json
+jq '[.questions[] | select(.expected_skill == "linux-perf") | .question]' trigger_questions.json > linux-perf.queries.json
 ```
 
 *Trigger set* here means a selection query set: messages labelled with the skill that
@@ -515,7 +515,7 @@ python cli.py catalog trigger-set --catalog <skills-checkout>/skills \
   rest as `acceptable_skills`, which skill-reach treats as neutral helpers rather than
   hits, so on those queries it is stricter than the `skill-catalog:` arm; `skill-creator --target <skill>` (a catalog skill) writes an
   [anthropics/skills skill-creator](https://github.com/anthropics/skills/tree/main/skills/skill-creator)
-  eval set; `questions` writes `questions.v1` with `expected_skill` for the arm below.
+  eval set; `questions` writes `questions.v2` with `expected_skill` for the arm below.
 
 **Proxy: the `skill-catalog:` arm.** Runs in the normal arms loop on any model, and the
 report gains a *Skill selection* table (accuracy, recall, recall (any), multi-load,
