@@ -63,8 +63,8 @@ REPO = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO / ".github" / "workflows"
 
 # Jobs or steps that cannot run offline. Keyed by job id, or (job id, step name).
-# pre-commit clones its hook repositories on first use.
-NEEDS_NETWORK = {"package-smoke", "windows-smoke", ("static", "pre-commit"), ("static", "pip-audit")}
+# pre-commit clones its hook repositories on first use; gitleaks downloads its binary.
+NEEDS_NETWORK = {"package-smoke", "windows-smoke", "gitleaks", ("static", "pre-commit"), ("static", "pip-audit")}
 NEEDS_DOCKER = {"external-catalog-smoke"}
 # Jobs that `pip install .`: run on a copy of the tree in a throwaway venv.
 ISOLATED = {"package-smoke", "windows-smoke"}
@@ -180,6 +180,7 @@ class Context:
         self.tmp = tmp
         self.values = {
             "github.event.pull_request.base.ref": base,
+            "github.base_ref": base,
             "github.event_name": "pull_request",
             "matrix.python-version": py,
             "matrix.coverage": "true",
