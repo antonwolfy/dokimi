@@ -33,6 +33,21 @@ SPDX-License-Identifier: Apache-2.0
 >     [--json] [--fail-on-fail]
 > ```
 >
+> `repo budget` sizes what the tree puts into an agent's context (no manifest,
+> no LLM call): root CLAUDE.md files and their `@` imports plus the skill listing at
+> start (AGENTS.md files and their imports too, unless a root CLAUDE*, `.claude/CLAUDE.md` or
+> `CLAUDE.local.md` turns them off), nested guidance lazily, skill bodies on demand, and AGENTS.md
+> files a root CLAUDE* turns off. The `start` total is not an upper bound: it is too low by what it does
+> not count (`.claude/rules/*.md` files, non-`.md` imports, skills behind a linked directory, nested
+> `.claude/skills/` skills, and
+> imports past the profile's `guidance.import_max_depth`, four hops for Claude Code, which warns
+> naming what was skipped), and too high by whatever the harness cuts from the skill listing.
+> Usage:
+>
+> ```bash
+> python cli.py repo budget <source> [--harness claude-code] [--json] [--fail-on-warning]
+> ```
+>
 > `repo inspect` (§8.1) needs no manifest: a static look at what the tree offers an agent.
 >
 > ```bash
