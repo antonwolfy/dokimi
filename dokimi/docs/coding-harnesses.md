@@ -416,26 +416,52 @@ The Harbor adapter command is:
 harbor run -p <task-path> -a <agent> -m <model> --jobs-dir <run-dir>
 ```
 
-Harbor writes job/trial results under the jobs directory. If a local Harbor
-version uses different flags, pass `--command-template` and keep the same output
-contract. When Harbor is not installed, prefer the `docker-*` harnesses — they
-build, solve, and verify against local Docker directly and record telemetry.
+Harbor writes `<run-dir>/<job>/result.json` (the job summary) and
+`<run-dir>/<job>/<trial>/result.json` per trial. If a local Harbor version uses
+different flags, pass `--command-template`; a template is graded as a
+`command:` harness (below), not from these files. When Harbor is not installed,
+prefer the `docker-*` harnesses — they build, solve, and verify against local
+Docker directly and record telemetry.
 
-This contract was written against Harbor 0.22.0; CI no longer installs or runs
-Harbor, so treat that as the version the notes below were observed on rather
-than a validated pin. Harbor does not propagate a non-zero process exit code
-for errored/cancelled trials, and this repo's CI runner has hit Harbor
-environment-start failures: a Docker Compose v2 gap, and a `network_mode`
-rejection. The latter is Harbor behaving correctly — a task declaring
-`allow_internet = false` becomes `network_mode='no-network'`, which the docker
-provider only accepts when the host kernel supports egress control, so on a
-runner without it Harbor refuses the task instead of running it with the
-internet the task forbade. A `harbor run` invocation exiting 0 is therefore
-**not** sufficient evidence the trial actually passed — parse its `result.json`
-(`stats.n_errored_trials`, `stats.evals.<id>.metrics[].mean`) before trusting
-a Harbor-backed harness result. The `docker-*` harnesses don't have this gap:
-`tasks run`'s own `task_runs.v1` artifact (`summary.per_harness.<h>.pass_rate`)
-is the reliable pass/fail signal for those.
+**A Harbor cell is graded from its trial's `result.json`, never from
+`harbor`'s exit code or output.** Harbor exits 0 for a trial that errored (an
+agent install that failed, an environment that did not start, an agent
+timeout), and its summary table on stdout has a `Reward` column, so neither is
+a verdict. The rules mirror intel/skills' `tools/check_harbor_job.py`:
+
+| Trial `result.json` | Cell |
+|---|---|
+| `verifier_result.rewards.reward` is a finite number in [0, 1], no `exception_info` | scored: that reward, a pass at 1.0 |
+| the only `exception_info` (top or `step_results[]`) is `VerifierTimeoutError` | scored 0, `metrics.verifier_timeout` true: a verifier timeout is a failure, not an error |
+| `exception_info` set, at the top or on a `step_results[]` entry (a multi-step task) | errored: `metrics.error` is `harbor: <exception_type>: <first line>`, `metrics.harbor_exception` the type; a reward the verifier still wrote is kept as `metrics.reward_after_exception`, not scored |
+| no `exception_info`, no numeric reward or one outside [0, 1] | errored |
+| no trial file (with or without the job's), more than one trial, or not a JSON object | errored |
+
+An errored cell is out of the pass-rate denominator and the paired test, as
+for `docker-*` and BenchFlow. `metrics.n_trials` counts the trial files and
+`metrics.result_json` names the one read. A `harbor` that `dokimi` kills at
+the task budget is a failed cell (reward 0, returncode 124), as above.
+
+Usage comes from the trial's `agent_result` (for a multi-step trial, the sum over
+`step_results[].agent_result`): `n_input_tokens` →
+`prompt_tokens` (Harbor's count includes the cached prompt, as BenchFlow's
+does), `n_output_tokens` → `completion_tokens`, `n_cache_tokens` →
+`cache_read_tokens`, input + output → `total_tokens`, and `cost_usd`; these feed
+`summary.per_harness.<h>.cost`. A null count (the `oracle` agent, a trial that
+never ran its agent) is unknown and left out, not recorded as 0.
+
+These rules were checked against Harbor 0.24.0's files; CI does not install or
+run Harbor. This repo's CI runner has also hit Harbor environment-start
+failures: a Docker Compose v2 gap, and a `network_mode` rejection. The latter
+is Harbor behaving correctly — a task declaring `allow_internet = false`
+becomes `network_mode='no-network'`, which the docker provider only accepts
+when the host kernel supports egress control, so on a runner without it Harbor
+refuses the task instead of running it with the internet the task forbade.
+Both now land as errored cells.
+
+A `command:` harness (including a `--command-template` that wraps `harbor`)
+keeps its own rule: a `reward.txt` / `reward.json` under the run dir, else a
+`reward: x` on its output, else exit code 0 is a pass.
 
 ## BenchFlow Cells
 
@@ -876,7 +902,9 @@ python cli.py tasks run --tasks <task-name> \
 - `results[].passed`: verifier pass/fail. If a reward file is present, its
   number is `results[].reward`: `1.0` passes, and anything lower, including
   partial credit such as `0.75`, is kept as the reward and counts as a fail. If
-  no reward is found, the adapter's exit code is used as the fallback.
+  no reward is found, the adapter's exit code is used as the fallback, except
+  for a Harbor-backed cell, which is then errored (see the Harbor grading
+  table above).
 - `results[].metrics`: for LLM harnesses (`docker-claude*`), the per-run
   `UsageRecord` fields — `cost_usd`, `prompt_tokens`, `completion_tokens`,
   `total_tokens`, `cache_read_tokens`, `cache_write_tokens`, `latency_sec`,
@@ -889,7 +917,9 @@ python cli.py tasks run --tasks <task-name> \
   also carry `isolation` (`agent_location`, `work_tree`, `operator_config`,
   `env`, `tools`, `host_filesystem`, `network`, and `memory` for the
   container launch); container rows carry `egress`, probe rows
-  `isolation_probe`.
+  `isolation_probe`. Harbor-backed rows carry `prompt_tokens`,
+  `completion_tokens`, `cache_read_tokens`, `total_tokens` and `cost_usd` when
+  Harbor's trial file records them, plus `n_trials` and `result_json`.
 - `summary.per_harness`: pass rate with a `pass_rate_ci{}` interval, elapsed
   time, operation totals, `skill_invocation_rate` / `skill_invocation_n`, a
   rolled-up `cost{}` block (`total_cost_usd` is `null` when no call was priced;
@@ -945,7 +975,9 @@ dir that could not be deleted), or whose solver CLI made no attempt
 missing data, not a 0. An agent that exceeds its timeout, or a verifier that
 does, is a failure (reward 0, returncode 124), not an error: otherwise an arm
 that hangs would score above one that fails fast. So is a `docker-oracle`
-`solve.sh` that exceeds the agent budget. A `docker-*` step with no budget of
+`solve.sh` that exceeds the agent budget. A Harbor trial that raised, an agent
+timeout included, is errored (`metrics.error`); only a lone verifier timeout is
+scored 0. A `docker-*` step with no budget of
 its own (`docker cp`, `inspect`, the `exec`s that copy files in) gets 600 s; one
 that must succeed and runs out errors the cell. A timeout kills the step's whole process tree on
 the host (a host agent's tool processes too); in the container, whatever the
