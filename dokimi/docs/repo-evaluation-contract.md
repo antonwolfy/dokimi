@@ -1009,7 +1009,22 @@ python cli.py repo compare repo-runs/pilot --baseline guidance:none --metric roo
   task), the tasks up, down and tied, and a two-sided sign-flip permutation p (exact up to 16
   changed tasks; at one cell per task and arm it equals McNemar's exact test).
   Holm's correction runs over the gate and score comparisons of one call; the
-  rest are descriptive. `BATCH/ARM` takes an arm from one batch only, so two
+  rest are descriptive. A gate or score comparison carries `headroom`:
+  `ceiling` (both arms at 1.0 or the task's `score.max` on every paired
+  task), `floor` (both at 0 on every one), `near_ceiling` (the baseline at
+  the top on all but at most one of 2+ tasks and the treatment nowhere below
+  it), else `null`; a grader failure in either arm also gives `null`, as does
+  an agent outage (an error result with no turn count or at most one turn, or
+  a harness that exited non-zero without reporting a turn and was not killed
+  at its timeout): neither is a measurement. A pair
+  is at the top only when both arms reach it and tie: a score past `score.max`
+  is an effect, not a top. The text prints a note under a flagged comparison. A
+  zero delta there means no room to move, not no effect. Cost, turns and
+  metric rows have `headroom` `null`.
+  The top of a score task is the `score.max` that `repo run` records in
+  `result.json` as `score_max`: a batch run before that has no known top, so
+  its score rows are never `ceiling`, and arms whose tops differ are on two
+  scales and get `null`. `BATCH/ARM` takes an arm from one batch only, so two
   batches of the same arm (for example two revisions of the guidance) compare
   too; two selectors of the same cells are refused. A `--metric` no finished
   cell reports as a number or boolean is refused. Tasks left out are listed as
