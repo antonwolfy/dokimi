@@ -91,6 +91,24 @@ def test_url_client_cache_key_of_a_utf8_url_is_unchanged():
     assert key == "9813a80c59ae8111adf2b881b481b0a6334db465cd7c961d98cec1830f9aa1db"  # gitleaks:allow: the sha256 of a test URL
 
 
+def _bundle_digest(path: str, sha256: str = "a") -> str:
+    from dokimi.novelty.bundle import Bundle, BundleFile
+
+    files = [BundleFile(path=path, role="reference", text="x", sha256=sha256)]
+    return Bundle(kind="skill", name="n", description="d", frontmatter="", text="", files=files).measured_digest()
+
+
+@posix_only
+def test_bundle_measured_digest_of_a_file_name_with_a_non_utf8_byte_is_a_digest():
+    assert _bundle_digest("n\udcff") == "sha256:d80bfa98e8ac7a6d87779ff266777366ec351f3af2c3c281a07505b9626f2695"
+    assert _bundle_digest("n\udcfe") == "sha256:30c7ad139a4dc659cf4fb1be69484b42bec251091ca030987539b9ea639d0f49"
+
+
+def test_bundle_measured_digest_of_a_utf8_file_name_is_unchanged():
+    assert _bundle_digest("references/a.md", "b" * 8) == (
+        "sha256:6c2343b26584af5163cf510a83b2854ecdec51dc82b4ee23ef94f8f8c03181db")
+
+
 def _graph_candidate(*symbols: str):
     from dokimi.repos.graph_tasks import Candidate
 
