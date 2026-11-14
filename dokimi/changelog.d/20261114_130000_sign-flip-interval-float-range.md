@@ -1,0 +1,3 @@
+### Fixed
+
+- **Sign-flip interval of deltas near the float maximum** — the interval search of `repo compare` and the arms track (`sign_flip_interval`) emitted `RuntimeWarning: invalid value encountered in matmul` for deltas such as `[1e308, 0.0]`, and a `nan` flowed through its comparisons so the ends could be silently wrong. A row whose largest delta is above `max float / (8 * n)` is now searched on the deltas divided by a power of two (exact) and each end is multiplied back, so it neither warns nor leaves the float range. An end beyond the float range is open (`None`), never `inf`. Rows below that threshold give the same ends as before.
