@@ -43,7 +43,7 @@ def usable_cache_dir(raw: str | None) -> Path | None:
         return None
     path = Path(raw)
     probe = path
-    while not probe.exists() and probe != probe.parent:
+    while not probe.exists() and not probe.is_symlink() and probe != probe.parent:
         probe = probe.parent
     if not probe.is_dir():
         where = "is not a directory" if probe == path else f"has {probe} above it, which is not a directory"

@@ -41,6 +41,20 @@ def test_usable_cache_dir_refuses_a_child_of_a_regular_file(tmp_path):
     assert str(parent / "cache") in str(err.value) and f"has {parent} above it" in str(err.value)
 
 
+def test_usable_cache_dir_refuses_a_dangling_symlink_and_a_child_of_one(tmp_path):
+    link = tmp_path / "cache"
+    try:
+        link.symlink_to(tmp_path / "missing-target")
+    except OSError:
+        pytest.skip("symlinks need privileges here")
+    with pytest.raises(InputError, match="is not a directory") as err:
+        usable_cache_dir(str(link))
+    assert f"--cache-dir {link} is not a directory" in str(err.value)
+    with pytest.raises(InputError) as err:
+        usable_cache_dir(str(link / "child"))
+    assert f"has {link} above it" in str(err.value)
+
+
 @pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0, reason="root writes anywhere")
 def test_usable_cache_dir_refuses_an_unwritable_directory_and_a_child_of_one(tmp_path):
     locked = tmp_path / "locked"
