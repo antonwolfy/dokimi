@@ -74,3 +74,66 @@ def test_skill_reach_token_of_a_utf8_case_id_is_unchanged():
 
     assert token("s", "case-1", "p") == "SB7667F2"
     assert token("s", "case-1", "description") == "SKE40028"
+
+
+@posix_only
+def test_url_client_cache_key_of_a_source_with_a_non_utf8_byte_is_a_digest():
+    from dokimi.mcp.url_client import URLClient
+
+    assert URLClient("n\udcff")._cache_key() == "8a8f844082c0b6790a883eca6bd8260acd6b5ce42eca3e591fe7f9db764e6a57"
+    assert URLClient("n\udcfe")._cache_key() == "fad35f9379fa9598c32b2a7fa48575cf213ef99b59955fef2f454bd4a2aff8e8"
+
+
+def test_url_client_cache_key_of_a_utf8_url_is_unchanged():
+    from dokimi.mcp.url_client import URLClient
+
+    key = URLClient("https://example.com/doc")._cache_key()
+    assert key == "9813a80c59ae8111adf2b881b481b0a6334db465cd7c961d98cec1830f9aa1db"  # gitleaks:allow: the sha256 of a test URL
+
+
+def _topics_cache_dir(tmp_path, monkeypatch, doc_source: str) -> Path:
+    """The ``cache_dir`` the pipeline's question step hands the topic extractor for ``doc_source``."""
+    import dokimi.questions as questions
+    from dokimi.orchestrator.pipeline import EvaluationPipeline
+    from dokimi.registry import ProductRegistry
+
+    seen = {}
+
+    class _StopHere(Exception):
+        pass
+
+    class _Extractor:
+        def __init__(self, **kwargs):
+            seen["cache_dir"] = kwargs["cache_dir"]
+
+        def extract_topics(self, **kwargs):
+            raise _StopHere
+
+    class _Client:
+        requires_declared_library_id = False
+
+    monkeypatch.setattr("dokimi.orchestrator.pipeline.create_doc_source_client", lambda source: _Client())
+    monkeypatch.setattr(questions, "RagasSeedExtractor", _Extractor)
+    registry_path = tmp_path / "products.yaml"
+    registry_path.write_text("products:\n  my_lib:\n    name: My Lib\n    description: d\n    context7_id: org/lib\n",
+                             encoding="utf-8")
+    pipeline = EvaluationPipeline(product="My Lib", description="d", product_key="my_lib", output_dir=tmp_path / "run",
+                                  registry=ProductRegistry(path=registry_path), doc_source=doc_source)
+    with pytest.raises(_StopHere):
+        pipeline._generate_questions({})
+    return seen["cache_dir"]
+
+
+@posix_only
+def test_pipeline_topics_cache_of_a_doc_source_with_a_non_utf8_byte_gets_its_own_directory(tmp_path, monkeypatch):
+    first = _topics_cache_dir(tmp_path, monkeypatch, "url:https://example.com/n\udcff")
+    second = _topics_cache_dir(tmp_path, monkeypatch, "url:https://example.com/n\udcfe")
+    assert first == Path(".cache/topics/173ffc509215f580")
+    assert second == Path(".cache/topics/734bd48df45078ff")
+
+
+def test_pipeline_topics_cache_of_a_utf8_doc_source_is_unchanged(tmp_path, monkeypatch):
+    cache_dir = _topics_cache_dir(tmp_path, monkeypatch, "url:https://example.com/doc")
+    assert cache_dir == Path(".cache/topics/782971a1dc6a2ae1")
+
+

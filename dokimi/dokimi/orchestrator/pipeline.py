@@ -6,6 +6,7 @@
 import hashlib
 import logging
 import json
+import os
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
@@ -497,7 +498,7 @@ class EvaluationPipeline:
         library_id = self._library_id(mcp_client)
 
         # The id is the registry's for every source, so the topics cache is also keyed on the source.
-        source_key = hashlib.sha256(self.doc_source.encode("utf-8")).hexdigest()[:16]
+        source_key = hashlib.sha256(os.fsencode(self.doc_source)).hexdigest()[:16]
         extractor = RagasSeedExtractor(mcp_client=mcp_client,
                                        cache_dir=Path(".cache/topics") / source_key)
         topics = extractor.extract_topics(
