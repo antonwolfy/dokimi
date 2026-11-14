@@ -91,6 +91,28 @@ def test_url_client_cache_key_of_a_utf8_url_is_unchanged():
     assert key == "9813a80c59ae8111adf2b881b481b0a6334db465cd7c961d98cec1830f9aa1db"  # gitleaks:allow: the sha256 of a test URL
 
 
+def _delta_artifact_name(baseline_name: str) -> str:
+    from dokimi.eval.matrix_rollup import _paired_plugin_deltas
+    from tests.test_matrix_rollup import _arms_artifact
+
+    cells = [(baseline_name, Path("a"), _arms_artifact(baseline_name)),
+             ("p", Path("b"), _arms_artifact("p", "caveman:full"))]
+    deltas, warnings = _paired_plugin_deltas(cells, Path("/out"))
+    assert warnings == [] and len(deltas) == 1
+    return Path(deltas[0]["artifact"]).name
+
+
+def test_matrix_pair_suffix_of_a_cell_name_with_a_lone_surrogate_is_a_digest():
+    assert _delta_artifact_name("n\udcff") == "plugin-delta-n-to-p-8598c7f9.json"
+    assert _delta_artifact_name("n\udcfe") == "plugin-delta-n-to-p-ce83522b.json"
+    assert _delta_artifact_name("n\ud800") == "plugin-delta-n-to-p-7e558003.json"
+    assert _delta_artifact_name("n\udbff") == "plugin-delta-n-to-p-e4429709.json"
+
+
+def test_matrix_pair_suffix_of_a_utf8_cell_name_is_unchanged():
+    assert _delta_artifact_name("ok") == "plugin-delta-ok-to-p-c90164a3.json"
+
+
 def _topics_cache_dir(tmp_path, monkeypatch, doc_source: str) -> Path:
     """The ``cache_dir`` the pipeline's question step hands the topic extractor for ``doc_source``."""
     import dokimi.questions as questions
