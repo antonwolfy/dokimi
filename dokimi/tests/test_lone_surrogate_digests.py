@@ -30,3 +30,18 @@ def test_cache_path_of_a_utf8_url_is_unchanged():
     from dokimi.repos.source import cache_path
 
     assert cache_path("https://example.com/org/repo.git", Path("/c")) == Path("/c/repo-e9497c38e4fa.git")
+
+
+@posix_only
+def test_harness_id_with_a_non_utf8_byte_and_a_reserved_character_is_a_directory_name():
+    from dokimi.harnesses.runner import _safe_id
+
+    assert _safe_id("n\udcff?") == "n\udcff_-2d5da54d"
+    assert _safe_id("n\udcfe?") == "n\udcfe_-f6a8699d"
+
+
+def test_harness_id_with_a_reserved_character_keeps_its_directory_name():
+    from dokimi.harnesses.runner import _safe_id
+
+    assert _safe_id("a:b?c") == "a_b_c-f1b58422"
+    assert _safe_id("plain") == "plain"

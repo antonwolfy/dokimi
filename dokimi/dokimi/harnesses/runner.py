@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
 import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
@@ -571,4 +572,4 @@ def _safe_id(value: str) -> str:
     name = value.replace("/", "_").replace(":", "_").replace(" ", "_")
     if not re.search(r'[\\<>"|?*]', name):
         return name
-    return re.sub(r'[\\<>"|?*]', "_", name) + "-" + hashlib.sha256(value.encode()).hexdigest()[:8]
+    return re.sub(r'[\\<>"|?*]', "_", name) + "-" + hashlib.sha256(os.fsencode(value)).hexdigest()[:8]
