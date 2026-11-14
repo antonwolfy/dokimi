@@ -45,3 +45,32 @@ def test_harness_id_with_a_reserved_character_keeps_its_directory_name():
 
     assert _safe_id("a:b?c") == "a_b_c-f1b58422"
     assert _safe_id("plain") == "plain"
+
+
+@posix_only
+def test_reach_token_of_a_file_name_with_a_non_utf8_byte_is_a_token():
+    from dokimi.repos.reach import token
+
+    assert token("s", "n\udcff", "p") == "RCE80092"
+    assert token("s", "n\udcfe", "p") == "RC18DC10"
+
+
+def test_reach_token_of_a_utf8_path_is_unchanged():
+    from dokimi.repos.reach import token
+
+    assert token("s", "a/b.py", "p") == "RCC6EA29"
+
+
+@posix_only
+def test_skill_reach_token_of_a_case_id_with_a_non_utf8_byte_is_a_token():
+    from dokimi.repos.skill_reach import token
+
+    assert token("s", "n\udcff", "p") == "SBE80092"
+    assert token("s", "n\udcfe", "p") == "SB18DC10"
+
+
+def test_skill_reach_token_of_a_utf8_case_id_is_unchanged():
+    from dokimi.repos.skill_reach import token
+
+    assert token("s", "case-1", "p") == "SB7667F2"
+    assert token("s", "case-1", "description") == "SKE40028"
