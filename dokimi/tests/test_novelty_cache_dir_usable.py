@@ -1,0 +1,106 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+"""`--cache-dir` of `skill shorten` and `skill novelty analyze` is checked before any paid call (#701)."""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+from dokimi.cli import build_parser
+from dokimi.commands.novelty_run import usable_cache_dir
+from dokimi.novelty import cost as novelty_cost
+from dokimi.novelty.atoms import Atom, save_atoms
+from dokimi.novelty.spans import segment
+from dokimi.utils import InputError
+from tests.cli_refusal import refusal
+
+
+def test_usable_cache_dir_accepts_unset_a_directory_and_a_missing_child(tmp_path):
+    assert usable_cache_dir(None) is None
+    assert usable_cache_dir("") is None
+    assert usable_cache_dir(str(tmp_path)) == tmp_path
+    assert usable_cache_dir(str(tmp_path / "new" / "deeper")) == tmp_path / "new" / "deeper"
+
+
+def test_usable_cache_dir_refuses_a_regular_file_naming_the_flag_and_path(tmp_path):
+    target = tmp_path / "cache"
+    target.write_text("x", encoding="utf-8")
+    with pytest.raises(InputError, match="--cache-dir") as err:
+        usable_cache_dir(str(target))
+    assert str(target) in str(err.value) and "is not a directory" in str(err.value)
+
+
+def test_usable_cache_dir_refuses_a_child_of_a_regular_file(tmp_path):
+    parent = tmp_path / "file"
+    parent.write_text("x", encoding="utf-8")
+    with pytest.raises(InputError) as err:
+        usable_cache_dir(str(parent / "cache"))
+    assert str(parent / "cache") in str(err.value) and f"has {parent} above it" in str(err.value)
+
+
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() == 0, reason="root writes anywhere")
+def test_usable_cache_dir_refuses_an_unwritable_directory_and_a_child_of_one(tmp_path):
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    try:
+        for raw in (locked, locked / "cache"):
+            with pytest.raises(InputError) as err:
+                usable_cache_dir(str(raw))
+            assert str(raw) in str(err.value) and "is not writable" in str(err.value)
+    finally:
+        locked.chmod(0o700)
+
+
+def _atoms(tmp_path):
+    rows = [f"Configure module{i} with parameter{i} always." for i in range(5)]
+    (tmp_path / "rows.md").write_text("# H\n\n" + "\n\n".join(rows) + "\n", encoding="utf-8")
+    spans = segment((tmp_path / "rows.md").read_text(encoding="utf-8"))
+    atoms = [Atom(statement=f"Configure module{i} with parameter{i} never restarts service{i}",
+                  question="q", answer="a", span_ids=(span.id,))
+             for i, span in enumerate(s for s in spans if s.kind != "heading")]
+    save_atoms(atoms, spans, tmp_path / "atoms.json", extractor="e", cap=None)
+
+
+def _never_called(monkeypatch):
+    def fail(*args, **kwargs):
+        pytest.fail("a model client was built for an unusable --cache-dir")
+
+    monkeypatch.setattr(novelty_cost, "client", fail)
+    monkeypatch.setattr(novelty_cost, "clients", fail)
+
+
+@pytest.mark.parametrize("capped", [True, False], ids=["max-usd", "no-cap"])
+def test_shorten_refuses_a_cache_dir_that_is_a_file_before_any_call(tmp_path, monkeypatch, capped):
+    _atoms(tmp_path)
+    cache = tmp_path / "cache"
+    cache.write_text("x", encoding="utf-8")
+    _never_called(monkeypatch)
+    args = build_parser().parse_args([
+        "skill", "shorten", "--artifact", f"text:{tmp_path / 'rows.md'}",
+        "--atoms", str(tmp_path / "atoms.json"), "--model", "o", "--cache-dir", str(cache),
+        *(["--max-usd", "0.05"] if capped else [])])
+    with refusal() as out:
+        args.func(args)
+    assert out.code == 2
+    assert f"--cache-dir {cache} is not a directory" in out.err
+    assert "Traceback" not in out.err
+
+
+def test_analyze_refuses_a_cache_dir_that_is_a_file_before_any_call(tmp_path, monkeypatch):
+    (tmp_path / "rows.md").write_text("# H\n\nConfigure module with parameter always.\n", encoding="utf-8")
+    cache = tmp_path / "cache"
+    cache.write_text("x", encoding="utf-8")
+    _never_called(monkeypatch)
+    args = build_parser().parse_args([
+        "skill", "novelty", "analyze", "--artifact", f"text:{tmp_path / 'rows.md'}",
+        "--model", "o", "--cache-dir", str(cache), "--max-usd", "0.05",
+        "--out-dir", str(tmp_path / "out")])
+    with refusal() as out:
+        args.func(args)
+    assert out.code == 2
+    assert f"--cache-dir {cache} is not a directory" in out.err
+    assert not (tmp_path / "out").exists()

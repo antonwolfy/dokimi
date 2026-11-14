@@ -10,7 +10,9 @@ from __future__ import annotations
 import argparse
 import functools
 import math
+import os
 import sys
+from pathlib import Path
 
 
 def stops_at_cap(command):
@@ -26,6 +28,30 @@ def stops_at_cap(command):
             raise SystemExit(f"{exc}; nothing was written") from None
 
     return run
+
+
+def usable_cache_dir(raw: str | None) -> Path | None:
+    """``--cache-dir`` as a path the retention cache can store into, or ``None`` when unset.
+
+    A directory that does not exist yet is fine (created on the first store); one that exists
+    must be writable, and a missing one needs an existing, writable directory above it. Anything
+    else raises ``InputError`` before a paid call (#701).
+    """
+    from dokimi.utils import InputError
+
+    if not raw:
+        return None
+    path = Path(raw)
+    probe = path
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    if not probe.is_dir():
+        where = "is not a directory" if probe == path else f"has {probe} above it, which is not a directory"
+        raise InputError(f"--cache-dir {path} {where}; pass a directory the retention verdicts can be stored in")
+    if not os.access(probe, os.W_OK | os.X_OK):
+        raise InputError(f"--cache-dir {path}: {probe} is not writable; pass a directory the retention "
+                         "verdicts can be stored in")
+    return path
 
 
 def exit_if_analyze_partial(result, out) -> None:
