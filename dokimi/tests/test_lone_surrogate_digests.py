@@ -91,6 +91,27 @@ def test_url_client_cache_key_of_a_utf8_url_is_unchanged():
     assert key == "9813a80c59ae8111adf2b881b481b0a6334db465cd7c961d98cec1830f9aa1db"  # gitleaks:allow: the sha256 of a test URL
 
 
+def _graph_candidate(*symbols: str):
+    from dokimi.repos.graph_tasks import Candidate
+
+    return Candidate("references", symbols, "run", "run", (), (), (), 1)
+
+
+@posix_only
+def test_graph_task_id_of_a_symbol_with_a_non_utf8_byte_is_an_id():
+    from dokimi.repos.graph_tasks import task_id
+
+    assert task_id(_graph_candidate("n\udcff")) == "graph_references_run_8a8f8440"
+    assert task_id(_graph_candidate("n\udcfe")) == "graph_references_run_fad35f93"
+
+
+def test_graph_task_id_of_utf8_symbols_is_unchanged():
+    from dokimi.repos.graph_tasks import task_id
+
+    assert task_id(_graph_candidate("scip-python python pkg 1 mod/run().")) == "graph_references_run_89eac09d"
+    assert task_id(_graph_candidate("a", "b")) == "graph_references_run_7e18f737"
+
+
 def _delta_artifact_name(baseline_name: str) -> str:
     from dokimi.eval.matrix_rollup import _paired_plugin_deltas
     from tests.test_matrix_rollup import _arms_artifact
