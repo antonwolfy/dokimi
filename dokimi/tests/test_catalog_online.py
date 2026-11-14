@@ -363,6 +363,7 @@ def test_an_angle_destination_keeps_its_spaces_and_is_probed_with_the_path_encod
     assert online_checks.extract_urls("[a](<https://acme.dev/x >)") == ["https://acme.dev/x "]  # a trailing blank is part of it
     assert online_checks.extract_urls("[a](<https://acme.dev/x y)") == ["https://acme.dev/x"]  # no ">" closes it: read as a bare URL
     assert online_checks.extract_urls("<https://acme.dev/x y>") == ["https://acme.dev/x"]  # an autolink holds no space
+    assert [online_checks.extract_urls(f"[a](<https://acme.dev/x y\\{c}z>)") for c in "<>"] == [["https://acme.dev/x y<z"], ["https://acme.dev/x y>z"]]  # an escaped bracket neither ends nor stops it
     web = Web({"https://acme.dev/x%20y": 404})
     root = _one_skill(tmp_path, "See [a](<https://acme.dev/x y>).\n")
 
@@ -374,6 +375,8 @@ def test_an_angle_destination_keeps_its_spaces_and_is_probed_with_the_path_encod
     [review] = _reviews(_one_skill(tmp_path / "t", "See [a](<https://acme.dev/x >).\n"), trailing)
     assert _codes(review) == ["link-dead"]
     assert {seen for _, seen in trailing.requests} == {"https://acme.dev/x%20"}
+    [review] = _reviews(_one_skill(tmp_path / "e", "See [a](<https://acme.dev/x y\\>z>).\n"), escaped := Web({"https://acme.dev/x%20y%3Ez": 404}))
+    assert _codes(review) == ["link-dead"] and {seen for _, seen in escaped.requests} == {"https://acme.dev/x%20y%3Ez"}
 
 
 def test_an_unbalanced_closing_bracket_ends_the_url_after_a_balanced_pair():

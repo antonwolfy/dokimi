@@ -99,7 +99,8 @@ _PLACEHOLDER_NAMES = {"package", "packages", "pkg", "name", "module", "mypackage
 _URL_RE = re.compile(r"https?://(?:[^\s\"`<>'“”‘’—，。、；：！？（）「」]|'(?=\w))+", re.IGNORECASE)  # an apostrophe in a word is in a URL ("Moore's_law")
 # Where a literal URL starts: after a markdown destination's ``](``, or a reference definition's ``[id]: ``.
 _LITERAL_START_RE = re.compile(r"\]\(|^[ \t]*\[(?!\^)[^\]\n]*\]:[ \t]*", re.MULTILINE)  # not a footnote "[^1]:"
-_ANGLE_REST_RE = re.compile(r"([^<>\n]*)>")  # a "<...>" link destination: the text up to its ">", blanks included
+# a "<...>" link destination: the text up to its unescaped ">", blanks and escaped "<" ">" included
+_ANGLE_REST_RE = re.compile(r"((?:\\[!-/:-@\[-`{-~]|[^<>\n\\]|\\(?![!-/:-@\[-`{-~]))*)>")
 _ESCAPE_RE = re.compile(r"\\([!-/:-@\[-`{-~])")  # a backslash escape of ASCII punctuation, as CommonMark reads it
 # An escape or a character reference of a destination, in one pass so that "\&amp;" is the text "&amp;".
 _DECODE_RE = re.compile(r"\\([!-/:-@\[-`{-~])|&(#[xX][0-9a-fA-F]{1,6}|#[0-9]{1,7}|[A-Za-z][A-Za-z0-9]{1,31});")
