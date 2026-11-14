@@ -26,6 +26,7 @@ from pathlib import Path
 
 from .atoms import Atom
 from .client import LLMClient
+from .routing_stop import stop_if_run_wide
 
 RETAINED = "retained"
 ABSENT = "absent"
@@ -170,6 +171,7 @@ class RetentionOracle:
                 accept=lambda raw: parse_verdict(raw) is not None,
             )
         except Exception:
+            stop_if_run_wide()  # raises a permanent stop; any other failure is an unusable verdict
             return None
         return parse_verdict(reply)
 

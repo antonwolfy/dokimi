@@ -24,8 +24,10 @@ Three isolation rules are enforced in code rather than documented:
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from typing import Any
 
 from dokimi.utils import InputError
 from .atoms import Atom
@@ -33,6 +35,7 @@ from .client import LLMClient, SpendCapReached, parse_json_object, same_client
 from .controls import (REPEAT_ARM, clustered_ci, control_fields, reversal_by_arm,
                        reversal_paired)
 from .probes import Probe
+from .routing_stop import PERMANENT_REASON, stop_if_run_wide
 
 # Judge verdict scale. Deliberately finer than the collapses below so a rater
 # disagreement is visible as a confusion rather than hidden inside a boolean.
@@ -378,6 +381,7 @@ def run_measurement(
         except SpendCapReached as exc:  # a call with no price: its paid reply is kept, ungraded
             return _unpriced_answer_run(probe, arm, exc, stops, ungraded)
         except Exception as exc:  # a provider failure is a missing datum, not a wrong answer
+            stop_if_run_wide(exc)  # but one every later call meets stops the measurement (#708)
             response, confidence = f"<error: {exc}>", None
             verdict = ERRORED
             answered = False
@@ -403,12 +407,21 @@ def run_measurement(
             return None
 
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
-        answered = list(pool.map(guarded, jobs))
+        answered = list(pool.map(_not_after_permanent_stop(stops, guarded), jobs))
     runs = [run for run in answered if run is not None]
     stop = (stops[0].reason, str(stops[0])) if stops else None
     return MeasureResult(runs=runs, arms=tuple(arms), with_arm="full",
                          not_run=len(jobs) - len(runs), ungraded=len(ungraded), stop=stop,
                          probes=list(probes))
+
+
+def _not_after_permanent_stop(stops: list[SpendCapReached], job: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """``job``, which is not run (``None``) once a run-wide provider error is among ``stops`` (#708)."""
+
+    def run(item: Any) -> Any:
+        return None if any(held.reason == PERMANENT_REASON for held in stops) else job(item)
+
+    return run
 
 
 def _capped_grade_run(probe: Probe, arm: str, response: str, confidence: float | None,
@@ -531,6 +544,7 @@ def _grade(probe: Probe, response: str, judge: LLMClient) -> str:
     try:
         raw = judge.json_object(prompt, usable=_names_a_verdict).get("verdict")
     except Exception:
+        stop_if_run_wide()  # raises a permanent stop; any other failure is an ERRORED grade
         return ERRORED
     verdict = raw.strip() if isinstance(raw, str) else ""
     if not verdict:
