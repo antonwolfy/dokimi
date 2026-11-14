@@ -8,7 +8,10 @@ The digest of every input that encodes as UTF-8 stays what it was; two different
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -279,5 +282,72 @@ def test_pipeline_topics_cache_of_a_doc_source_with_a_non_utf8_byte_gets_its_own
 def test_pipeline_topics_cache_of_a_utf8_doc_source_is_unchanged(tmp_path, monkeypatch):
     cache_dir = _topics_cache_dir(tmp_path, monkeypatch, "url:https://example.com/doc")
     assert cache_dir == Path(".cache/topics/782971a1dc6a2ae1")
+
+
+# A POSIX process whose file-system encoding is ASCII (``LC_ALL=C PYTHONUTF8=0``): ``os.fsencode`` cannot encode "é" there.
+# Every hash below is of UTF-8 bytes, so its digest must not depend on that encoding.
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@pytest.fixture
+def ascii_fs(monkeypatch):
+    monkeypatch.setattr(os, "fsencode", lambda name: name.encode("ascii", "surrogateescape"))
+
+
+def test_cache_path_of_a_non_ascii_url_does_not_depend_on_the_file_system_encoding(ascii_fs):
+    from dokimi.repos.source import cache_path
+
+    url = "https://example.com/é"
+    assert cache_path(url, Path("/c")) == Path(f"/c/_-{_sha(url)[:12]}.git")
+
+
+def test_harness_id_with_a_non_ascii_character_does_not_depend_on_the_file_system_encoding(ascii_fs):
+    from dokimi.harnesses.runner import _safe_id
+
+    assert _safe_id("é?") == f"é_-{_sha('é?')[:8]}"
+
+
+def test_reach_tokens_of_a_non_ascii_path_do_not_depend_on_the_file_system_encoding(ascii_fs):
+    from dokimi.repos.reach import token
+    from dokimi.repos.skill_reach import token as skill_token
+
+    assert token("s", "é", "p") == "RC" + _sha("s\0é\0p")[:6].upper()
+    assert skill_token("s", "é", "p") == "SB" + _sha("s\0é\0p")[:6].upper()
+
+
+def test_url_client_cache_key_of_a_non_ascii_url_does_not_depend_on_the_file_system_encoding(ascii_fs):
+    from dokimi.mcp.url_client import URLClient
+
+    assert URLClient("https://example.com/é")._cache_key() == _sha("https://example.com/é")
+
+
+def test_url_client_cache_key_of_a_non_ascii_url_in_an_ascii_locale_process():
+    """The trigger itself: a child process with an ASCII file-system encoding."""
+    code = ("import sys; sys.path.insert(0, sys.argv[1]); from dokimi.mcp.url_client import URLClient; "
+            "print(URLClient('https://example.com/\\u00e9')._cache_key())")
+    import dokimi
+
+    env = {**os.environ, "LC_ALL": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"}
+    done = subprocess.run([sys.executable, "-c", code, str(Path(dokimi.__file__).parent.parent)],
+                          env=env, capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == _sha("https://example.com/é")
+
+
+def test_bundle_measured_digest_of_a_non_ascii_file_name_does_not_depend_on_the_file_system_encoding(ascii_fs):
+    assert _bundle_digest("é") == "sha256:" + _sha("é:a")
+
+
+def test_graph_task_id_of_a_non_ascii_symbol_does_not_depend_on_the_file_system_encoding(ascii_fs):
+    from dokimi.repos.graph_tasks import HASH_LEN, task_id
+
+    assert task_id(_graph_candidate("é")).endswith("_" + _sha("é")[:HASH_LEN])
+
+
+def test_pipeline_topics_cache_of_a_non_ascii_doc_source_does_not_depend_on_the_file_system_encoding(
+        tmp_path, monkeypatch, ascii_fs):
+    cache_dir = _topics_cache_dir(tmp_path, monkeypatch, "url:https://example.com/é")
+    assert cache_dir == Path(".cache/topics") / _sha("url:https://example.com/é")[:16]
 
 
