@@ -500,7 +500,7 @@ def _distinct_urls(body: str) -> tuple[list[str], list[str]]:
         if destination and body[m.start() - 1] == "<":  # a "<...>" destination may hold spaces; it ends at ">"
             close = _ANGLE_REST_RE.match(body, m.start())
             if close:
-                raw, angled = close.group(1).rstrip(), True
+                raw, angled = close.group(1), True
         line_start = body.rfind("\n", 0, m.start()) + 1
         url = _clean_url(raw, literal=destination or autolink, decode=destination, delimited=autolink or angled,
                          table_row=body[line_start:m.start()].lstrip().startswith("|"))

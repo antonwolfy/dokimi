@@ -360,6 +360,8 @@ def test_a_pipe_in_an_angle_delimited_url_is_part_of_it_outside_a_table_row():
 def test_an_angle_destination_keeps_its_spaces_and_is_probed_with_the_path_encoded(tmp_path):
     assert online_checks.extract_urls("[a](<https://acme.dev/x y>)") == ["https://acme.dev/x y"]
     assert online_checks.extract_urls("[a](<https://acme.dev/x y)z>)") == ["https://acme.dev/x y)z"]
+    assert online_checks.extract_urls("[a](<https://acme.dev/x >)") == ["https://acme.dev/x "]  # a trailing blank is part of it
+    assert online_checks.extract_urls("[a](<https://acme.dev/x y)") == ["https://acme.dev/x"]  # no ">" closes it: read as a bare URL
     assert online_checks.extract_urls("<https://acme.dev/x y>") == ["https://acme.dev/x"]  # an autolink holds no space
     web = Web({"https://acme.dev/x%20y": 404})
     root = _one_skill(tmp_path, "See [a](<https://acme.dev/x y>).\n")
@@ -367,6 +369,11 @@ def test_an_angle_destination_keeps_its_spaces_and_is_probed_with_the_path_encod
     [review] = _reviews(root, web)
     assert _codes(review) == ["link-dead"]
     assert {seen for _, seen in web.requests} == {"https://acme.dev/x%20y"}
+
+    trailing = Web({"https://acme.dev/x%20": 404})
+    [review] = _reviews(_one_skill(tmp_path / "t", "See [a](<https://acme.dev/x >).\n"), trailing)
+    assert _codes(review) == ["link-dead"]
+    assert {seen for _, seen in trailing.requests} == {"https://acme.dev/x%20"}
 
 
 def test_an_unbalanced_closing_bracket_ends_the_url_after_a_balanced_pair():
